@@ -1,0 +1,155 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == userId &&
+        request.resource.data.email == request.auth.token.email.lower() &&
+        (
+          (request.resource.data.role == 'faculty' &&
+           get(/databases/$(database)/documents/allowlist/$(request.resource.data.email)).data.role == 'faculty') ||
+          (request.resource.data.role == 'student' &&
+           exists(/databases/$(database)/documents/roster/$(request.resource.data.enrollmentNumber)))
+        );
+      // role and email are fixed at signup — no self-promotion afterward.
+      allow update: if isAdmin() || (
+        request.auth != null && request.auth.uid == userId &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.email == resource.data.email
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Admin-provisioned allowlist of every person permitted to use the app at
+    // all (students, faculty, and one-off exceptions), keyed by lowercased
+    // email. Add/remove entries via the Firebase console or Admin SDK only —
+    // there is no in-app way to write here, by design.
+    match /allowlist/{email} {
+      allow read: if isAdmin() || (request.auth != null && request.auth.token.email.lower() == email);
+      allow write: if false;
+    }
+
+    // Admin-provisioned student roster (regNo -> name/branch/section/
+    // admissionYear), seeded from the registrar's export via
+    // scripts/seed-roster.js — same write-only-via-Admin-SDK pattern as
+    // `allowlist`. Read is open to any signed-in user rather than
+    // restricted to "your own regNo" because, unlike email, the security
+    // rules have no way to know which regNo a client is about to claim
+    // before the `users` doc exists — this is roster/directory info
+    // (name + branch + section), not anything sensitive.
+    // Faculty can add/update roster entries from the faculty web portal's
+    // Excel upload screen. (Previously write-only-via-Admin-SDK; opened up
+    // now that the portal does this through a signed-in faculty session
+    // instead of the local seed-roster.js script.)
+    match /roster/{regNo} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin() || (request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
+    }
+    
+    match /sessions/{sessionId} {
+  // Only the faculty who owns the session (or an admin) can read it.
+  // Note: subscribeToStudentSessions() in attendanceService.ts is currently
+  // unused dead code — if you wire real students up to read their own
+  // attendance later, `records` needs to move to a subcollection
+  // (sessions/{id}/records/{uid}) first, since a map-shaped `records` field
+  // can't be scoped per-student in a list query without a per-user dynamic
+  // index, which Firestore doesn't support.
+  allow read: if isAdmin() || (request.auth != null && resource.data.facultyId == request.auth.uid);
+  allow create: if isAdmin() || (request.auth != null &&
+    request.resource.data.facultyId == request.auth.uid &&
+    get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
+  allow update: if isAdmin() || (request.auth != null &&
+    resource.data.facultyId == request.auth.uid &&
+    resource.data.finalized == false);
+  allow delete: if isAdmin();
+}
+    
+    match /clubs/{clubId} {
+      allow read: if request.auth != null;
+      allow create: if isAdmin() || (request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
+      allow update: if isAdmin() || (request.auth != null &&
+        (
+          resource.data.leadUid == request.auth.uid ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty' ||
+          (
+            // Self-claim: a pending lead (leadUid still null) can link their own
+            // account the moment they sign up, as long as their auth email
+            // matches leadEmail exactly and nothing else on the club changes.
+            resource.data.leadUid == null &&
+            resource.data.leadEmail == request.auth.token.email &&
+            request.resource.data.leadUid == request.auth.uid &&
+            request.resource.data.leadEmail == resource.data.leadEmail &&
+            request.resource.data.leadName == resource.data.leadName &&
+            request.resource.data.name == resource.data.name &&
+            request.resource.data.category == resource.data.category &&
+            request.resource.data.description == resource.data.description
+          )
+        ));
+      allow delete: if isAdmin();
+    }
+    
+    match /clubEvents/{eventId} {
+      allow read: if request.auth != null;
+      allow create: if isAdmin() || (request.auth != null &&
+        request.resource.data.createdBy == request.auth.uid &&
+        (
+          get(/databases/$(database)/documents/clubs/$(request.resource.data.clubId)).data.leadUid == request.auth.uid ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty'
+        ));
+      allow update: if isAdmin() || (request.auth != null &&
+        resource.data.createdBy == request.auth.uid &&
+        request.resource.data.createdBy == resource.data.createdBy &&
+        request.resource.data.clubId == resource.data.clubId &&
+        request.resource.data.clubName == resource.data.clubName);
+      allow delete: if isAdmin() || (request.auth != null && resource.data.createdBy == request.auth.uid);
+    }
+
+    match /resources/{resourceId} {
+      allow read: if request.auth != null;
+      allow create: if isAdmin() || (request.auth != null &&
+        request.resource.data.uploadedBy == request.auth.uid &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
+      allow update: if isAdmin();
+  allow delete: if isAdmin() || (request.auth != null && resource.data.uploadedBy == request.auth.uid);
+    }
+
+    match /notices/{noticeId} {
+      allow read: if request.auth != null;
+      allow create: if isAdmin() || (request.auth != null &&
+        request.resource.data.createdBy == request.auth.uid &&
+        (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty' ||
+          (request.resource.data.category == 'Club' &&
+           request.resource.data.clubId != null &&
+           get(/databases/$(database)/documents/clubs/$(request.resource.data.clubId)).data.leadUid == request.auth.uid)
+        ));
+      allow update: if isAdmin() || (request.auth != null &&
+        resource.data.createdBy == request.auth.uid &&
+        request.resource.data.createdBy == resource.data.createdBy &&
+        request.resource.data.category == resource.data.category &&
+        request.resource.data.clubId == resource.data.clubId &&
+        request.resource.data.clubName == resource.data.clubName);
+      // Any faculty member can delete any notice (moderation), not just
+      // the one they created. Editing content stays creator-only (see
+      // `update` above) -- deleting doesn't.
+      allow delete: if isAdmin() || (request.auth != null &&
+        (resource.data.createdBy == request.auth.uid ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty'));
+    }
+
+    match /curriculum/{docId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin() || (request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
+      allow delete: if isAdmin();
+    }
+  }
+}
