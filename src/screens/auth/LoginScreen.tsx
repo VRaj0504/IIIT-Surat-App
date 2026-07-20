@@ -50,6 +50,7 @@ export default function LoginScreen({ onNavigateToSignUp }: Props) {
     try {
       await logIn(email.trim(), password);
     } catch (e: any) {
+      console.log('LOGIN ERROR:', e?.code, e?.message);
       setError(friendlyError(e?.code ?? ''));
     } finally {
       setLoading(false);
