@@ -41,8 +41,11 @@ yarn-error.*
 /android
 serviceAccountKey.json
 scripts/seed-roster.js
+scripts/seed-allowlist.js
+scripts/seed-timetable.mjs
 *.apk
 build.log
 
 
 scripts/serviceAccountKey.json.env
+.env
