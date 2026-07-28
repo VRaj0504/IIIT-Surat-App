@@ -151,5 +151,15 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
       allow delete: if isAdmin();
     }
+
+    // One doc per branch+semester+section (docId e.g. "CSE-3-CSE1"),
+    // seeded via scripts/seed-timetable.mjs and read by TimetableScreen /
+    // HomeScreen for the logged-in student's own section.
+    match /timetable/{docId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin() || (request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
+      allow delete: if isAdmin();
+    }
   }
 }

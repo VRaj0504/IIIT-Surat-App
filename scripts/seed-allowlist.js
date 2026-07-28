@@ -1,18 +1,4 @@
-// One-time script to populate the `allowlist` collection.
-// The Admin SDK bypasses Firestore security rules entirely, which is why
-// this has to run outside the app (rules block all client writes to
-// `allowlist` on purpose -- see firestore.rules).
-//
-// SETUP:
-// 1. npm install firebase-admin
-// 2. Firebase Console -> Project Settings -> Service Accounts -> Generate new
-//    private key. Save the downloaded file as serviceAccountKey.json in this
-//    same folder. NEVER commit this file or share it -- it has full admin
-//    access to your project.
-// 3. node seed-allowlist.js
-//
-// Safe to re-run: existing docs are overwritten with the same data (merge),
-// nothing is deleted.
+
 
 const { initializeApp } = require("firebase-admin/app");
 const { cert } = require("firebase-admin/app");
@@ -59,6 +45,7 @@ const allowlist = {
   "sameer.singh@iiitsurat.ac.in": { "role": "faculty", "name": "Dr. Sameer Kumar Singh", "department": "UGECE" },
   "prarthana.mehta@iiitsurat.ac.in": { "role": "faculty", "name": "Dr. Prarthana Jagat Mehta", "department": "UGCSE" },
   "lokendra.chouhan@iiitsurat.ac.in": { "role": "faculty", "name": "Dr. Lokendra Chouhan", "department": "UGECE" },
+   "jyotir@iiitsurat.ac.in": { "role": "faculty", "name": "Jyoti Ranjan", "department": "TNP" },
   "ug25cse114@iiitsurat.ac.in": { "role": "admin" }
 };
 

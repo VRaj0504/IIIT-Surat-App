@@ -6,12 +6,24 @@ import {
   signOut,
   deleteUser,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   User,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth } from '../firebase/auth';
 import { db } from '../firebase/firestore';
 import { claimPendingClubLead } from '../firebase/clubsService';
+
+// Signup is restricted to the institute email domain. This doesn't by itself
+// prove *whose* inbox it is — that's what email verification (below) is
+// for — but it narrows the field before we even get there, and it's free
+// (no Cloud Functions, no email-sending service; Firebase's own
+// verification email covers it on the Spark/free plan).
+export const ALLOWED_EMAIL_DOMAIN = '@iiitsurat.ac.in';
+
+export function isAllowedEmailDomain(email: string): boolean {
+  return email.trim().toLowerCase().endsWith(ALLOWED_EMAIL_DOMAIN);
+}
 
 export type Role = 'student' | 'faculty';
 
@@ -37,6 +49,7 @@ type AuthContextValue = {
   logIn: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
   updateProfileName: (name: string) => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -73,12 +86,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const normalizedEmail = email.trim().toLowerCase();
     const typedRegNo = (enrollmentNumber ?? '').trim().toUpperCase();
 
-    // IMPORTANT ORDERING: the Firebase Auth account is created *before* any
-    // gating check below, because firestore.rules for `allowlist`/`roster`
-    // key off `request.auth` — a signed-out client can't pass those rules no
-    // matter what they contain. If the gating check then fails, we delete
-    // the auth account we just made so the person can retry (and so the
-    // email/regNo doesn't sit "claimed" by an invalid signup attempt).
+    // Reject off-domain emails before we ever create a Firebase Auth
+    // account — no point spending an account-creation attempt (or letting
+    // someone occupy an email slot) on an address that could never pass.
+    if (!isAllowedEmailDomain(normalizedEmail)) {
+      throw new Error(`Please sign up with your institute email (${ALLOWED_EMAIL_DOMAIN}).`);
+    }
+
+    
     justSignedUpRef.current = true;
     setProfileLoading(true);
     let credential;
@@ -173,8 +188,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile((prev) => (prev ? { ...prev, name: trimmed } : prev));
   };
 
+  const sendPasswordReset = async (email: string) => {
+    await sendPasswordResetEmail(auth, email.trim());
+  };
+
   return (
-    <AuthContext.Provider value={{ user, profile, initializing, profileLoading, signUp, logIn, logOut, updateProfileName }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        profile,
+        initializing,
+        profileLoading,
+        signUp,
+        logIn,
+        logOut,
+        updateProfileName,
+        sendPasswordReset,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

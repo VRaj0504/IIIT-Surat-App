@@ -1,54 +1,110 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, FlatList } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, radius, typography } from '../theme/theme';
-import { timetable } from '../data/sampleData';
+import { useAuth } from '../context/AuthContext';
+import { getCurrentSemester } from '../utils/academicInfo';
+import { subscribeToTimetable, Timetable, TimetableSlot } from '../firebase/timetableService';
+import { expandFaculty } from '../data/facultyLegend';
+
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export default function TimetableScreen() {
-  const [selectedDay, setSelectedDay] = useState(timetable[0].day);
-  const daySchedule = timetable.find((d) => d.day === selectedDay);
+  const { profile } = useAuth();
+  const [timetable, setTimetable] = useState<Timetable | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const hasAcademicInfo = !!(profile?.branch && profile?.section && profile?.admissionYear);
+  const semester = profile?.admissionYear ? getCurrentSemester(profile.admissionYear) : null;
+
+  const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+  const [selectedDay, setSelectedDay] = useState(WEEKDAYS.includes(todayName) ? todayName : 'Monday');
+
+  useEffect(() => {
+    if (!profile?.branch || !profile?.section || !semester) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const unsubscribe = subscribeToTimetable(profile.branch, semester, profile.section, (data) => {
+      setTimetable(data);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [profile?.branch, profile?.section, semester]);
+
+  const daySchedule = timetable?.days.find((d) => d.day === selectedDay);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Text style={styles.title}>Timetable</Text>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dayTabs} contentContainerStyle={{ gap: spacing.sm }}>
-        {timetable.map((d) => (
-          <TouchableOpacity
-            key={d.day}
-            onPress={() => setSelectedDay(d.day)}
-            style={[styles.dayTab, selectedDay === d.day && styles.dayTabActive]}
-          >
-            <Text style={[styles.dayTabText, selectedDay === d.day && styles.dayTabTextActive]}>{d.day}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      {!hasAcademicInfo ? (
+        <Text style={styles.emptyText}>
+          Your branch, section, and admission year aren't set on your profile yet, so we can't show your
+          timetable. This comes from the official student roster — contact an admin if it looks missing.
+        </Text>
+      ) : (
+        <>
+          <Text style={styles.subtitle}>
+            {profile?.branch} · Semester {semester} · {profile?.section}
+          </Text>
 
-      <FlatList
-        data={daySchedule?.slots ?? []}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={<Text style={styles.emptyText}>No classes scheduled.</Text>}
-        renderItem={({ item }) => (
-          <View style={styles.classCard}>
-            <View style={styles.timeBlock}>
-              <Text style={styles.timeText}>{item.startTime}</Text>
-              <Text style={styles.timeText}>{item.endTime}</Text>
-            </View>
-            <View style={styles.classInfo}>
-              <Text style={styles.subject}>{item.subject}</Text>
-              <Text style={styles.meta}>{item.faculty} · {item.room}</Text>
-            </View>
-          </View>
-        )}
-      />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dayTabs} contentContainerStyle={{ gap: spacing.sm }}>
+            {WEEKDAYS.map((d) => (
+              <TouchableOpacity
+                key={d}
+                onPress={() => setSelectedDay(d)}
+                style={[styles.dayTab, selectedDay === d && styles.dayTabActive]}
+              >
+                <Text style={[styles.dayTabText, selectedDay === d && styles.dayTabTextActive]}>{d.slice(0, 3)}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {loading ? (
+            <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.primary} />
+          ) : !timetable ? (
+            <Text style={styles.emptyText}>No timetable has been uploaded for your section yet.</Text>
+          ) : (
+            <FlatList
+              data={daySchedule?.slots ?? []}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.list}
+              ListEmptyComponent={<Text style={styles.emptyText}>No classes scheduled.</Text>}
+              renderItem={({ item }) => <ClassCard item={item} />}
+            />
+          )}
+        </>
+      )}
     </SafeAreaView>
+  );
+}
+
+function ClassCard({ item }: { item: TimetableSlot }) {
+  return (
+    <View style={styles.classCard}>
+      <View style={styles.timeBlock}>
+        <Text style={styles.timeText}>{item.startTime}</Text>
+        <Text style={styles.timeText}>{item.endTime}</Text>
+      </View>
+      <View style={styles.classInfo}>
+        <Text style={styles.subject}>
+          {item.subjectCode} {item.subjectName}
+          {item.group ? ` · ${item.group}` : ''}
+        </Text>
+        <Text style={styles.meta}>
+          {expandFaculty(item.faculty)} · {item.room}
+        </Text>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.md },
-  title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.md },
+  title: { ...typography.h1, color: colors.textPrimary, marginBottom: spacing.xs },
+  subtitle: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.md },
   dayTabs: { marginBottom: spacing.md, flexGrow: 0 },
   dayTab: {
     paddingVertical: spacing.sm,
@@ -76,5 +132,5 @@ const styles = StyleSheet.create({
   classInfo: { flex: 1, justifyContent: 'center' },
   subject: { ...typography.h3, color: colors.textPrimary },
   meta: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
-  emptyText: { ...typography.body, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.xl },
+  emptyText: { ...typography.body, color: colors.textSecondary, textAlign: 'center', marginTop: spacing.xl, paddingHorizontal: spacing.md },
 });

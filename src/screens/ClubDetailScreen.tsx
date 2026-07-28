@@ -26,6 +26,7 @@ export default function ClubDetailScreen() {
   const { user, profile } = useAuth();
 
   const [club, setClub] = useState<Club | null>(null);
+  const [subClubs, setSubClubs] = useState<Club[]>([]);
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [clubNotices, setClubNotices] = useState<Notice[]>([]);
@@ -42,9 +43,14 @@ export default function ClubDetailScreen() {
     const unsubscribe = subscribeToClubs((clubs) => {
       const match = clubs.find((c) => c.id === clubId);
       setClub(match ?? null);
+      setSubClubs(clubs.filter((c) => c.parentClubId === clubId));
     });
     return unsubscribe;
   }, [clubId]);
+
+  const openSubClub = (subClub: Club) => {
+    navigation.push('ClubDetail', { clubId: subClub.id, clubName: subClub.name });
+  };
 
   useEffect(() => {
     const unsubscribe = subscribeToClubEvents(clubId, (data) => {
@@ -133,6 +139,29 @@ export default function ClubDetailScreen() {
           </>
         )}
       </View>
+
+      {subClubs.length > 0 && (
+        <View style={styles.subClubsSection}>
+          <Text style={styles.sectionTitle}>Clubs under {clubName}</Text>
+          {subClubs.map((sc) => (
+            <TouchableOpacity
+              key={sc.id}
+              style={styles.subClubCard}
+              onPress={() => openSubClub(sc)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.iconWrap}>
+                <Ionicons name="people" size={20} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.subClubName}>{sc.name}</Text>
+                <Text style={styles.subClubLead}>Lead: {sc.leadName}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
       {(isLead || isFaculty) && (
         <View style={styles.postBtnRow}>
@@ -304,6 +333,28 @@ const styles = StyleSheet.create({
   title: { ...typography.h1, color: colors.textPrimary },
   category: { ...typography.caption, color: colors.primary, fontWeight: '600', marginTop: spacing.xs },
   description: { ...typography.body, color: colors.textSecondary, marginTop: spacing.xs },
+  subClubsSection: { marginBottom: spacing.md },
+  subClubCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: '#EAF0FB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  subClubName: { ...typography.body, color: colors.textPrimary, fontWeight: '600' },
+  subClubLead: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   postBtnRow: {
     flexDirection: 'row',
     gap: spacing.sm,

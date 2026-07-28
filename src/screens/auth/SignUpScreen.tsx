@@ -10,9 +10,10 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, radius, typography } from '../../theme/theme';
-import { useAuth, Role } from '../../context/AuthContext';
+import { useAuth, Role, ALLOWED_EMAIL_DOMAIN, isAllowedEmailDomain } from '../../context/AuthContext';
 
 type Props = {
   onNavigateToLogin: () => void;
@@ -38,6 +39,7 @@ export default function SignUpScreen({ onNavigateToLogin }: Props) {
   const [enrollmentNumber, setEnrollmentNumber] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,6 +51,10 @@ export default function SignUpScreen({ onNavigateToLogin }: Props) {
     }
     if (role === 'student' && !enrollmentNumber.trim()) {
       setError('Enrollment number is required for students.');
+      return;
+    }
+    if (!isAllowedEmailDomain(email)) {
+      setError(`Please use your institute email (${ALLOWED_EMAIL_DOMAIN}).`);
       return;
     }
     if (password.length < 6) {
@@ -76,7 +82,7 @@ export default function SignUpScreen({ onNavigateToLogin }: Props) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <Text style={styles.brand}>IIIT Surat</Text>
           <Text style={styles.title}>Create account</Text>
@@ -134,14 +140,23 @@ export default function SignUpScreen({ onNavigateToLogin }: Props) {
           />
 
           <Text style={styles.label}>Password</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="At least 6 characters"
-            placeholderTextColor={colors.textSecondary}
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
+          <View style={styles.passwordRow}>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="At least 6 characters"
+              placeholderTextColor={colors.textSecondary}
+              secureTextEntry={!showPassword}
+              value={password}
+              onChangeText={setPassword}
+            />
+            <TouchableOpacity
+              onPress={() => setShowPassword((v) => !v)}
+              style={styles.eyeBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
 
           <TouchableOpacity style={styles.primaryBtn} onPress={handleSignUp} disabled={loading}>
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Sign Up</Text>}
@@ -185,6 +200,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     color: colors.textPrimary,
     ...typography.body,
+  },
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+  },
+  passwordInput: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    color: colors.textPrimary,
+    ...typography.body,
+  },
+  eyeBtn: {
+    paddingLeft: spacing.sm,
   },
   primaryBtn: {
     backgroundColor: colors.primary,

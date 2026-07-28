@@ -10,24 +10,18 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, radius, typography } from '../../theme/theme';
 import { useAuth } from '../../context/AuthContext';
 
 type Props = {
-  onNavigateToSignUp: () => void;
-  onNavigateToForgotPassword: () => void;
+  onNavigateToLogin: () => void;
 };
 
 function friendlyError(code: string): string {
   switch (code) {
     case 'auth/invalid-email':
       return 'That email address looks invalid.';
-    case 'auth/user-not-found':
-    case 'auth/wrong-password':
-    case 'auth/invalid-credential':
-      return 'Incorrect email or password.';
     case 'auth/too-many-requests':
       return 'Too many attempts. Try again in a bit.';
     default:
@@ -35,25 +29,28 @@ function friendlyError(code: string): string {
   }
 }
 
-export default function LoginScreen({ onNavigateToSignUp, onNavigateToForgotPassword }: Props) {
-  const { logIn } = useAuth();
+export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
+  const { sendPasswordReset } = useAuth();
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
 
-  const handleLogin = async () => {
+  const handleSend = async () => {
     setError(null);
-    if (!email.trim() || !password) {
-      setError('Enter both email and password.');
+    if (!email.trim()) {
+      setError('Enter your email.');
       return;
     }
     setLoading(true);
     try {
-      await logIn(email.trim(), password);
+      await sendPasswordReset(email.trim());
+      // Deliberately shown regardless of whether the address exists — this
+      // is Firebase's own default behavior (it doesn't error on unknown
+      // emails), and matching it here avoids leaking which emails have
+      // accounts.
+      setSent(true);
     } catch (e: any) {
-      if (__DEV__) console.log('LOGIN ERROR:', e?.code, e?.message);
       setError(friendlyError(e?.code ?? ''));
     } finally {
       setLoading(false);
@@ -65,10 +62,15 @@ export default function LoginScreen({ onNavigateToSignUp, onNavigateToForgotPass
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <Text style={styles.brand}>IIIT Surat</Text>
-          <Text style={styles.title}>Welcome back</Text>
-          <Text style={styles.subtitle}>Log in to continue</Text>
+          <Text style={styles.title}>Reset your password</Text>
+          <Text style={styles.subtitle}>Enter your account email and we'll send a reset link.</Text>
 
           {error && <Text style={styles.error}>{error}</Text>}
+          {sent && (
+            <Text style={styles.success}>
+              If that email has an account, a reset link is on its way. Check your inbox.
+            </Text>
+          )}
 
           <Text style={styles.label}>Email</Text>
           <TextInput
@@ -81,35 +83,12 @@ export default function LoginScreen({ onNavigateToSignUp, onNavigateToForgotPass
             onChangeText={setEmail}
           />
 
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.passwordRow}>
-            <TextInput
-              style={styles.passwordInput}
-              placeholder="••••••••"
-              placeholderTextColor={colors.textSecondary}
-              secureTextEntry={!showPassword}
-              value={password}
-              onChangeText={setPassword}
-            />
-            <TouchableOpacity
-              onPress={() => setShowPassword((v) => !v)}
-              style={styles.eyeBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity onPress={onNavigateToForgotPassword} style={styles.forgotBtn}>
-            <Text style={styles.linkText}>Forgot password?</Text>
+          <TouchableOpacity style={styles.primaryBtn} onPress={handleSend} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Send reset link</Text>}
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleLogin} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Log In</Text>}
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={onNavigateToSignUp} style={styles.linkBtn}>
-            <Text style={styles.linkText}>Don't have an account? <Text style={styles.linkTextBold}>Sign up</Text></Text>
+          <TouchableOpacity onPress={onNavigateToLogin} style={styles.linkBtn}>
+            <Text style={styles.linkText}>Back to <Text style={styles.linkTextBold}>log in</Text></Text>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -131,6 +110,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     ...typography.caption,
   },
+  success: {
+    color: colors.success,
+    backgroundColor: '#E8F7EE',
+    padding: spacing.sm,
+    borderRadius: radius.sm,
+    marginBottom: spacing.md,
+    ...typography.caption,
+  },
   label: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.xs, marginTop: spacing.sm },
   input: {
     backgroundColor: colors.surface,
@@ -142,24 +129,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     ...typography.body,
   },
-  passwordRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-  },
-  passwordInput: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    color: colors.textPrimary,
-    ...typography.body,
-  },
-  eyeBtn: {
-    paddingLeft: spacing.sm,
-  },
   primaryBtn: {
     backgroundColor: colors.primary,
     borderRadius: radius.md,
@@ -168,7 +137,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  forgotBtn: { marginTop: spacing.sm, alignItems: 'flex-end' },
   linkBtn: { marginTop: spacing.lg, alignItems: 'center' },
   linkText: { ...typography.body, color: colors.textSecondary },
   linkTextBold: { color: colors.primary, fontWeight: '700' },

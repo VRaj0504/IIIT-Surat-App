@@ -23,6 +23,7 @@ export type Club = {
   leadName: string;
   leadEmail: string | null;
   createdAt: Timestamp | null;
+  parentClubId: string | null; // set when this club is a sub-club (e.g. Exposure under Saaras)
 };
 
 export type ClubEvent = {
@@ -52,7 +53,8 @@ export async function createClub(
   category: string,
   description: string,
   leadName: string,
-  leadEmail?: string
+  leadEmail?: string,
+  parentClubId?: string | null
 ): Promise<string> {
   let leadUid: string | null = null;
   let resolvedLeadEmail: string | null = null;
@@ -76,6 +78,7 @@ export async function createClub(
     leadName: leadName.trim(),
     leadEmail: resolvedLeadEmail,
     createdAt: serverTimestamp(),
+    parentClubId: parentClubId ?? null,
   });
   return docRef.id;
 }

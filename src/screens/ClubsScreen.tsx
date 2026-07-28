@@ -28,7 +28,9 @@ export default function ClubsScreen() {
 
   useEffect(() => {
     const unsubscribe = subscribeToClubs((data) => {
-      setClubs(data);
+      // Sub-clubs (e.g. Exposure, Groove under Saaras) live inside their parent's
+      // detail screen, not as their own top-level entry here.
+      setClubs(data.filter((c) => !c.parentClubId));
       setLoadingClubs(false);
     });
     return unsubscribe;

@@ -10,9 +10,10 @@ type Props = {
   sessionId: string;
   subject: string;
   onFinalized: () => void;
+  onBack: () => void;
 };
 
-export default function LiveRosterScreen({ sessionId, subject, onFinalized }: Props) {
+export default function LiveRosterScreen({ sessionId, subject, onFinalized, onBack }: Props) {
   const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
@@ -37,10 +38,28 @@ export default function LiveRosterScreen({ sessionId, subject, onFinalized }: Pr
     ]);
   };
 
+  const handleBack = () => {
+    Alert.alert(
+      'Leave this session?',
+      'Marks you\'ve made so far are saved, but attendance won\'t count until you finalize. You can come back and finish this later.',
+      [
+        { text: 'Stay', style: 'cancel' },
+        { text: 'Leave', style: 'destructive', onPress: onBack },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <Text style={styles.title}>{subject}</Text>
-      <Text style={styles.subtitle}>Mark each student present or absent</Text>
+      <View style={styles.headerRow}>
+        <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={8}>
+          <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>{subject}</Text>
+          <Text style={styles.subtitle}>Mark each student present or absent</Text>
+        </View>
+      </View>
 
       <FlatList
         data={DEMO_ROSTER}
@@ -83,6 +102,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.md },
   title: { ...typography.h1, color: colors.textPrimary, marginTop: spacing.sm },
   subtitle: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.md },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  backBtn: { marginTop: spacing.sm, marginRight: spacing.sm, padding: spacing.xs },
   list: { paddingBottom: spacing.md },
   row: {
     flexDirection: 'row',

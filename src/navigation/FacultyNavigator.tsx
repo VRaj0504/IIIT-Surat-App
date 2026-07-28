@@ -11,6 +11,7 @@ export default function FacultyNavigator() {
         sessionId={activeSession.id}
         subject={activeSession.subject}
         onFinalized={() => setActiveSession(null)}
+        onBack={() => setActiveSession(null)}
       />
     );
   }

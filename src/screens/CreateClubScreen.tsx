@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, spacing, radius, typography } from '../theme/theme';
-import { createClub } from '../firebase/clubsService';
+import { createClub, subscribeToClubs, Club } from '../firebase/clubsService';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -29,6 +29,15 @@ export default function CreateClubScreen() {
   const [leadEmail, setLeadEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [topLevelClubs, setTopLevelClubs] = useState<Club[]>([]);
+  const [parentClubId, setParentClubId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToClubs((clubs) => {
+      setTopLevelClubs(clubs.filter((c) => !c.parentClubId));
+    });
+    return unsubscribe;
+  }, []);
 
   const handleCreate = async () => {
     setError(null);
@@ -38,7 +47,7 @@ export default function CreateClubScreen() {
     }
     setLoading(true);
     try {
-      await createClub(name.trim(), category.trim(), description.trim(), leadName.trim(), leadEmail.trim() || undefined);
+      await createClub(name.trim(), category.trim(), description.trim(), leadName.trim(), leadEmail.trim() || undefined, parentClubId);
       navigation.goBack();
     } catch (e: any) {
       setError(e?.message ?? 'Something went wrong. Please try again.');
@@ -110,6 +119,33 @@ export default function CreateClubScreen() {
             the moment they sign up with that exact email. No account yet? No problem.
           </Text>
 
+          <Text style={styles.label}>Part of a bigger club? (optional)</Text>
+          <Text style={styles.hint}>
+            e.g. Exposure and Groove are sub-clubs under Saaras — pick Saaras here so this club
+            shows up inside it instead of as its own entry on the Clubs tab.
+          </Text>
+          <View style={styles.chipRow}>
+            <TouchableOpacity
+              style={[styles.chip, parentClubId === null && styles.chipSelected]}
+              onPress={() => setParentClubId(null)}
+            >
+              <Text style={[styles.chipText, parentClubId === null && styles.chipTextSelected]}>
+                None — standalone club
+              </Text>
+            </TouchableOpacity>
+            {topLevelClubs.map((c) => (
+              <TouchableOpacity
+                key={c.id}
+                style={[styles.chip, parentClubId === c.id && styles.chipSelected]}
+                onPress={() => setParentClubId(c.id)}
+              >
+                <Text style={[styles.chipText, parentClubId === c.id && styles.chipTextSelected]}>
+                  {c.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
           <TouchableOpacity style={styles.primaryBtn} onPress={handleCreate} disabled={loading}>
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Create Club</Text>}
           </TouchableOpacity>
@@ -145,6 +181,18 @@ const styles = StyleSheet.create({
   },
   multiline: { minHeight: 80, textAlignVertical: 'top' },
   hint: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm },
+  chip: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.full,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+  },
+  chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { ...typography.caption, color: colors.textPrimary, fontWeight: '600' },
+  chipTextSelected: { color: '#fff' },
   primaryBtn: {
     backgroundColor: colors.primary,
     borderRadius: radius.md,

@@ -1,12 +1,4 @@
-// One-time script to bulk-create clubs in Firestore.
-// Uses the same client SDK + security rules as the app itself — no admin
-// key needed. You just need to sign in as a faculty account.
-//
-// Usage:
-//   FACULTY_EMAIL="you@iiitsurat.ac.in" FACULTY_PASSWORD="yourpassword" node scripts/bulk-create-clubs.mjs
-//
-// Safe to re-run: it skips any club whose name already exists in Firestore,
-// so if it fails partway through you can just run it again.
+
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
@@ -14,7 +6,7 @@ import { getFirestore, collection, query, where, getDocs, addDoc, serverTimestam
 
 // Same public client config as src/firebase/config.ts
 const firebaseConfig = {
-  apiKey: 'AIzaSyBXlf0tidwgnJemq_xHL0Pus14LokQK2cw',
+  apiKey: 'AIzaSyCF5YItLRNrDtNnO6MgHeLweyzeKwT7ov8',
   authDomain: 'iiit-surat-app-6643d.firebaseapp.com',
   projectId: 'iiit-surat-app-6643d',
   storageBucket: 'iiit-surat-app-6643d.firebasestorage.app',

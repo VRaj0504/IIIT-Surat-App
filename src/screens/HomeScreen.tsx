@@ -8,7 +8,8 @@ import type { RootStackParamList } from '../navigation/types';
 import { useNavigation } from '@react-navigation/native';
 import { useAttendance } from '../hooks/useAttendance';
 import { useAuth } from '../context/AuthContext';
-import { timetable } from '../data/sampleData';
+import { getCurrentSemester } from '../utils/academicInfo';
+import { subscribeToTimetable, Timetable } from '../firebase/timetableService';
 import { subscribeToNotices, Notice } from '../firebase/noticesService';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
@@ -30,10 +31,18 @@ export default function HomeScreen() {
 const isFaculty = profile?.role === 'faculty';
   const { overallPercentage, loaded } = useAttendance();
 
-  // Today's classes: count today's slots from the (currently static)
-  // timetable data. weekday names match `day` exactly ('Monday', etc.)
+  // Today's classes: count today's slots from the student's real, per-section
+  // timetable (same Firestore doc TimetableScreen reads). weekday names
+  // match `day` exactly ('Monday', etc.)
   const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-  const classesToday = timetable.find((d) => d.day === todayName)?.slots.length ?? 0;
+  const [timetable, setTimetableState] = useState<Timetable | null>(null);
+  const semester = profile?.admissionYear ? getCurrentSemester(profile.admissionYear) : null;
+  useEffect(() => {
+    if (!profile?.branch || !profile?.section || !semester) return;
+    const unsubscribe = subscribeToTimetable(profile.branch, semester, profile.section, setTimetableState);
+    return () => unsubscribe();
+  }, [profile?.branch, profile?.section, semester]);
+  const classesToday = timetable?.days.find((d) => d.day === todayName)?.slots.length ?? 0;
 
   // New notices: count notices posted in the last 24 hours, live from Firestore.
   const [notices, setNotices] = useState<Notice[]>([]);

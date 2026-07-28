@@ -43,3 +43,6 @@ serviceAccountKey.json
 scripts/seed-roster.js
 *.apk
 build.log
+
+
+scripts/serviceAccountKey.json.env
