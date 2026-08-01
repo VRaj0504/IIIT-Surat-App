@@ -5,13 +5,15 @@ import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import { getFirestore, collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 
 // Same public client config as src/firebase/config.ts
+// Same public client config as src/firebase/config.ts — pulled from env vars
+// so the key isn't committed to source.
 const firebaseConfig = {
-  apiKey: 'AIzaSyCF5YItLRNrDtNnO6MgHeLweyzeKwT7ov8',
-  authDomain: 'iiit-surat-app-6643d.firebaseapp.com',
-  projectId: 'iiit-surat-app-6643d',
-  storageBucket: 'iiit-surat-app-6643d.firebasestorage.app',
-  messagingSenderId: '568691830636',
-  appId: '1:568691830636:web:4be7fd34f4098d1d994d49',
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
 const CLUBS = [
