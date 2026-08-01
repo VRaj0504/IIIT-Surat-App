@@ -49,3 +49,4 @@ build.log
 
 scripts/serviceAccountKey.json.env
 .env
+google-services.json
