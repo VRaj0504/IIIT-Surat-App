@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import RootNavigator from './src/navigation/RootNavigator';
 import AuthNavigator from './src/navigation/AuthNavigator';
 import FacultyNavigator from './src/navigation/FacultyNavigator';
+import CompleteProfileScreen from './src/screens/auth/CompleteProfileScreen';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { colors } from './src/theme/theme';
 
@@ -21,6 +22,10 @@ function Gate() {
   }
 
   if (!user) return <AuthNavigator />;
+  // Signed in (via Google) but no Firestore profile doc yet — this only
+  // happens on a first-time Google sign-in, since email signUp always
+  // creates the profile doc before it ever settles into this state.
+  if (!profile) return <CompleteProfileScreen />;
   return <RootNavigator/>;
 }
 

@@ -33,7 +33,7 @@ function friendlyError(code: string): string {
 }
 
 export default function SignUpScreen({ onNavigateToLogin }: Props) {
-  const { signUp } = useAuth();
+  const { signUp, signInWithGoogle } = useAuth();
   const [role, setRole] = useState<Role>('student');
   const [name, setName] = useState('');
   const [enrollmentNumber, setEnrollmentNumber] = useState('');
@@ -41,7 +41,20 @@ export default function SignUpScreen({ onNavigateToLogin }: Props) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleGoogleSignIn = async () => {
+    setError(null);
+    setGoogleLoading(true);
+    try {
+      await signInWithGoogle();
+    } catch (e: any) {
+      setError(e?.message ?? 'Google sign-in failed. Please try again.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   const handleSignUp = async () => {
     setError(null);
@@ -162,6 +175,23 @@ export default function SignUpScreen({ onNavigateToLogin }: Props) {
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Sign Up</Text>}
           </TouchableOpacity>
 
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity style={styles.googleBtn} onPress={handleGoogleSignIn} disabled={googleLoading}>
+            {googleLoading ? (
+              <ActivityIndicator color={colors.textPrimary} />
+            ) : (
+              <>
+                <Ionicons name="logo-google" size={18} color={colors.textPrimary} />
+                <Text style={styles.googleBtnText}>Continue with Google</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
           <TouchableOpacity onPress={onNavigateToLogin} style={styles.linkBtn}>
             <Text style={styles.linkText}>Already have an account? <Text style={styles.linkTextBold}>Log in</Text></Text>
           </TouchableOpacity>
@@ -227,6 +257,22 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.lg },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  dividerText: { ...typography.caption, color: colors.textSecondary, marginHorizontal: spacing.sm },
+  googleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    marginTop: spacing.lg,
+  },
+  googleBtnText: { ...typography.body, color: colors.textPrimary, fontWeight: '600' },
   linkBtn: { marginTop: spacing.lg, alignItems: 'center' },
   linkText: { ...typography.body, color: colors.textSecondary },
   linkTextBold: { color: colors.primary, fontWeight: '700' },
