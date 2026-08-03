@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -9,10 +9,17 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, radius, typography } from '../../theme/theme';
-import { useAuth } from '../../context/AuthContext';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import {
+  colors,
+  spacing,
+  radius,
+  typography,
+  clayShadowSoft,
+} from "../../theme/theme";
+import { useAuth } from "../../context/AuthContext";
 
 type Props = {
   onNavigateToLogin: () => void;
@@ -20,18 +27,18 @@ type Props = {
 
 function friendlyError(code: string): string {
   switch (code) {
-    case 'auth/invalid-email':
-      return 'That email address looks invalid.';
-    case 'auth/too-many-requests':
-      return 'Too many attempts. Try again in a bit.';
+    case "auth/invalid-email":
+      return "That email address looks invalid.";
+    case "auth/too-many-requests":
+      return "Too many attempts. Try again in a bit.";
     default:
-      return 'Something went wrong. Please try again.';
+      return "Something went wrong. Please try again.";
   }
 }
 
 export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
   const { sendPasswordReset } = useAuth();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
@@ -39,7 +46,7 @@ export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
   const handleSend = async () => {
     setError(null);
     if (!email.trim()) {
-      setError('Enter your email.');
+      setError("Enter your email.");
       return;
     }
     setLoading(true);
@@ -51,60 +58,97 @@ export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
       // accounts.
       setSent(true);
     } catch (e: any) {
-      setError(friendlyError(e?.code ?? ''));
+      setError(friendlyError(e?.code ?? ""));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          <Text style={styles.brand}>IIIT Surat</Text>
-          <Text style={styles.title}>Reset your password</Text>
-          <Text style={styles.subtitle}>Enter your account email and we'll send a reset link.</Text>
-
-          {error && <Text style={styles.error}>{error}</Text>}
-          {sent && (
-            <Text style={styles.success}>
-              If that email has an account, a reset link is on its way. Check your inbox.
+    <LinearGradient
+      colors={[colors.gradientStart, colors.gradientEnd]}
+      style={{ flex: 1 }}
+    >
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.brand}>IIIT Surat</Text>
+            <Text style={styles.title}>Reset your password</Text>
+            <Text style={styles.subtitle}>
+              Enter your account email and we'll send a reset link.
             </Text>
-          )}
 
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="you@iiitsurat.ac.in"
-            placeholderTextColor={colors.textSecondary}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
-          />
+            {error && <Text style={styles.error}>{error}</Text>}
+            {sent && (
+              <Text style={styles.success}>
+                If that email has an account, a reset link is on its way. Check
+                your inbox.
+              </Text>
+            )}
 
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleSend} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Send reset link</Text>}
-          </TouchableOpacity>
+            <Text style={styles.label}>Email</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="you@iiitsurat.ac.in"
+              placeholderTextColor={colors.textSecondary}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={email}
+              onChangeText={setEmail}
+            />
 
-          <TouchableOpacity onPress={onNavigateToLogin} style={styles.linkBtn}>
-            <Text style={styles.linkText}>Back to <Text style={styles.linkTextBold}>log in</Text></Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={handleSend}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.primaryBtnText}>Send reset link</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={onNavigateToLogin}
+              style={styles.linkBtn}
+            >
+              <Text style={styles.linkText}>
+                Back to <Text style={styles.linkTextBold}>log in</Text>
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { flexGrow: 1, padding: spacing.lg, justifyContent: 'center' },
-  brand: { ...typography.caption, color: colors.primary, fontWeight: '700', letterSpacing: 1, marginBottom: spacing.xs },
+  container: { flex: 1 },
+  scrollContent: { flexGrow: 1, padding: spacing.lg, justifyContent: "center" },
+  brand: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: "700",
+    letterSpacing: 1,
+    marginBottom: spacing.xs,
+  },
   title: { ...typography.h1, color: colors.textPrimary },
-  subtitle: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.lg },
+  subtitle: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
+  },
   error: {
     color: colors.danger,
-    backgroundColor: '#FCEAEB',
+    backgroundColor: "#FCEAEB",
     padding: spacing.sm,
     borderRadius: radius.sm,
     marginBottom: spacing.md,
@@ -112,17 +156,23 @@ const styles = StyleSheet.create({
   },
   success: {
     color: colors.success,
-    backgroundColor: '#E8F7EE',
+    backgroundColor: "#E8F7EE",
     padding: spacing.sm,
     borderRadius: radius.sm,
     marginBottom: spacing.md,
     ...typography.caption,
   },
-  label: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.xs, marginTop: spacing.sm },
+  label: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+    marginTop: spacing.sm,
+  },
   input: {
     backgroundColor: colors.surface,
+    ...clayShadowSoft,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(11,61,145,0.12)",
     borderRadius: radius.sm,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -133,11 +183,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderRadius: radius.md,
     paddingVertical: spacing.md,
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: spacing.lg,
   },
-  primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  linkBtn: { marginTop: spacing.lg, alignItems: 'center' },
+  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  linkBtn: { marginTop: spacing.lg, alignItems: "center" },
   linkText: { ...typography.body, color: colors.textSecondary },
-  linkTextBold: { color: colors.primary, fontWeight: '700' },
+  linkTextBold: { color: colors.primary, fontWeight: "700" },
 });

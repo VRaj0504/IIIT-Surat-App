@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -9,11 +9,23 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, radius, typography } from '../../theme/theme';
-import { useAuth, Role, ALLOWED_EMAIL_DOMAIN, isAllowedEmailDomain } from '../../context/AuthContext';
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import {
+  colors,
+  spacing,
+  radius,
+  typography,
+  clayShadowSoft,
+} from "../../theme/theme";
+import {
+  useAuth,
+  Role,
+  ALLOWED_EMAIL_DOMAIN,
+  isAllowedEmailDomain,
+} from "../../context/AuthContext";
 
 type Props = {
   onNavigateToLogin: () => void;
@@ -21,24 +33,24 @@ type Props = {
 
 function friendlyError(code: string): string {
   switch (code) {
-    case 'auth/email-already-in-use':
-      return 'An account with this email already exists.';
-    case 'auth/invalid-email':
-      return 'That email address looks invalid.';
-    case 'auth/weak-password':
-      return 'Password should be at least 6 characters.';
+    case "auth/email-already-in-use":
+      return "An account with this email already exists.";
+    case "auth/invalid-email":
+      return "That email address looks invalid.";
+    case "auth/weak-password":
+      return "Password should be at least 6 characters.";
     default:
-      return 'Something went wrong. Please try again.';
+      return "Something went wrong. Please try again.";
   }
 }
 
 export default function SignUpScreen({ onNavigateToLogin }: Props) {
   const { signUp, signInWithGoogle } = useAuth();
-  const [role, setRole] = useState<Role>('student');
-  const [name, setName] = useState('');
-  const [enrollmentNumber, setEnrollmentNumber] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<Role>("student");
+  const [name, setName] = useState("");
+  const [enrollmentNumber, setEnrollmentNumber] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -50,7 +62,7 @@ export default function SignUpScreen({ onNavigateToLogin }: Props) {
     try {
       await signInWithGoogle();
     } catch (e: any) {
-      setError(e?.message ?? 'Google sign-in failed. Please try again.');
+      setError(e?.message ?? "Google sign-in failed. Please try again.");
     } finally {
       setGoogleLoading(false);
     }
@@ -59,11 +71,11 @@ export default function SignUpScreen({ onNavigateToLogin }: Props) {
   const handleSignUp = async () => {
     setError(null);
     if (!name.trim() || !email.trim() || !password) {
-      setError('Fill in all required fields.');
+      setError("Fill in all required fields.");
       return;
     }
-    if (role === 'student' && !enrollmentNumber.trim()) {
-      setError('Enrollment number is required for students.');
+    if (role === "student" && !enrollmentNumber.trim()) {
+      setError("Enrollment number is required for students.");
       return;
     }
     if (!isAllowedEmailDomain(email)) {
@@ -71,7 +83,7 @@ export default function SignUpScreen({ onNavigateToLogin }: Props) {
       return;
     }
     if (password.length < 6) {
-      setError('Password should be at least 6 characters.');
+      setError("Password should be at least 6 characters.");
       return;
     }
     setLoading(true);
@@ -81,7 +93,8 @@ export default function SignUpScreen({ onNavigateToLogin }: Props) {
         email: email.trim(),
         password,
         role,
-        enrollmentNumber: role === 'student' ? enrollmentNumber.trim() : undefined,
+        enrollmentNumber:
+          role === "student" ? enrollmentNumber.trim() : undefined,
       });
     } catch (e: any) {
       // Our own roster-rejection error has no `.code` (it's not a Firebase
@@ -94,137 +107,228 @@ export default function SignUpScreen({ onNavigateToLogin }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          <Text style={styles.brand}>IIIT Surat</Text>
-          <Text style={styles.title}>Create account</Text>
-          <Text style={styles.subtitle}>Join as a student or faculty member</Text>
+    <LinearGradient
+      colors={[colors.gradientStart, colors.gradientEnd]}
+      style={{ flex: 1 }}
+    >
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.brand}>IIIT Surat</Text>
+            <Text style={styles.title}>Create account</Text>
+            <Text style={styles.subtitle}>
+              Join as a student or faculty member
+            </Text>
 
-          {error && <Text style={styles.error}>{error}</Text>}
+            {error && <Text style={styles.error}>{error}</Text>}
 
-          <View style={styles.roleToggle}>
-            <TouchableOpacity
-              style={[styles.roleBtn, role === 'student' && styles.roleBtnActive]}
-              onPress={() => setRole('student')}
-            >
-              <Text style={[styles.roleBtnText, role === 'student' && styles.roleBtnTextActive]}>Student</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.roleBtn, role === 'faculty' && styles.roleBtnActive]}
-              onPress={() => setRole('faculty')}
-            >
-              <Text style={[styles.roleBtnText, role === 'faculty' && styles.roleBtnTextActive]}>Faculty</Text>
-            </TouchableOpacity>
-          </View>
+            <View style={styles.roleToggle}>
+              <TouchableOpacity
+                style={[
+                  styles.roleBtn,
+                  role === "student" && styles.roleBtnActive,
+                ]}
+                onPress={() => setRole("student")}
+              >
+                <Text
+                  style={[
+                    styles.roleBtnText,
+                    role === "student" && styles.roleBtnTextActive,
+                  ]}
+                >
+                  Student
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.roleBtn,
+                  role === "faculty" && styles.roleBtnActive,
+                ]}
+                onPress={() => setRole("faculty")}
+              >
+                <Text
+                  style={[
+                    styles.roleBtnText,
+                    role === "faculty" && styles.roleBtnTextActive,
+                  ]}
+                >
+                  Faculty
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-          <Text style={styles.label}>Full Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Your name"
-            placeholderTextColor={colors.textSecondary}
-            value={name}
-            onChangeText={setName}
-          />
-
-          {role === 'student' && (
-            <>
-              <Text style={styles.label}>Enrollment Number</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="UG25CSE114"
-                placeholderTextColor={colors.textSecondary}
-                autoCapitalize="characters"
-                value={enrollmentNumber}
-                onChangeText={setEnrollmentNumber}
-              />
-            </>
-          )}
-
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="you@iiitsurat.ac.in"
-            placeholderTextColor={colors.textSecondary}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
-          />
-
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.passwordRow}>
+            <Text style={styles.label}>Full Name</Text>
             <TextInput
-              style={styles.passwordInput}
-              placeholder="At least 6 characters"
+              style={styles.input}
+              placeholder="Your name"
               placeholderTextColor={colors.textSecondary}
-              secureTextEntry={!showPassword}
-              value={password}
-              onChangeText={setPassword}
+              value={name}
+              onChangeText={setName}
             />
-            <TouchableOpacity
-              onPress={() => setShowPassword((v) => !v)}
-              style={styles.eyeBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
 
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleSignUp} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Sign Up</Text>}
-          </TouchableOpacity>
-
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <TouchableOpacity style={styles.googleBtn} onPress={handleGoogleSignIn} disabled={googleLoading}>
-            {googleLoading ? (
-              <ActivityIndicator color={colors.textPrimary} />
-            ) : (
+            {role === "student" && (
               <>
-                <Ionicons name="logo-google" size={18} color={colors.textPrimary} />
-                <Text style={styles.googleBtnText}>Continue with Google</Text>
+                <Text style={styles.label}>Enrollment Number</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="UG25CSE114"
+                  placeholderTextColor={colors.textSecondary}
+                  autoCapitalize="characters"
+                  value={enrollmentNumber}
+                  onChangeText={setEnrollmentNumber}
+                />
               </>
             )}
-          </TouchableOpacity>
 
-          <TouchableOpacity onPress={onNavigateToLogin} style={styles.linkBtn}>
-            <Text style={styles.linkText}>Already have an account? <Text style={styles.linkTextBold}>Log in</Text></Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+            <Text style={styles.label}>Email</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="you@iiitsurat.ac.in"
+              placeholderTextColor={colors.textSecondary}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={email}
+              onChangeText={setEmail}
+            />
+
+            <Text style={styles.label}>Password</Text>
+            <View style={styles.passwordRow}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="At least 6 characters"
+                placeholderTextColor={colors.textSecondary}
+                secureTextEntry={!showPassword}
+                value={password}
+                onChangeText={setPassword}
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword((v) => !v)}
+                style={styles.eyeBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons
+                  name={showPassword ? "eye-off" : "eye"}
+                  size={20}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={handleSignUp}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.primaryBtnText}>Sign Up</Text>
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              style={styles.googleBtn}
+              onPress={handleGoogleSignIn}
+              disabled={googleLoading}
+            >
+              {googleLoading ? (
+                <ActivityIndicator color={colors.textPrimary} />
+              ) : (
+                <>
+                  <Ionicons
+                    name="logo-google"
+                    size={18}
+                    color={colors.textPrimary}
+                  />
+                  <Text style={styles.googleBtnText}>Continue with Google</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={onNavigateToLogin}
+              style={styles.linkBtn}
+            >
+              <Text style={styles.linkText}>
+                Already have an account?{" "}
+                <Text style={styles.linkTextBold}>Log in</Text>
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { flexGrow: 1, padding: spacing.lg, justifyContent: 'center' },
-  brand: { ...typography.caption, color: colors.primary, fontWeight: '700', letterSpacing: 1, marginBottom: spacing.xs },
+  container: { flex: 1 },
+  scrollContent: { flexGrow: 1, padding: spacing.lg, justifyContent: "center" },
+  brand: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: "700",
+    letterSpacing: 1,
+    marginBottom: spacing.xs,
+  },
   title: { ...typography.h1, color: colors.textPrimary },
-  subtitle: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.lg },
+  subtitle: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
+  },
   error: {
     color: colors.danger,
-    backgroundColor: '#FCEAEB',
+    backgroundColor: "#FCEAEB",
     padding: spacing.sm,
     borderRadius: radius.sm,
     marginBottom: spacing.md,
     ...typography.caption,
   },
-  roleToggle: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: 4, marginBottom: spacing.sm },
-  roleBtn: { flex: 1, paddingVertical: spacing.sm, borderRadius: radius.sm, alignItems: 'center' },
+  roleToggle: {
+    flexDirection: "row",
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    ...clayShadowSoft,
+    padding: 4,
+    marginBottom: spacing.sm,
+  },
+  roleBtn: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    alignItems: "center",
+  },
   roleBtnActive: { backgroundColor: colors.primary },
-  roleBtnText: { ...typography.body, color: colors.textPrimary, fontWeight: '600' },
-  roleBtnTextActive: { color: '#fff' },
-  label: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.xs, marginTop: spacing.sm },
+  roleBtnText: {
+    ...typography.body,
+    color: colors.textPrimary,
+    fontWeight: "600",
+  },
+  roleBtnTextActive: { color: "#fff" },
+  label: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+    marginTop: spacing.sm,
+  },
   input: {
     backgroundColor: colors.surface,
+    ...clayShadowSoft,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(11,61,145,0.12)",
     borderRadius: radius.sm,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -232,11 +336,10 @@ const styles = StyleSheet.create({
     ...typography.body,
   },
   passwordRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    ...clayShadowSoft,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
   },
@@ -253,27 +356,38 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderRadius: radius.md,
     paddingVertical: spacing.md,
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: spacing.lg,
   },
-  primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.lg },
+  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: spacing.lg,
+  },
   dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
-  dividerText: { ...typography.caption, color: colors.textSecondary, marginHorizontal: spacing.sm },
+  dividerText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginHorizontal: spacing.sm,
+  },
   googleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: spacing.sm,
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    ...clayShadowSoft,
     borderRadius: radius.md,
     paddingVertical: spacing.md,
     marginTop: spacing.lg,
   },
-  googleBtnText: { ...typography.body, color: colors.textPrimary, fontWeight: '600' },
-  linkBtn: { marginTop: spacing.lg, alignItems: 'center' },
+  googleBtnText: {
+    ...typography.body,
+    color: colors.textPrimary,
+    fontWeight: "600",
+  },
+  linkBtn: { marginTop: spacing.lg, alignItems: "center" },
   linkText: { ...typography.body, color: colors.textSecondary },
-  linkTextBold: { color: colors.primary, fontWeight: '700' },
+  linkTextBold: { color: colors.primary, fontWeight: "700" },
 });

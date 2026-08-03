@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -9,24 +9,31 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RootStackParamList } from '../navigation/types';
-import { colors, spacing, radius, typography } from '../theme/theme';
-import { createClub, subscribeToClubs, Club } from '../firebase/clubsService';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../navigation/types";
+import {
+  colors,
+  spacing,
+  radius,
+  typography,
+  clayShadowSoft,
+} from "../theme/theme";
+import { createClub, subscribeToClubs, Club } from "../firebase/clubsService";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
 export default function CreateClubScreen() {
   const navigation = useNavigation<NavProp>();
 
-  const [name, setName] = useState('');
-  const [category, setCategory] = useState('');
-  const [description, setDescription] = useState('');
-  const [leadName, setLeadName] = useState('');
-  const [leadEmail, setLeadEmail] = useState('');
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("");
+  const [description, setDescription] = useState("");
+  const [leadName, setLeadName] = useState("");
+  const [leadEmail, setLeadEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [topLevelClubs, setTopLevelClubs] = useState<Club[]>([]);
@@ -41,164 +48,240 @@ export default function CreateClubScreen() {
 
   const handleCreate = async () => {
     setError(null);
-    if (!name.trim() || !category.trim() || !description.trim() || !leadName.trim()) {
-      setError('Fill in name, category, description, and lead name.');
+    if (
+      !name.trim() ||
+      !category.trim() ||
+      !description.trim() ||
+      !leadName.trim()
+    ) {
+      setError("Fill in name, category, description, and lead name.");
       return;
     }
     setLoading(true);
     try {
-      await createClub(name.trim(), category.trim(), description.trim(), leadName.trim(), leadEmail.trim() || undefined, parentClubId);
+      await createClub(
+        name.trim(),
+        category.trim(),
+        description.trim(),
+        leadName.trim(),
+        leadEmail.trim() || undefined,
+        parentClubId,
+      );
       navigation.goBack();
     } catch (e: any) {
-      setError(e?.message ?? 'Something went wrong. Please try again.');
+      setError(e?.message ?? "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          <Text style={styles.title}>New Club</Text>
-          <Text style={styles.subtitle}>Set up a club and assign its lead</Text>
+    <LinearGradient
+      colors={[colors.gradientStart, colors.gradientEnd]}
+      style={{ flex: 1 }}
+    >
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ flex: 1 }}
+        >
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.title}>New Club</Text>
+            <Text style={styles.subtitle}>
+              Set up a club and assign its lead
+            </Text>
 
-          {error && <Text style={styles.error}>{error}</Text>}
+            {error && <Text style={styles.error}>{error}</Text>}
 
-          <Text style={styles.label}>Club Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="LCS (Learn Code Solve)"
-            placeholderTextColor={colors.textSecondary}
-            value={name}
-            onChangeText={setName}
-          />
+            <Text style={styles.label}>Club Name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="LCS (Learn Code Solve)"
+              placeholderTextColor={colors.textSecondary}
+              value={name}
+              onChangeText={setName}
+            />
 
-          <Text style={styles.label}>Category</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Technical, Cultural, Sports..."
-            placeholderTextColor={colors.textSecondary}
-            value={category}
-            onChangeText={setCategory}
-          />
+            <Text style={styles.label}>Category</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Technical, Cultural, Sports..."
+              placeholderTextColor={colors.textSecondary}
+              value={category}
+              onChangeText={setCategory}
+            />
 
-          <Text style={styles.label}>Description</Text>
-          <TextInput
-            style={[styles.input, styles.multiline]}
-            placeholder="What does this club do?"
-            placeholderTextColor={colors.textSecondary}
-            value={description}
-            onChangeText={setDescription}
-            multiline
-            numberOfLines={3}
-          />
+            <Text style={styles.label}>Description</Text>
+            <TextInput
+              style={[styles.input, styles.multiline]}
+              placeholder="What does this club do?"
+              placeholderTextColor={colors.textSecondary}
+              value={description}
+              onChangeText={setDescription}
+              multiline
+              numberOfLines={3}
+            />
 
-          <Text style={styles.label}>Lead's Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Full name"
-            placeholderTextColor={colors.textSecondary}
-            value={leadName}
-            onChangeText={setLeadName}
-          />
+            <Text style={styles.label}>Lead's Name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Full name"
+              placeholderTextColor={colors.textSecondary}
+              value={leadName}
+              onChangeText={setLeadName}
+            />
 
-          <Text style={styles.label}>Lead's Account Email (optional)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="lead@iiitsurat.ac.in"
-            placeholderTextColor={colors.textSecondary}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={leadEmail}
-            onChangeText={setLeadEmail}
-          />
-          <Text style={styles.hint}>
-            Leave blank if the lead doesn't have a name yet. If you enter an email but they
-            haven't signed up in the app, that's fine — the club will auto-link to their account
-            the moment they sign up with that exact email. No account yet? No problem.
-          </Text>
+            <Text style={styles.label}>Lead's Account Email (optional)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="lead@iiitsurat.ac.in"
+              placeholderTextColor={colors.textSecondary}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={leadEmail}
+              onChangeText={setLeadEmail}
+            />
+            <Text style={styles.hint}>
+              Leave blank if the lead doesn't have a name yet. If you enter an
+              email but they haven't signed up in the app, that's fine — the
+              club will auto-link to their account the moment they sign up with
+              that exact email. No account yet? No problem.
+            </Text>
 
-          <Text style={styles.label}>Part of a bigger club? (optional)</Text>
-          <Text style={styles.hint}>
-            e.g. Exposure and Groove are sub-clubs under Saaras — pick Saaras here so this club
-            shows up inside it instead of as its own entry on the Clubs tab.
-          </Text>
-          <View style={styles.chipRow}>
-            <TouchableOpacity
-              style={[styles.chip, parentClubId === null && styles.chipSelected]}
-              onPress={() => setParentClubId(null)}
-            >
-              <Text style={[styles.chipText, parentClubId === null && styles.chipTextSelected]}>
-                None — standalone club
-              </Text>
-            </TouchableOpacity>
-            {topLevelClubs.map((c) => (
+            <Text style={styles.label}>Part of a bigger club? (optional)</Text>
+            <Text style={styles.hint}>
+              e.g. Exposure and Groove are sub-clubs under Saaras — pick Saaras
+              here so this club shows up inside it instead of as its own entry
+              on the Clubs tab.
+            </Text>
+            <View style={styles.chipRow}>
               <TouchableOpacity
-                key={c.id}
-                style={[styles.chip, parentClubId === c.id && styles.chipSelected]}
-                onPress={() => setParentClubId(c.id)}
+                style={[
+                  styles.chip,
+                  parentClubId === null && styles.chipSelected,
+                ]}
+                onPress={() => setParentClubId(null)}
               >
-                <Text style={[styles.chipText, parentClubId === c.id && styles.chipTextSelected]}>
-                  {c.name}
+                <Text
+                  style={[
+                    styles.chipText,
+                    parentClubId === null && styles.chipTextSelected,
+                  ]}
+                >
+                  None — standalone club
                 </Text>
               </TouchableOpacity>
-            ))}
-          </View>
+              {topLevelClubs.map((c) => (
+                <TouchableOpacity
+                  key={c.id}
+                  style={[
+                    styles.chip,
+                    parentClubId === c.id && styles.chipSelected,
+                  ]}
+                  onPress={() => setParentClubId(c.id)}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      parentClubId === c.id && styles.chipTextSelected,
+                    ]}
+                  >
+                    {c.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleCreate} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Create Club</Text>}
-          </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={handleCreate}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.primaryBtnText}>Create Club</Text>
+              )}
+            </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1 },
   scrollContent: { flexGrow: 1, padding: spacing.lg },
   title: { ...typography.h1, color: colors.textPrimary },
-  subtitle: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.lg },
+  subtitle: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginBottom: spacing.lg,
+  },
   error: {
     color: colors.danger,
-    backgroundColor: '#FCEAEB',
+    backgroundColor: "#FCEAEB",
     padding: spacing.sm,
     borderRadius: radius.sm,
     marginBottom: spacing.md,
     ...typography.caption,
   },
-  label: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.xs, marginTop: spacing.sm },
+  label: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+    marginTop: spacing.sm,
+  },
   input: {
     backgroundColor: colors.surface,
+    ...clayShadowSoft,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: "rgba(11,61,145,0.12)",
     borderRadius: radius.sm,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     color: colors.textPrimary,
     ...typography.body,
   },
-  multiline: { minHeight: 80, textAlignVertical: 'top' },
-  hint: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xs },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm },
+  multiline: { minHeight: 80, textAlignVertical: "top" },
+  hint: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
   chip: {
-    borderWidth: 1,
-    borderColor: colors.border,
+    ...clayShadowSoft,
     borderRadius: radius.full,
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
     backgroundColor: colors.surface,
   },
-  chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chipText: { ...typography.caption, color: colors.textPrimary, fontWeight: '600' },
-  chipTextSelected: { color: '#fff' },
+  chipSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  chipText: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    fontWeight: "600",
+  },
+  chipTextSelected: { color: "#fff" },
   primaryBtn: {
     backgroundColor: colors.primary,
     borderRadius: radius.md,
     paddingVertical: spacing.md,
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: spacing.lg,
   },
-  primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
 });

@@ -161,5 +161,60 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
       allow delete: if isAdmin();
     }
+
+    function isFaculty() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty';
+    }
+
+    // Mess counter menu (thali/snacks/beverages + price). Faculty stand in
+    // as "mess staff" for now — swap for a dedicated role if the mess team
+    // ever gets their own accounts distinct from teaching faculty.
+    match /messMenuItems/{itemId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin() || isFaculty();
+    }
+
+    // Daily token counter (single doc: counters/messToken) used to hand out
+    // sequential, per-day token numbers. Only ever touched via the atomic
+    // transaction in messService.placeOrder(), never written directly by
+    // the client outside that flow.
+    match /counters/{counterId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // A student can only ever read/create their own orders (never someone
+    // else's) and can never edit amounts/status after creation — only
+    // faculty/mess-staff can transition status (pending -> ready -> served).
+    match /messOrders/{orderId} {
+      allow read: if isAdmin() || isFaculty() ||
+        (request.auth != null && resource.data.uid == request.auth.uid);
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      allow update: if isAdmin() || isFaculty();
+      allow delete: if isAdmin();
+    }
+
+    // One doc per student, id == their uid. Balance is only ever mutated
+    // server-side-equivalent via the atomic transactions in messService.ts
+    // (placeOrder debits, approveRecharge credits) — direct client writes
+    // to `balance` are blocked so a student can't just set their own
+    // balance to anything.
+    match /wallets/{uid} {
+      allow read: if isAdmin() || isFaculty() || (request.auth != null && request.auth.uid == uid);
+      allow write: if isAdmin() || isFaculty();
+    }
+
+    // Recharge requests (student-submitted, faculty/mess-staff-approved)
+    // and the debit record created alongside every order. A student can
+    // create their own recharge request and read their own history, but
+    // only faculty/mess-staff can approve/reject (status transitions).
+    match /walletTransactions/{txnId} {
+      allow read: if isAdmin() || isFaculty() ||
+        (request.auth != null && resource.data.uid == request.auth.uid);
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      allow update: if isAdmin() || isFaculty();
+      allow delete: if isAdmin();
+    }
   }
 }

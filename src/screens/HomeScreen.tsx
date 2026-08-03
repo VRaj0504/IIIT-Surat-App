@@ -19,6 +19,7 @@ type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
 const quickLinks: { label: string; icon: keyof typeof Ionicons.glyphMap; route: keyof RootStackParamList; tint: string }[] = [
   { label: 'Attendance', icon: 'checkmark-done-outline', route: 'Attendance', tint: '#0B3D91' },
+  { label: 'Order Food', icon: 'fast-food-outline', route: 'MessOrder', tint: '#E5484D' },
   { label: 'Mess Menu', icon: 'restaurant-outline', route: 'MessMenu', tint: '#E5484D' },
   { label: 'CGPA Calculator', icon: 'calculator-outline', route: 'CGPACalculator', tint: '#22A559' },
   { label: 'Academic Calendar', icon: 'calendar-outline', route: 'AcademicCalendar', tint: '#F5A623' },
@@ -28,10 +29,15 @@ const quickLinks: { label: string; icon: keyof typeof Ionicons.glyphMap; route: 
   { label: 'Placements', icon: 'briefcase-outline', route: 'Placement', tint: '#EC4899' },
 ];
 
+const facultyQuickLinks: { label: string; icon: keyof typeof Ionicons.glyphMap; route: keyof RootStackParamList; tint: string }[] = [
+  { label: 'Mess Counter', icon: 'qr-code-outline', route: 'MessStaff', tint: '#22A559' },
+];
+
 export default function HomeScreen() {
   const navigation = useNavigation<NavProp>();
   const { profile } = useAuth();
   const isFaculty = profile?.role === 'faculty';
+  const links = isFaculty ? [...quickLinks, ...facultyQuickLinks] : quickLinks;
   const { overallPercentage, loaded } = useAttendance();
 
   const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
