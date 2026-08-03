@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -26,8 +27,8 @@ import { useAuth } from "../context/AuthContext";
 import ClayCard from "../components/ClayCard";
 import {
   subscribeToMenuItems,
-  subscribeToWalletBalance,
   placeOrder,
+  buildUpiPaymentUrl,
   MessMenuItem,
   MessCategory,
   CartLine,
@@ -52,7 +53,6 @@ export default function MessOrderScreen() {
 
   const [items, setItems] = useState<MessMenuItem[]>([]);
   const [loadingItems, setLoadingItems] = useState(true);
-  const [balance, setBalance] = useState(0);
   const [cart, setCart] = useState<Record<string, number>>({}); // itemId -> qty
   const [activeCategory, setActiveCategory] = useState<MessCategory>("Thali");
   const [placing, setPlacing] = useState(false);
@@ -66,12 +66,6 @@ export default function MessOrderScreen() {
     });
     return unsub;
   }, []);
-
-  useEffect(() => {
-    if (!profile?.uid) return;
-    const unsub = subscribeToWalletBalance(profile.uid, setBalance);
-    return unsub;
-  }, [profile?.uid]);
 
   const semester = profile?.admissionYear
     ? getCurrentSemester(profile.admissionYear)
@@ -91,8 +85,6 @@ export default function MessOrderScreen() {
     return unsub;
   }, [profile?.branch, profile?.section, semester]);
 
-  // Re-derive window status every 30s so "opens in X min" / "closes in X
-  // min" and the open/closed state itself update live without a refresh.
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(interval);
@@ -116,10 +108,15 @@ export default function MessOrderScreen() {
   const totalCount = cartLines.reduce((sum, l) => sum + l.qty, 0);
 
   const changeQty = (itemId: string, delta: number) => {
+    const item = items.find((i) => i.id === itemId);
+    const cap =
+      item && typeof item.remainingQty === "number"
+        ? item.remainingQty
+        : Infinity;
     setCart((prev) => {
       const next = {
         ...prev,
-        [itemId]: Math.max(0, (prev[itemId] ?? 0) + delta),
+        [itemId]: Math.min(cap, Math.max(0, (prev[itemId] ?? 0) + delta)),
       };
       return next;
     });
@@ -129,30 +126,33 @@ export default function MessOrderScreen() {
     if (!profile?.uid || cartLines.length === 0) return;
     if (!orderingOpen) {
       const message =
-        windowStatus.state === "not_yet_open"
-          ? `Ordering opens at ${windowStatus.breakStart}, 15 min before your break — in ${windowStatus.opensInMinutes} min.`
+        windowStatus.state === "cutoff_passed"
+          ? `Ordering closed 15 min before your ${windowStatus.breakStart} break so the mess has time to prep. It'll open again for your next break.`
           : "There's no break window on your timetable right now, so ordering is closed.";
       Alert.alert("Ordering closed", message);
       return;
     }
-    if (totalAmount > balance) {
-      Alert.alert(
-        "Insufficient balance",
-        `Your order total is ₹${totalAmount} but your wallet balance is ₹${balance}. Recharge your wallet first.`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Go to Wallet",
-            onPress: () => navigation.navigate("MessWallet"),
-          },
-        ],
-      );
-      return;
-    }
     setPlacing(true);
     try {
-      const orderId = await placeOrder(profile.uid, profile.name, cartLines);
+      const { orderId, tokenNumber } = await placeOrder(
+        profile.uid,
+        profile.name,
+        cartLines,
+        windowStatus.state === "open"
+          ? { start: windowStatus.breakStart, end: windowStatus.breakEnd }
+          : null,
+      );
+      const upiUrl = buildUpiPaymentUrl({ totalAmount, tokenNumber });
+      const canOpen = await Linking.canOpenURL(upiUrl);
       setCart({});
+      if (canOpen) {
+        await Linking.openURL(upiUrl);
+      } else {
+        Alert.alert(
+          "No UPI app found",
+          "Pay the canteen directly using its QR code, then show your token at the counter.",
+        );
+      }
       navigation.replace("MessToken", { orderId });
     } catch (e: any) {
       Alert.alert("Could not place order", e?.message ?? "Please try again.");
@@ -169,31 +169,23 @@ export default function MessOrderScreen() {
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.headerRow}>
           <Text style={styles.title}>Order Food</Text>
-          <TouchableOpacity
-            style={styles.walletChip}
-            onPress={() => navigation.navigate("MessWallet")}
-          >
-            <Ionicons name="wallet-outline" size={16} color={colors.primary} />
-            <Text style={styles.walletChipText}>₹{balance}</Text>
-          </TouchableOpacity>
         </View>
 
         {windowStatus.state === "open" && (
           <View style={[styles.windowBanner, styles.windowBannerOpen]}>
             <Ionicons name="time-outline" size={14} color={colors.primary} />
             <Text style={styles.windowBannerText}>
-              Ordering open — closes at {windowStatus.breakEnd} (
-              {windowStatus.closesInMinutes} min left)
+              Order by {windowStatus.breakStart} minus 15 min — closes in{" "}
+              {windowStatus.closesInMinutes} min
             </Text>
           </View>
         )}
-        {windowStatus.state === "not_yet_open" && (
-          <View style={[styles.windowBanner, styles.windowBannerWaiting]}>
-            <Ionicons name="hourglass-outline" size={14} color="#8a6d00" />
-            <Text style={[styles.windowBannerText, { color: "#8a6d00" }]}>
-              Ordering opens at {windowStatus.breakStart} (in{" "}
-              {windowStatus.opensInMinutes} min) — browse and build your cart
-              now
+        {windowStatus.state === "cutoff_passed" && (
+          <View style={[styles.windowBanner, styles.windowBannerClosed]}>
+            <Ionicons name="close-circle-outline" size={14} color="#a13c3c" />
+            <Text style={[styles.windowBannerText, { color: "#a13c3c" }]}>
+              Ordering closed for your {windowStatus.breakStart} break — the
+              15 min prep cutoff has passed
             </Text>
           </View>
         )}
@@ -251,11 +243,18 @@ export default function MessOrderScreen() {
             ) : (
               itemsInCategory.map((item) => {
                 const qty = cart[item.id] ?? 0;
+                const limited = typeof item.remainingQty === "number";
+                const atCap = limited && qty >= (item.remainingQty as number);
                 return (
                   <ClayCard key={item.id} soft style={styles.itemRow}>
                     <View style={styles.itemInfo}>
                       <Text style={styles.itemName}>{item.name}</Text>
                       <Text style={styles.itemPrice}>₹{item.price}</Text>
+                      {limited && (
+                        <Text style={styles.itemStock}>
+                          {item.remainingQty} left today
+                        </Text>
+                      )}
                     </View>
                     {qty === 0 ? (
                       <TouchableOpacity
@@ -278,13 +277,17 @@ export default function MessOrderScreen() {
                         </TouchableOpacity>
                         <Text style={styles.stepperQty}>{qty}</Text>
                         <TouchableOpacity
-                          style={styles.stepperBtn}
-                          onPress={() => changeQty(item.id, 1)}
+                          style={[
+                            styles.stepperBtn,
+                            atCap && styles.stepperBtnDisabled,
+                          ]}
+                          onPress={() => !atCap && changeQty(item.id, 1)}
+                          disabled={atCap}
                         >
                           <Ionicons
                             name="add"
                             size={16}
-                            color={colors.primary}
+                            color={atCap ? colors.textSecondary : colors.primary}
                           />
                         </TouchableOpacity>
                       </View>
@@ -312,14 +315,14 @@ export default function MessOrderScreen() {
                   !orderingOpen && styles.placeOrderBtnDisabled,
                 ]}
                 onPress={handlePlaceOrder}
-                disabled={placing}
+                disabled={placing || !orderingOpen}
               >
                 {placing ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
                   <>
                     <Text style={styles.placeOrderText}>
-                      {orderingOpen ? "Get Token" : "Ordering closed"}
+                      {orderingOpen ? "Pay & Get Token" : "Ordering closed"}
                     </Text>
                     <Ionicons name="arrow-forward" size={16} color="#fff" />
                   </>
@@ -343,21 +346,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   title: { ...typography.h1, color: colors.textPrimary },
-  walletChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: colors.claySurface,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: radius.full,
-    ...clayShadowSoft,
-  },
-  walletChipText: {
-    ...typography.body,
-    color: colors.primary,
-    fontWeight: "700",
-  },
   windowBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -425,6 +413,12 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
+  itemStock: {
+    ...typography.caption,
+    color: colors.accent,
+    marginTop: 2,
+    fontWeight: "600",
+  },
   addBtn: {
     backgroundColor: colors.primary,
     paddingVertical: 8,
@@ -441,6 +435,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  stepperBtnDisabled: { opacity: 0.4 },
   stepperQty: {
     ...typography.body,
     color: colors.textPrimary,

@@ -96,7 +96,7 @@ export default function HomeScreen() {
 
           <Text style={styles.sectionTitle}>Quick Access</Text>
           <View style={styles.grid}>
-            {quickLinks.map((item) => (
+            {links.map((item) => (
               <ClayCard
                 key={item.label}
                 flat

@@ -6,7 +6,6 @@ import type { Notice } from "../firebase/noticesService";
 export type RootTabParamList = {
   Home: undefined;
   Timetable: undefined;
-  Attendance: undefined;
   Notices: undefined;
   Clubs: undefined;
   Profile: undefined;

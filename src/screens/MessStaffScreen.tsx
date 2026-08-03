@@ -27,18 +27,28 @@ import {
   findOrderByToken,
   getOrderById,
   markOrderServed,
+  markOrderReady,
+  confirmPayment,
+  subscribeToQueue,
   MessOrder,
   subscribeToPendingRecharges,
   approveRecharge,
   rejectRecharge,
   WalletTransaction,
+  subscribeToAllMenuItems,
+  setDailyQuantity,
+  clearDailyQuantity,
+  MessMenuItem,
 } from "../firebase/messService";
 
-type Tab = "verify" | "recharges";
+type Tab = "queue" | "verify" | "recharges" | "stock";
 
 export default function MessStaffScreen() {
   const { profile } = useAuth();
-  const [tab, setTab] = useState<Tab>("verify");
+  const [tab, setTab] = useState<Tab>("queue");
+
+  const [queue, setQueue] = useState<MessOrder[]>([]);
+  const [queueActionId, setQueueActionId] = useState<string | null>(null);
 
   const [tokenInput, setTokenInput] = useState("");
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -49,11 +59,53 @@ export default function MessStaffScreen() {
   const [scanLock, setScanLock] = useState(false);
 
   const [pending, setPending] = useState<WalletTransaction[]>([]);
+  const [menuItems, setMenuItems] = useState<MessMenuItem[]>([]);
+  const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
+  const [savingItemId, setSavingItemId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsub = subscribeToQueue(setQueue);
+    return unsub;
+  }, []);
 
   useEffect(() => {
     const unsub = subscribeToPendingRecharges(setPending);
     return unsub;
   }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToAllMenuItems(setMenuItems);
+    return unsub;
+  }, []);
+
+  const handleSetQuantity = async (item: MessMenuItem) => {
+    const raw = qtyDrafts[item.id];
+    const parsed = raw === undefined ? NaN : parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      Alert.alert("Enter a number", "Type how many are available today (0 or more).");
+      return;
+    }
+    setSavingItemId(item.id);
+    try {
+      await setDailyQuantity(item.id, parsed);
+      setQtyDrafts((prev) => ({ ...prev, [item.id]: "" }));
+    } catch (e: any) {
+      Alert.alert("Could not update stock", e?.message ?? "Please try again.");
+    } finally {
+      setSavingItemId(null);
+    }
+  };
+
+  const handleClearQuantity = async (item: MessMenuItem) => {
+    setSavingItemId(item.id);
+    try {
+      await clearDailyQuantity(item.id);
+    } catch (e: any) {
+      Alert.alert("Could not update stock", e?.message ?? "Please try again.");
+    } finally {
+      setSavingItemId(null);
+    }
+  };
 
   const lookupToken = async () => {
     if (!tokenInput.trim()) return;
@@ -87,13 +139,62 @@ export default function MessStaffScreen() {
     }
   };
 
+  const handleConfirmPayment = async () => {
+    if (!foundOrder || !profile?.uid) return;
+    try {
+      await confirmPayment(foundOrder.id, profile.uid);
+      setFoundOrder({
+        ...foundOrder,
+        paymentStatus: "paid",
+        paymentConfirmedBy: profile.uid,
+      });
+    } catch (e: any) {
+      Alert.alert("Could not confirm payment", e?.message ?? "Please try again.");
+    }
+  };
+
   const handleServe = async () => {
     if (!foundOrder || !profile?.uid) return;
+    if (foundOrder.paymentStatus !== "paid") {
+      Alert.alert(
+        "Payment not confirmed",
+        "Confirm the payment landed in the canteen's UPI account before serving.",
+      );
+      return;
+    }
     try {
       await markOrderServed(foundOrder.id, profile.uid);
       setFoundOrder({ ...foundOrder, status: "served" });
     } catch (e: any) {
       Alert.alert("Could not mark served", e?.message ?? "Please try again.");
+    }
+  };
+
+  // Confirm payment / mark ready straight from the live queue, as orders
+  // come in — not gated on the student being physically at the counter.
+  // Doing this ambiently is what keeps the counter itself down to a single
+  // fast tap instead of a full check each time someone walks up.
+  const handleQueueConfirmPayment = async (order: MessOrder) => {
+    if (!profile?.uid) return;
+    setQueueActionId(order.id);
+    try {
+      await confirmPayment(order.id, profile.uid);
+    } catch (e: any) {
+      Alert.alert("Could not confirm payment", e?.message ?? "Please try again.");
+    } finally {
+      setQueueActionId(null);
+    }
+  };
+
+  const handleQueueMarkReady = async (order: MessOrder) => {
+    if (!profile?.uid) return;
+    setQueueActionId(order.id);
+    try {
+      await markOrderReady(order.id, profile.uid);
+    } catch (e: any) {
+      Alert.alert("Could not mark ready", e?.message ?? "Please try again.");
+    } finally {
+      setQueueActionId(null);
     }
   };
 
@@ -125,6 +226,16 @@ export default function MessStaffScreen() {
 
         <View style={styles.tabRow}>
           <TouchableOpacity
+            style={[styles.tab, tab === "queue" && styles.tabActive]}
+            onPress={() => setTab("queue")}
+          >
+            <Text
+              style={[styles.tabText, tab === "queue" && styles.tabTextActive]}
+            >
+              Queue{queue.length > 0 ? ` (${queue.length})` : ""}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.tab, tab === "verify" && styles.tabActive]}
             onPress={() => setTab("verify")}
           >
@@ -147,9 +258,126 @@ export default function MessStaffScreen() {
               Recharges{pending.length > 0 ? ` (${pending.length})` : ""}
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, tab === "stock" && styles.tabActive]}
+            onPress={() => setTab("stock")}
+          >
+            <Text
+              style={[styles.tabText, tab === "stock" && styles.tabTextActive]}
+            >
+              Stock
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {tab === "verify" ? (
+        {tab === "queue" && (
+          <ScrollView
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.helperText}>
+              Confirm payments and mark food ready here as orders come in —
+              students only need a quick tap-and-go at the counter once
+              both are done, instead of everyone waiting while you check
+              each order from scratch.
+            </Text>
+            {queue.length === 0 ? (
+              <Text style={[styles.helperText, { marginTop: spacing.md }]}>
+                No active orders right now.
+              </Text>
+            ) : (
+              queue.map((order) => {
+                const busy = queueActionId === order.id;
+                const itemSummary = order.items
+                  .map((line) => `${line.qty}× ${line.name}`)
+                  .join(", ");
+                return (
+                  <View key={order.id} style={styles.queueRow}>
+                    <View style={styles.queueTopRow}>
+                      <Text style={styles.queueToken}>{order.tokenNumber}</Text>
+                      <Text style={styles.queueAmount}>
+                        ₹{order.totalAmount}
+                      </Text>
+                    </View>
+                    <Text style={styles.queueName}>{order.studentName}</Text>
+                    <Text style={styles.queueItems} numberOfLines={2}>
+                      {itemSummary}
+                    </Text>
+                    {order.pickupSlot && (
+                      <Text style={styles.queueSlot}>
+                        Pickup slot: {order.pickupSlot}
+                      </Text>
+                    )}
+                    <View style={styles.queueActionsRow}>
+                      {order.paymentStatus === "paid" ? (
+                        <View style={styles.queueDoneBadge}>
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={15}
+                            color={colors.success}
+                          />
+                          <Text style={styles.queueDoneText}>Paid</Text>
+                        </View>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.queueActionBtn}
+                          disabled={busy}
+                          onPress={() => handleQueueConfirmPayment(order)}
+                        >
+                          {busy ? (
+                            <ActivityIndicator color="#fff" size="small" />
+                          ) : (
+                            <Text style={styles.queueActionBtnText}>
+                              Confirm Payment
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      )}
+
+                      {order.status === "ready" ? (
+                        <View style={styles.queueDoneBadge}>
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={15}
+                            color={colors.success}
+                          />
+                          <Text style={styles.queueDoneText}>Ready</Text>
+                        </View>
+                      ) : (
+                        <TouchableOpacity
+                          style={[
+                            styles.queueActionBtn,
+                            styles.queueActionBtnSecondary,
+                          ]}
+                          disabled={busy}
+                          onPress={() => handleQueueMarkReady(order)}
+                        >
+                          {busy ? (
+                            <ActivityIndicator
+                              color={colors.primary}
+                              size="small"
+                            />
+                          ) : (
+                            <Text
+                              style={[
+                                styles.queueActionBtnText,
+                                styles.queueActionBtnTextSecondary,
+                              ]}
+                            >
+                              Mark Ready
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </ScrollView>
+        )}
+
+        {tab === "verify" && (
           <ScrollView
             contentContainerStyle={styles.content}
             showsVerticalScrollIndicator={false}
@@ -265,6 +493,32 @@ export default function MessStaffScreen() {
                     />
                     <Text style={styles.servedBadgeText}>Already served</Text>
                   </View>
+                ) : foundOrder.paymentStatus !== "paid" ? (
+                  <>
+                    <View style={styles.paymentPendingBadge}>
+                      <Ionicons
+                        name="hourglass-outline"
+                        size={16}
+                        color="#8a6d00"
+                      />
+                      <Text style={styles.paymentPendingText}>
+                        Payment not yet confirmed — check the canteen's UPI
+                        account for ₹{foundOrder.totalAmount} with note "Mess
+                        order {foundOrder.tokenNumber}"
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.confirmPaymentBtn}
+                      onPress={handleConfirmPayment}
+                    >
+                      <Ionicons
+                        name="checkmark-circle-outline"
+                        size={18}
+                        color="#fff"
+                      />
+                      <Text style={styles.serveBtnText}>Confirm Payment</Text>
+                    </TouchableOpacity>
+                  </>
                 ) : (
                   <TouchableOpacity
                     style={styles.serveBtn}
@@ -277,7 +531,9 @@ export default function MessStaffScreen() {
               </View>
             )}
           </ScrollView>
-        ) : (
+        )}
+
+        {tab === "recharges" && (
           <ScrollView
             contentContainerStyle={styles.content}
             showsVerticalScrollIndicator={false}
@@ -313,6 +569,57 @@ export default function MessStaffScreen() {
                 </View>
               ))
             )}
+          </ScrollView>
+        )}
+
+        {tab === "stock" && (
+          <ScrollView
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.helperText}>
+              Set how many of each item are available today. Leave blank /
+              tap "Unlimited" for items you don't want to cap.
+            </Text>
+            {menuItems.map((item) => (
+              <View key={item.id} style={styles.stockRow}>
+                <View style={styles.stockInfo}>
+                  <Text style={styles.rechargeName}>{item.name}</Text>
+                  <Text style={styles.rechargeRef}>
+                    {typeof item.remainingQty === "number"
+                      ? `${item.remainingQty} left of ${item.dailyQty} today`
+                      : "Unlimited"}
+                  </Text>
+                </View>
+                <TextInput
+                  style={styles.stockInput}
+                  value={qtyDrafts[item.id] ?? ""}
+                  onChangeText={(v) =>
+                    setQtyDrafts((prev) => ({
+                      ...prev,
+                      [item.id]: v.replace(/[^0-9]/g, ""),
+                    }))
+                  }
+                  placeholder="qty"
+                  placeholderTextColor={colors.textSecondary}
+                  keyboardType="number-pad"
+                />
+                <TouchableOpacity
+                  style={styles.stockSetBtn}
+                  onPress={() => handleSetQuantity(item)}
+                  disabled={savingItemId === item.id}
+                >
+                  <Text style={styles.stockSetBtnText}>Set</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.stockClearBtn}
+                  onPress={() => handleClearQuantity(item)}
+                  disabled={savingItemId === item.id}
+                >
+                  <Text style={styles.stockClearBtnText}>∞</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
           </ScrollView>
         )}
       </SafeAreaView>
@@ -459,6 +766,31 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   serveBtnText: { ...typography.body, color: "#fff", fontWeight: "700" },
+  paymentPendingBadge: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    backgroundColor: "#fff6dd",
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginTop: spacing.md,
+  },
+  paymentPendingText: {
+    ...typography.caption,
+    color: "#8a6d00",
+    flex: 1,
+    fontWeight: "600",
+  },
+  confirmPaymentBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.sm,
+  },
   servedBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -468,6 +800,76 @@ const styles = StyleSheet.create({
   },
   servedBadgeText: {
     ...typography.body,
+    color: colors.success,
+    fontWeight: "700",
+  },
+  queueRow: {
+    backgroundColor: colors.claySurface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    ...clayShadowSoft,
+  },
+  queueTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  queueToken: { ...typography.h3, color: colors.primary, fontWeight: "800" },
+  queueAmount: { ...typography.h3, color: colors.textPrimary },
+  queueName: {
+    ...typography.body,
+    color: colors.textPrimary,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  queueItems: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  queueSlot: {
+    ...typography.caption,
+    color: colors.primary,
+    marginTop: 4,
+    fontWeight: "600",
+  },
+  queueActionsRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  queueActionBtn: {
+    flex: 1,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  queueActionBtnSecondary: {
+    backgroundColor: colors.claySurface,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  queueActionBtnText: {
+    ...typography.caption,
+    color: "#fff",
+    fontWeight: "700",
+  },
+  queueActionBtnTextSecondary: { color: colors.primary },
+  queueDoneBadge: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    backgroundColor: colors.success + "22",
+    borderRadius: radius.md,
+    paddingVertical: 8,
+  },
+  queueDoneText: {
+    ...typography.caption,
     color: colors.success,
     fontWeight: "700",
   },
@@ -493,6 +895,44 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   rechargeActions: { flexDirection: "row", gap: spacing.sm },
+  stockRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.claySurface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+    ...clayShadowSoft,
+  },
+  stockInfo: { flex: 1 },
+  stockInput: {
+    width: 56,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.xs,
+    ...typography.body,
+    color: colors.textPrimary,
+    textAlign: "center",
+    borderWidth: 1,
+    borderColor: "rgba(11,61,145,0.12)",
+  },
+  stockSetBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  stockSetBtnText: { ...typography.caption, color: "#fff", fontWeight: "700" },
+  stockClearBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.full,
+    backgroundColor: colors.background,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stockClearBtnText: { ...typography.body, color: colors.textSecondary },
   rejectBtn: {
     width: 40,
     height: 40,

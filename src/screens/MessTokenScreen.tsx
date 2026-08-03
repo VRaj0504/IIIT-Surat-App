@@ -23,6 +23,8 @@ import {
 import ClayCard from "../components/ClayCard";
 import {
   subscribeToOrder,
+  subscribeToQueue,
+  estimateWaitMinutes,
   MessOrder,
   OrderStatus,
 } from "../firebase/messService";
@@ -55,6 +57,7 @@ export default function MessTokenScreen() {
 
   const [order, setOrder] = useState<MessOrder | null>(null);
   const [loading, setLoading] = useState(true);
+  const [queue, setQueue] = useState<MessOrder[]>([]);
 
   useEffect(() => {
     const unsub = subscribeToOrder(orderId, (o) => {
@@ -63,6 +66,11 @@ export default function MessTokenScreen() {
     });
     return unsub;
   }, [orderId]);
+
+  useEffect(() => {
+    const unsub = subscribeToQueue(setQueue);
+    return unsub;
+  }, []);
 
   if (loading || !order) {
     return (
@@ -81,6 +89,12 @@ export default function MessTokenScreen() {
   }
 
   const status = statusConfig[order.status];
+  const paymentConfirmed = order.paymentStatus === "paid";
+  // Position in the live queue — only meaningful while still "pending"
+  // (once "ready" the student is already being served, no ETA needed).
+  const queueIndex = queue.findIndex((o) => o.id === order.id);
+  const ordersAhead = queueIndex >= 0 ? queueIndex : null;
+  const etaMinutes = ordersAhead !== null ? estimateWaitMinutes(ordersAhead) : null;
 
   return (
     <LinearGradient
@@ -112,6 +126,61 @@ export default function MessTokenScreen() {
               </Text>
             </View>
 
+            {order.pickupSlot && (
+              <View style={[styles.statusPill, { backgroundColor: "#e6f4ea" }]}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={16}
+                  color={colors.primary}
+                />
+                <Text style={[styles.statusText, { color: colors.primary }]}>
+                  Collect around {order.pickupSlot} — no need to queue early
+                </Text>
+              </View>
+            )}
+
+            {order.status === "pending" && ordersAhead !== null && (
+              <View style={[styles.statusPill, { backgroundColor: "#eef2ff" }]}>
+                <Ionicons
+                  name="people-outline"
+                  size={16}
+                  color={colors.primary}
+                />
+                <Text style={[styles.statusText, { color: colors.primary }]}>
+                  {ordersAhead === 0
+                    ? "You're next in line"
+                    : `${ordersAhead} order${ordersAhead === 1 ? "" : "s"} ahead — ~${etaMinutes} min`}
+                </Text>
+              </View>
+            )}
+
+            <View
+              style={[
+                styles.statusPill,
+                {
+                  backgroundColor: paymentConfirmed
+                    ? colors.success + "22"
+                    : "#fff6dd",
+                },
+              ]}
+            >
+              <Ionicons
+                name={paymentConfirmed ? "checkmark-circle-outline" : "hourglass-outline"}
+                size={16}
+                color={paymentConfirmed ? colors.success : "#8a6d00"}
+              />
+              <Text
+                style={[
+                  styles.statusText,
+                  { color: paymentConfirmed ? colors.success : "#8a6d00" },
+                ]}
+              >
+                {paymentConfirmed
+                  ? "Payment confirmed"
+                  : "Payment pending confirmation"}
+              </Text>
+            </View>
+
             <View style={styles.qrWrap}>
               {order.tokenNumber ? (
                 <QRCode
@@ -140,7 +209,7 @@ export default function MessTokenScreen() {
             ))}
             <View style={styles.divider} />
             <View style={styles.itemRow}>
-              <Text style={styles.totalLabel}>Total Paid</Text>
+              <Text style={styles.totalLabel}>Total Amount</Text>
               <Text style={styles.totalValue}>₹{order.totalAmount}</Text>
             </View>
           </View>

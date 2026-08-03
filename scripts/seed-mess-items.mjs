@@ -60,6 +60,8 @@ async function main() {
       category: item.category,
       price: item.price,
       available: true,
+      dailyQty: null,
+      remainingQty: null,
       createdAt: serverTimestamp(),
     });
     console.log(`created ${item.name} (${item.category}, ₹${item.price})`);

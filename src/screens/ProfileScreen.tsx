@@ -17,20 +17,16 @@ import { useAuth } from "../context/AuthContext";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
-// Each item navigates to a real stack screen — Edit Profile and Attendance
-// History are fully functional; the rest route to PlaceholderScreen until
-// they're built out, same pattern as Lost & Found / Faculty Directory.
+// Each item navigates to a real stack screen — Edit Profile is fully
+// functional; the rest route to PlaceholderScreen until they're built out,
+// same pattern as Lost & Found / Faculty Directory. (Attendance itself is
+// still reachable from the Home screen's Quick Access grid.)
 const menuItems: {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
   route: keyof RootStackParamList;
 }[] = [
   { label: "Edit Profile", icon: "person-outline", route: "EditProfile" },
-  {
-    label: "Attendance History",
-    icon: "stats-chart-outline",
-    route: "Attendance",
-  },
   {
     label: "Notification Settings",
     icon: "notifications-outline",

@@ -11,12 +11,12 @@ const MIN_BREAK_MINUTES = 30;
 
 export type BreakWindow = { start: string; end: string }; // "H:MM", 24hr, matches timetable slot format
 
-function toMinutes(time: string): number {
+export function toMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
 }
 
-function fromMinutes(mins: number): string {
+export function fromMinutes(mins: number): string {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return `${h}:${String(m).padStart(2, "0")}`;
@@ -54,16 +54,18 @@ export function findLunchBreak(slots: TimetableSlot[]): BreakWindow | null {
 
 export type OrderingWindowStatus =
   | { state: "open"; breakStart: string; breakEnd: string; closesInMinutes: number }
-  | { state: "not_yet_open"; breakStart: string; breakEnd: string; opensInMinutes: number }
+  | { state: "cutoff_passed"; breakStart: string; breakEnd: string }
   | { state: "no_break_today" };
 
-// Ordering opens `openBeforeMinutes` before the break starts (so the mess
-// has lead time to prep) and stays open through the break itself for
-// walk-ins who order late.
+// Ordering must happen at least `cutoffMinutes` before the break starts, so
+// the mess has real lead time to prep — it does NOT stay open once the
+// cutoff passes, even though the break itself hasn't started/ended yet.
+// This is a pure function (no I/O, no throws) so it's safe to call on every
+// render/tick without any try/catch around it.
 export function getOrderingWindowStatus(
   timetable: Timetable | null,
   now: Date,
-  openBeforeMinutes = 15,
+  cutoffMinutes = 15,
 ): OrderingWindowStatus {
   const dayName = now.toLocaleDateString("en-US", { weekday: "long" });
   const daySchedule = timetable?.days.find((d) => d.day === dayName);
@@ -71,26 +73,29 @@ export function getOrderingWindowStatus(
 
   if (!breakWindow) return { state: "no_break_today" };
 
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
   const breakStartMin = toMinutes(breakWindow.start);
   const breakEndMin = toMinutes(breakWindow.end);
-  const opensAtMin = breakStartMin - openBeforeMinutes;
-
-  if (nowMinutes < opensAtMin) {
-    return {
-      state: "not_yet_open",
-      breakStart: breakWindow.start,
-      breakEnd: breakWindow.end,
-      opensInMinutes: opensAtMin - nowMinutes,
-    };
+  // Guard against a malformed/garbage timetable slot producing NaN times —
+  // treat it the same as "no usable break" rather than propagating NaN
+  // through comparisons (which would silently misbehave, not crash, but
+  // let's not risk it).
+  if (!Number.isFinite(breakStartMin) || !Number.isFinite(breakEndMin)) {
+    return { state: "no_break_today" };
   }
-  if (nowMinutes < breakEndMin) {
+
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const cutoffMin = breakStartMin - cutoffMinutes;
+
+  if (nowMinutes < cutoffMin) {
     return {
       state: "open",
       breakStart: breakWindow.start,
       breakEnd: breakWindow.end,
-      closesInMinutes: breakEndMin - nowMinutes,
+      closesInMinutes: cutoffMin - nowMinutes,
     };
+  }
+  if (nowMinutes < breakEndMin) {
+    return { state: "cutoff_passed", breakStart: breakWindow.start, breakEnd: breakWindow.end };
   }
   return { state: "no_break_today" }; // break already passed for today
 }

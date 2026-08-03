@@ -173,6 +173,15 @@ service cloud.firestore {
     match /messMenuItems/{itemId} {
       allow read: if request.auth != null;
       allow write: if isAdmin() || isFaculty();
+      // Students placing an order decrement remainingQty/available on this
+      // same doc inside placeOrder()'s transaction (see messService.ts) —
+      // scoped so they can only touch stock, never price/name/category/
+      // dailyQty (that stays staff-only via the `write` rule above).
+      allow update: if request.auth != null &&
+        request.resource.data.name == resource.data.name &&
+        request.resource.data.price == resource.data.price &&
+        request.resource.data.category == resource.data.category &&
+        request.resource.data.dailyQty == resource.data.dailyQty;
     }
 
     // Daily token counter (single doc: counters/messToken) used to hand out
@@ -184,12 +193,29 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
-    // A student can only ever read/create their own orders (never someone
+    // Per-(day, pickup-slot) order counters used to spread demand across
+    // the break instead of everyone converging at once (see SLOT_CAPACITY
+    // in messService.ts). Same "only touched via placeOrder()'s
+    // transaction" pattern as counters/messToken above — no sensitive
+    // data here, just a date/slot/count.
+    match /messSlotCounters/{slotId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // A student can only ever create their own orders (never someone
     // else's) and can never edit amounts/status after creation — only
     // faculty/mess-staff can transition status (pending -> ready -> served).
+    // Read is a bit wider than "just your own": the live queue position
+    // feature (subscribeToQueue in messService.ts) needs every signed-in
+    // student to see all *currently active* orders, not just their own —
+    // same as a physical token board at the counter already shows
+    // everyone's number in line. Once an order is served/cancelled it
+    // drops back to owner+staff-only.
     match /messOrders/{orderId} {
       allow read: if isAdmin() || isFaculty() ||
-        (request.auth != null && resource.data.uid == request.auth.uid);
+        (request.auth != null && resource.data.uid == request.auth.uid) ||
+        (request.auth != null && resource.data.status in ['pending', 'ready']);
       allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
       allow update: if isAdmin() || isFaculty();
       allow delete: if isAdmin();
