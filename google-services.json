@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "568691830636",
+    "project_id": "iiit-surat-app-6643d",
+    "storage_bucket": "iiit-surat-app-6643d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:568691830636:android:414d3708b966e19f994d49",
+        "android_client_info": {
+          "package_name": "com.vaibhav.iiitsuratapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "568691830636-5q6e1hbptjijf0othqiedcehlsjkiv5d.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.vaibhav.iiitsuratapp",
+            "certificate_hash": "49859ca1a7f48181916e2bbb7f5cbfcb3ad25496"
+          }
+        },
+        {
+          "client_id": "568691830636-hj13umpf1qerojv6vqu678rgses3jnuu.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCQ-wC3gRvxUgn1qfy6B0zZiafcPpCrfis"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "568691830636-hj13umpf1qerojv6vqu678rgses3jnuu.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
