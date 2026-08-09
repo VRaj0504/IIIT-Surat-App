@@ -216,30 +216,135 @@ service cloud.firestore {
       allow read: if isAdmin() || isFaculty() ||
         (request.auth != null && resource.data.uid == request.auth.uid) ||
         (request.auth != null && resource.data.status in ['pending', 'ready']);
-      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
-      allow update: if isAdmin() || isFaculty();
+      // A student can only create an order for themself, and it must
+      // already be paid: placeOrder()'s transaction debits the wallet in
+      // the same write, so there's no "unpaid" order state to create
+      // anymore. This doesn't (and can't, from rules alone) verify
+      // totalAmount matches the cart's real price — that's still enforced
+      // by going through placeOrder() rather than a raw client write. A
+      // fully tamper-proof version of this would move order creation to a
+      // Cloud Function; fine for now given who has access to this app.
+      allow create: if request.auth != null &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.paymentStatus == 'paid' &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.totalAmount is number &&
+        request.resource.data.totalAmount >= 0;
+      // Staff can update anything (status transitions, etc). A student can
+      // ALSO self-cancel their own order, but only while it's still
+      // 'pending' (not yet 'ready' — once the kitchen has plated it, only
+      // staff can cancel, via staffCancelOrder in messService.ts) and only
+      // by flipping status to 'cancelled' — every other field, including
+      // totalAmount and items, must stay byte-identical. No money moves as
+      // part of this write; cancelOrder() in messService.ts files a
+      // separate refund request through the same pending-then-staff-
+      // approved path as a wallet recharge, so this rule alone can't be
+      // used to grant a refund.
+      allow update: if isAdmin() || isFaculty() || (
+        request.auth != null &&
+        resource.data.uid == request.auth.uid &&
+        resource.data.status == 'pending' &&
+        request.resource.data.status == 'cancelled' &&
+        request.resource.data.uid == resource.data.uid &&
+        request.resource.data.studentName == resource.data.studentName &&
+        request.resource.data.items == resource.data.items &&
+        request.resource.data.totalAmount == resource.data.totalAmount &&
+        request.resource.data.tokenNumber == resource.data.tokenNumber &&
+        request.resource.data.pickupSlot == resource.data.pickupSlot &&
+        request.resource.data.paymentStatus == resource.data.paymentStatus &&
+        request.resource.data.cancelledBy == request.auth.uid
+      );
       allow delete: if isAdmin();
     }
 
-    // One doc per student, id == their uid. Balance is only ever mutated
-    // server-side-equivalent via the atomic transactions in messService.ts
-    // (placeOrder debits, approveRecharge credits) — direct client writes
-    // to `balance` are blocked so a student can't just set their own
-    // balance to anything.
+    // One doc per student, id == their uid. Faculty/admin can freely
+    // credit/adjust (approveRecharge) and can create the doc fresh. The
+    // student who owns a wallet can only ever DEBIT an *existing* wallet —
+    // balance must strictly decrease and never go negative — so
+    // placeOrder()'s transaction can spend from it, but a client can never
+    // top up their own balance or conjure a wallet into existence by
+    // writing here directly. In practice a student can never have a
+    // nonzero balance to spend without staff having approved a recharge
+    // first (which is what creates the doc), so requiring it to already
+    // exist for a self-write costs nothing real.
     match /wallets/{uid} {
       allow read: if isAdmin() || isFaculty() || (request.auth != null && request.auth.uid == uid);
-      allow write: if isAdmin() || isFaculty();
+      allow write: if isAdmin() || isFaculty() || (
+        request.auth != null && request.auth.uid == uid &&
+        resource != null &&
+        request.resource.data.balance is number &&
+        request.resource.data.balance >= 0 &&
+        request.resource.data.balance < resource.data.balance
+      );
     }
 
     // Recharge requests (student-submitted, faculty/mess-staff-approved)
     // and the debit record created alongside every order. A student can
     // create their own recharge request and read their own history, but
     // only faculty/mess-staff can approve/reject (status transitions).
+    // Every recharge request must carry a non-empty UPI reference — see
+    // walletTxnRefs below, which is what actually stops the same payment
+    // being claimed twice.
     match /walletTransactions/{txnId} {
       allow read: if isAdmin() || isFaculty() ||
         (request.auth != null && resource.data.uid == request.auth.uid);
-      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      // Staff can create a wallet transaction doc directly for anyone —
+      // consistent with them already having unrestricted write access to
+      // `wallets` itself (see below); this is what lets staffCancelOrder()
+      // log an already-resolved refund in one step instead of a student
+      // filing a request staff would just have to approve a moment later.
+      // A student can only ever create their own, and only as a pending
+      // request (a recharge claim or cancelOrder()'s refund request) —
+      // never pre-approved, never for someone else.
+      allow create: if isAdmin() || isFaculty() || (
+        request.auth != null &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.type == 'credit' &&
+        request.resource.data.upiRefId is string &&
+        request.resource.data.upiRefId.size() > 0
+      );
       allow update: if isAdmin() || isFaculty();
+      allow delete: if isAdmin();
+    }
+
+    // One doc per UPI reference ID ever submitted for a recharge, id ==
+    // the reference itself. requestRecharge() creates this in the same
+    // transaction as the walletTransactions doc — once it exists, Firestore
+    // itself refuses a second create() at that path, which is what makes
+    // "the same UPI payment claimed for two wallet credits" structurally
+    // impossible rather than just discouraged. Nobody, including staff,
+    // can update or delete one — that permanence is the whole point.
+    match /walletTxnRefs/{refId} {
+      // Needs to be readable by the student submitting it too, not just
+      // staff: requestRecharge() and cancelOrder() in messService.ts both
+      // do a tx.get() on this exact path to check "has this UPI ref /
+      // order already been claimed" before creating it, and that read has
+      // to succeed for the transaction to work at all. `resource == null`
+      // covers the "doesn't exist yet" case (the common one — first-time
+      // recharge or cancel); the uid check covers re-reading a ref that
+      // already exists.
+      allow read: if isAdmin() || isFaculty() ||
+        (request.auth != null && (resource == null || resource.data.uid == request.auth.uid));
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // Per-item, per-order star rating + optional comment, submitted by the
+    // student once their order is served. Doc id is deterministic
+    // (`${orderId}_${itemId}`) so a resubmission overwrites their own
+    // rating rather than spamming duplicates — enforced here by requiring
+    // the order to belong to them and to already be served.
+    match /messFeedback/{feedbackId} {
+      allow read: if isAdmin() || isFaculty() ||
+        (request.auth != null && resource.data.uid == request.auth.uid);
+      allow create, update: if request.auth != null &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.rating is int &&
+        request.resource.data.rating >= 1 && request.resource.data.rating <= 5 &&
+        get(/databases/$(database)/documents/messOrders/$(request.resource.data.orderId)).data.uid == request.auth.uid &&
+        get(/databases/$(database)/documents/messOrders/$(request.resource.data.orderId)).data.status == 'served';
       allow delete: if isAdmin();
     }
   }

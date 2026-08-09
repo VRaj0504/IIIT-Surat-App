@@ -2,6 +2,7 @@
 // then it gets full type-checking + autocomplete everywhere else.
 import type { ClubEvent } from "../firebase/clubsService";
 import type { Notice } from "../firebase/noticesService";
+import type { CartLine } from "../firebase/messService";
 
 export type RootTabParamList = {
   Home: undefined;
@@ -15,9 +16,12 @@ export type RootStackParamList = {
   Tabs: undefined;
   Attendance: undefined;
   MessMenu: undefined;
-  MessOrder: undefined;
+  // reorderItems, when present, prefills the cart with a past order's
+  // items (quantities capped to whatever's actually in stock right now).
+  MessOrder: { reorderItems?: CartLine[] } | undefined;
   MessToken: { orderId: string };
   MessWallet: undefined;
+  MessOrderHistory: undefined;
   MessStaff: undefined;
   CGPACalculator: undefined;
   LostFound: undefined;

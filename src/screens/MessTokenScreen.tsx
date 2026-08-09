@@ -1,14 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ActivityIndicator,
   TouchableOpacity,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import QRCode from "react-native-qrcode-svg";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -24,10 +26,15 @@ import ClayCard from "../components/ClayCard";
 import {
   subscribeToOrder,
   subscribeToQueue,
+  subscribeToFeedbackForOrder,
+  submitFeedback,
   estimateWaitMinutes,
+  cancelOrder,
   MessOrder,
+  MessFeedback,
   OrderStatus,
 } from "../firebase/messService";
+import { useAuth } from "../context/AuthContext";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 type RouteProps = RouteProp<RootStackParamList, "MessToken">;
@@ -54,13 +61,30 @@ export default function MessTokenScreen() {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RouteProps>();
   const { orderId } = route.params;
+  const { profile } = useAuth();
 
   const [order, setOrder] = useState<MessOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [queue, setQueue] = useState<MessOrder[]>([]);
+  const [feedback, setFeedback] = useState<MessFeedback[]>([]);
+  const [submittingItemId, setSubmittingItemId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const prevStatusRef = useRef<OrderStatus | null>(null);
 
   useEffect(() => {
     const unsub = subscribeToOrder(orderId, (o) => {
+      // Fire a haptic + alert the moment status flips to "ready" — this is
+      // the closest thing to a "your food's up" ping we can do without a
+      // push-notification backend (see note in the summary). Only fires on
+      // the transition, not on every snapshot while already "ready", and
+      // never on the very first load (prevStatusRef starts null).
+      if (o && prevStatusRef.current === "pending" && o.status === "ready") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+          () => {},
+        );
+        Alert.alert("Order ready! 🎉", `Token ${o.tokenNumber} — head to the counter.`);
+      }
+      prevStatusRef.current = o?.status ?? null;
       setOrder(o);
       setLoading(false);
     });
@@ -71,6 +95,51 @@ export default function MessTokenScreen() {
     const unsub = subscribeToQueue(setQueue);
     return unsub;
   }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToFeedbackForOrder(orderId, setFeedback);
+    return unsub;
+  }, [orderId]);
+
+  const handleRate = async (itemId: string, itemName: string, rating: 1 | 2 | 3 | 4 | 5) => {
+    if (!profile?.uid) return;
+    setSubmittingItemId(itemId);
+    try {
+      await submitFeedback(profile.uid, orderId, itemId, itemName, rating, "");
+    } catch {
+      // Feedback is a nice-to-have, not worth interrupting the student over.
+    } finally {
+      setSubmittingItemId(null);
+    }
+  };
+
+  const handleCancel = () => {
+    if (!profile?.uid) return;
+    Alert.alert(
+      "Cancel this order?",
+      "Your refund will be credited to your wallet once mess staff verifies the cancellation.",
+      [
+        { text: "Keep order", style: "cancel" },
+        {
+          text: "Cancel order",
+          style: "destructive",
+          onPress: async () => {
+            setCancelling(true);
+            try {
+              await cancelOrder(orderId, profile.uid, profile.name);
+            } catch (e: any) {
+              Alert.alert(
+                "Could not cancel",
+                e?.message ?? "Please try again, or ask mess staff at the counter.",
+              );
+            } finally {
+              setCancelling(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   if (loading || !order) {
     return (
@@ -89,7 +158,6 @@ export default function MessTokenScreen() {
   }
 
   const status = statusConfig[order.status];
-  const paymentConfirmed = order.paymentStatus === "paid";
   // Position in the live queue — only meaningful while still "pending"
   // (once "ready" the student is already being served, no ETA needed).
   const queueIndex = queue.findIndex((o) => o.id === order.id);
@@ -154,30 +222,23 @@ export default function MessTokenScreen() {
               </View>
             )}
 
+            {order.status === "cancelled" && (
+              <View style={[styles.statusPill, { backgroundColor: colors.danger + "15" }]}>
+                <Ionicons name="information-circle-outline" size={16} color={colors.danger} />
+                <Text style={[styles.statusText, { color: colors.danger }]}>
+                  {order.cancelledBy === order.uid
+                    ? "Refund pending staff verification"
+                    : "Refunded to your wallet"}
+                </Text>
+              </View>
+            )}
+
             <View
-              style={[
-                styles.statusPill,
-                {
-                  backgroundColor: paymentConfirmed
-                    ? colors.success + "22"
-                    : "#fff6dd",
-                },
-              ]}
+              style={[styles.statusPill, { backgroundColor: colors.success + "22" }]}
             >
-              <Ionicons
-                name={paymentConfirmed ? "checkmark-circle-outline" : "hourglass-outline"}
-                size={16}
-                color={paymentConfirmed ? colors.success : "#8a6d00"}
-              />
-              <Text
-                style={[
-                  styles.statusText,
-                  { color: paymentConfirmed ? colors.success : "#8a6d00" },
-                ]}
-              >
-                {paymentConfirmed
-                  ? "Payment confirmed"
-                  : "Payment pending confirmation"}
+              <Ionicons name="wallet-outline" size={16} color={colors.success} />
+              <Text style={[styles.statusText, { color: colors.success }]}>
+                Paid from wallet
               </Text>
             </View>
 
@@ -212,6 +273,68 @@ export default function MessTokenScreen() {
               <Text style={styles.totalLabel}>Total Amount</Text>
               <Text style={styles.totalValue}>₹{order.totalAmount}</Text>
             </View>
+
+            {order.status === "pending" && (
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={handleCancel}
+                disabled={cancelling}
+              >
+                {cancelling ? (
+                  <ActivityIndicator color={colors.danger} size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="close-circle-outline" size={16} color={colors.danger} />
+                    <Text style={styles.cancelBtnText}>Cancel Order</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+
+            {order.status === "served" && (
+              <>
+                <View style={styles.divider} />
+                <Text style={styles.feedbackTitle}>How was it?</Text>
+                {order.items.map((line) => {
+                  const existing = feedback.find((f) => f.itemId === line.itemId);
+                  return (
+                    <View key={line.itemId} style={styles.feedbackRow}>
+                      <Text style={styles.feedbackItemName}>{line.name}</Text>
+                      {existing ? (
+                        <View style={styles.feedbackStars}>
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <Ionicons
+                              key={n}
+                              name={n <= existing.rating ? "star" : "star-outline"}
+                              size={18}
+                              color={colors.accent}
+                            />
+                          ))}
+                        </View>
+                      ) : (
+                        <View style={styles.feedbackStars}>
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <TouchableOpacity
+                              key={n}
+                              disabled={submittingItemId === line.itemId}
+                              onPress={() =>
+                                handleRate(line.itemId, line.name, n as 1 | 2 | 3 | 4 | 5)
+                              }
+                            >
+                              <Ionicons
+                                name="star-outline"
+                                size={20}
+                                color={colors.textSecondary}
+                              />
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </>
+            )}
           </View>
 
           <ClayCard
@@ -221,6 +344,12 @@ export default function MessTokenScreen() {
           >
             <Text style={styles.ordersLinkText}>Order more food</Text>
           </ClayCard>
+          <TouchableOpacity
+            style={styles.historyLink}
+            onPress={() => navigation.navigate("MessOrderHistory")}
+          >
+            <Text style={styles.historyLinkText}>View order history</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     </LinearGradient>
@@ -286,6 +415,34 @@ const styles = StyleSheet.create({
   itemPrice: { ...typography.body, color: colors.textSecondary },
   totalLabel: { ...typography.h3, color: colors.textPrimary },
   totalValue: { ...typography.h3, color: colors.primary },
+  feedbackTitle: {
+    ...typography.body,
+    color: colors.textPrimary,
+    fontWeight: "700",
+    alignSelf: "flex-start",
+    marginBottom: spacing.sm,
+  },
+  feedbackRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    width: "100%",
+    paddingVertical: 6,
+  },
+  feedbackItemName: { ...typography.body, color: colors.textPrimary },
+  feedbackStars: { flexDirection: "row", gap: 4 },
+  cancelBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: spacing.md,
+    paddingVertical: 10,
+    width: "100%",
+    borderRadius: radius.md,
+    backgroundColor: colors.danger + "12",
+  },
+  cancelBtnText: { ...typography.body, color: colors.danger, fontWeight: "700" },
   ordersLink: {
     marginTop: spacing.lg,
     padding: spacing.md,
@@ -296,4 +453,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: "700",
   },
+  historyLink: { alignItems: "center", marginTop: spacing.sm },
+  historyLinkText: { ...typography.caption, color: colors.textSecondary },
 });

@@ -7,12 +7,11 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import {
@@ -27,17 +26,16 @@ import { useAuth } from "../context/AuthContext";
 import ClayCard from "../components/ClayCard";
 import {
   subscribeToMenuItems,
+  subscribeToWalletBalance,
   placeOrder,
-  buildUpiPaymentUrl,
   MessMenuItem,
   MessCategory,
   CartLine,
 } from "../firebase/messService";
-import { getCurrentSemester } from "../utils/academicInfo";
-import { subscribeToTimetable, Timetable } from "../firebase/timetableService";
-import { getOrderingWindowStatus } from "../utils/breakWindow";
+import { getMessOrderingStatus, STORE_OPEN, STORE_CLOSE } from "../utils/messHours";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
+type RouteProps = RouteProp<RootStackParamList, "MessOrder">;
 
 const categoryIcons: Record<MessCategory, keyof typeof Ionicons.glyphMap> = {
   Thali: "restaurant",
@@ -49,6 +47,7 @@ const CATEGORIES: MessCategory[] = ["Thali", "Snacks", "Beverages"];
 
 export default function MessOrderScreen() {
   const navigation = useNavigation<NavProp>();
+  const route = useRoute<RouteProps>();
   const { profile } = useAuth();
 
   const [items, setItems] = useState<MessMenuItem[]>([]);
@@ -56,8 +55,9 @@ export default function MessOrderScreen() {
   const [cart, setCart] = useState<Record<string, number>>({}); // itemId -> qty
   const [activeCategory, setActiveCategory] = useState<MessCategory>("Thali");
   const [placing, setPlacing] = useState(false);
-  const [timetable, setTimetable] = useState<Timetable | null>(null);
+  const [balance, setBalance] = useState(0);
   const [now, setNow] = useState(() => new Date());
+  const [reorderNotice, setReorderNotice] = useState(false);
 
   useEffect(() => {
     const unsub = subscribeToMenuItems((data) => {
@@ -67,30 +67,45 @@ export default function MessOrderScreen() {
     return unsub;
   }, []);
 
-  const semester = profile?.admissionYear
-    ? getCurrentSemester(profile.admissionYear)
-    : null;
+  // Reorder: prefill the cart from a past order's items, once the live
+  // menu has loaded (so we can check what's actually still available and
+  // cap quantities to current stock rather than blindly trusting the old
+  // order — items may have sold out, changed price, or been removed).
+  useEffect(() => {
+    const reorderItems = route.params?.reorderItems;
+    if (!reorderItems || reorderItems.length === 0 || loadingItems) return;
+    const next: Record<string, number> = {};
+    let anySkipped = false;
+    reorderItems.forEach((line) => {
+      const live = items.find((i) => i.id === line.itemId);
+      if (!live) {
+        anySkipped = true;
+        return;
+      }
+      const cap =
+        typeof live.remainingQty === "number" ? live.remainingQty : Infinity;
+      const qty = Math.min(line.qty, cap);
+      if (qty > 0) next[line.itemId] = qty;
+      else anySkipped = true;
+    });
+    setCart(next);
+    setReorderNotice(anySkipped);
+    // Only run once, right after the menu first loads with a reorder
+    // request pending — not on every re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingItems]);
 
   useEffect(() => {
-    if (!profile?.branch || !profile?.section || !semester) {
-      setTimetable(null);
-      return;
-    }
-    const unsub = subscribeToTimetable(
-      profile.branch,
-      semester,
-      profile.section,
-      setTimetable,
-    );
-    return unsub;
-  }, [profile?.branch, profile?.section, semester]);
+    if (!profile?.uid) return;
+    return subscribeToWalletBalance(profile.uid, setBalance);
+  }, [profile?.uid]);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(interval);
   }, []);
 
-  const windowStatus = getOrderingWindowStatus(timetable, now);
+  const windowStatus = getMessOrderingStatus(now);
   const orderingOpen = windowStatus.state === "open";
 
   const itemsInCategory = items.filter((i) => i.category === activeCategory);
@@ -126,33 +141,30 @@ export default function MessOrderScreen() {
     if (!profile?.uid || cartLines.length === 0) return;
     if (!orderingOpen) {
       const message =
-        windowStatus.state === "cutoff_passed"
-          ? `Ordering closed 15 min before your ${windowStatus.breakStart} break so the mess has time to prep. It'll open again for your next break.`
-          : "There's no break window on your timetable right now, so ordering is closed.";
+        windowStatus.state === "before_open"
+          ? `The mess opens at ${STORE_OPEN}.`
+          : `Ordering's closed for today — last orders are taken 15 min before ${STORE_CLOSE}.`;
       Alert.alert("Ordering closed", message);
+      return;
+    }
+    if (totalAmount > balance) {
+      Alert.alert(
+        "Not enough balance",
+        `This order is ₹${totalAmount}, your wallet has ₹${balance}. Recharge your wallet first.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Recharge",
+            onPress: () => navigation.navigate("MessWallet"),
+          },
+        ],
+      );
       return;
     }
     setPlacing(true);
     try {
-      const { orderId, tokenNumber } = await placeOrder(
-        profile.uid,
-        profile.name,
-        cartLines,
-        windowStatus.state === "open"
-          ? { start: windowStatus.breakStart, end: windowStatus.breakEnd }
-          : null,
-      );
-      const upiUrl = buildUpiPaymentUrl({ totalAmount, tokenNumber });
-      const canOpen = await Linking.canOpenURL(upiUrl);
+      const { orderId } = await placeOrder(profile.uid, profile.name, cartLines);
       setCart({});
-      if (canOpen) {
-        await Linking.openURL(upiUrl);
-      } else {
-        Alert.alert(
-          "No UPI app found",
-          "Pay the canteen directly using its QR code, then show your token at the counter.",
-        );
-      }
       navigation.replace("MessToken", { orderId });
     } catch (e: any) {
       Alert.alert("Could not place order", e?.message ?? "Please try again.");
@@ -169,32 +181,56 @@ export default function MessOrderScreen() {
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.headerRow}>
           <Text style={styles.title}>Order Food</Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.historyBtn}
+              onPress={() => navigation.navigate("MessOrderHistory")}
+            >
+              <Ionicons name="time-outline" size={18} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.balanceChip}
+              onPress={() => navigation.navigate("MessWallet")}
+            >
+              <Ionicons name="wallet-outline" size={14} color={colors.primary} />
+              <Text style={styles.balanceChipText}>₹{balance}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {reorderNotice && (
+          <View style={[styles.windowBanner, styles.windowBannerWaiting]}>
+            <Ionicons name="information-circle-outline" size={14} color="#8a6d00" />
+            <Text style={[styles.windowBannerText, { color: "#8a6d00" }]}>
+              Some items from that order aren't available right now, so
+              they've been left out of your cart.
+            </Text>
+          </View>
+        )}
 
         {windowStatus.state === "open" && (
           <View style={[styles.windowBanner, styles.windowBannerOpen]}>
             <Ionicons name="time-outline" size={14} color={colors.primary} />
             <Text style={styles.windowBannerText}>
-              Order by {windowStatus.breakStart} minus 15 min — closes in{" "}
+              Open {STORE_OPEN}–{STORE_CLOSE} — closes in{" "}
               {windowStatus.closesInMinutes} min
             </Text>
           </View>
         )}
-        {windowStatus.state === "cutoff_passed" && (
+        {windowStatus.state === "before_open" && (
           <View style={[styles.windowBanner, styles.windowBannerClosed]}>
             <Ionicons name="close-circle-outline" size={14} color="#a13c3c" />
             <Text style={[styles.windowBannerText, { color: "#a13c3c" }]}>
-              Ordering closed for your {windowStatus.breakStart} break — the
-              15 min prep cutoff has passed
+              Opens at {STORE_OPEN} — you can browse now and order once it's
+              open
             </Text>
           </View>
         )}
-        {windowStatus.state === "no_break_today" && (
+        {windowStatus.state === "closed_for_day" && (
           <View style={[styles.windowBanner, styles.windowBannerClosed]}>
             <Ionicons name="close-circle-outline" size={14} color="#a13c3c" />
             <Text style={[styles.windowBannerText, { color: "#a13c3c" }]}>
-              No break window found on your timetable right now — ordering is
-              closed
+              Ordering closed for today — back tomorrow at {STORE_OPEN}
             </Text>
           </View>
         )}
@@ -322,7 +358,7 @@ export default function MessOrderScreen() {
                 ) : (
                   <>
                     <Text style={styles.placeOrderText}>
-                      {orderingOpen ? "Pay & Get Token" : "Ordering closed"}
+                      {orderingOpen ? "Place Order" : "Ordering closed"}
                     </Text>
                     <Ionicons name="arrow-forward" size={16} color="#fff" />
                   </>
@@ -346,6 +382,31 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   title: { ...typography.h1, color: colors.textPrimary },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  historyBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.full,
+    backgroundColor: colors.claySurface,
+    alignItems: "center",
+    justifyContent: "center",
+    ...clayShadowSoft,
+  },
+  balanceChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.claySurface,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: radius.full,
+    ...clayShadowSoft,
+  },
+  balanceChipText: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: "700",
+  },
   windowBanner: {
     flexDirection: "row",
     alignItems: "center",

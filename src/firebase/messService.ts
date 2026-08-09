@@ -14,7 +14,13 @@ import {
   limit,
 } from "firebase/firestore";
 import { db } from "./firestore";
-import { toMinutes, fromMinutes, BreakWindow } from "../utils/breakWindow";
+import { toMinutes, fromMinutes } from "../utils/breakWindow";
+import {
+  STORE_OPEN,
+  STORE_CLOSE,
+  PREP_LEAD_MINUTES,
+  getMessOrderingStatus,
+} from "../utils/messHours";
 
 // ---------- Pickup slots ----------
 // Spreads pickup across the break instead of everyone converging the
@@ -26,6 +32,15 @@ import { toMinutes, fromMinutes, BreakWindow } from "../utils/breakWindow";
 const SLOT_MINUTES = 10;
 const SLOT_CAPACITY = 15; // orders per 10-min slot before it's "full"
 const SLOT_COUNTERS_COLLECTION = "messSlotCounters";
+// How many upcoming slots we're willing to check for room before giving up
+// and soft-overflowing into the last one checked. This used to scan every
+// slot for the rest of the 9-5 day (~48 reads inside the order transaction
+// — real cost and latency under crowd load, for zero benefit since nobody
+// picks a slot 6 hours out). Checking a handful of slots starting from
+// *now* gets the same "spread the crowd" effect for a fraction of the
+// reads. Raise this if SLOT_CAPACITY is regularly maxed out this many
+// slots in a row.
+const SLOT_LOOKAHEAD = 6;
 
 // Rough serving pace for the "X orders ahead, ~Y min" estimate on the token
 // screen. This is a guess — watch the actual counter for a day or two and
@@ -52,6 +67,12 @@ export type MessMenuItem = {
   // placed and the item auto-flips to unavailable at 0.
   dailyQty: number | null;
   remainingQty: number | null;
+  // Permanently retired items (discontinued dishes). Distinct from
+  // `available`, which daily stock toggles on/off — archiving is a separate,
+  // sticky flag so a discontinued item doesn't reappear the next time
+  // someone sets a daily quantity on it. Old items predate this field, so
+  // treat undefined the same as false everywhere it's read.
+  archived?: boolean;
 };
 
 export type CartLine = {
@@ -80,34 +101,41 @@ export type MessOrder = {
   readyBy: string | null;
   servedAt: Timestamp | null;
   servedBy: string | null;
+  cancelledAt: Timestamp | null;
+  cancelledBy: string | null; // uid of whoever cancelled (student or staff)
+  cancelReason: string | null;
 };
 
 // TODO: replace with the canteen's real UPI ID and display name once you
-// have the physical QR — everything else (amount, note) is generated
-// per-order so the canteen can match a payment to an order even though
-// it's the same VPA/QR every time.
+// have the physical QR.
 export const MESS_UPI_VPA = "canteen@placeholder";
 export const MESS_UPI_PAYEE_NAME = "IIIT Surat Canteen";
 
-// Builds a UPI deep link pre-filled with this order's exact amount and a
-// note containing the token number, so opening it in any UPI app (GPay,
-// PhonePe, Paytm...) takes the student straight to a ready-to-pay screen.
-export function buildUpiPaymentUrl(order: {
-  totalAmount: number;
-  tokenNumber: string;
-}): string {
+// Builds a UPI deep link pre-filled with a wallet top-up amount, so opening
+// it in any UPI app (GPay, PhonePe, Paytm...) takes the student straight to
+// a ready-to-pay screen for their recharge. Orders themselves no longer go
+// through UPI directly — they're paid out of the wallet balance this tops
+// up, which is what lets placeOrder() verify and deduct payment atomically
+// instead of trusting a staff member to notice and confirm each payment.
+export function buildUpiRechargeUrl(amount: number): string {
   const params = new URLSearchParams({
     pa: MESS_UPI_VPA,
     pn: MESS_UPI_PAYEE_NAME,
-    am: order.totalAmount.toFixed(2),
+    am: amount.toFixed(2),
     cu: "INR",
-    tn: `Mess order ${order.tokenNumber}`,
+    tn: "Mess wallet recharge",
   });
   return `upi://pay?${params.toString()}`;
 }
 
 export type WalletTxnType = "credit" | "debit";
 export type WalletTxnStatus = "pending" | "approved" | "rejected";
+// "recharge" = student topped up via UPI, staff verifies the reference.
+// "refund" = student self-cancelled a pending order; staff verifies there's
+// nothing fishy (e.g. repeated cancel-after-prep abuse) before crediting it
+// back, same as a recharge. Old docs have no `source` and are treated as
+// "recharge" everywhere this is read.
+export type WalletTxnSource = "recharge" | "refund";
 
 export type WalletTransaction = {
   id: string;
@@ -118,6 +146,8 @@ export type WalletTransaction = {
   reason: string;
   upiRefId: string | null;
   status: WalletTxnStatus;
+  source: WalletTxnSource;
+  orderId: string | null; // set for refund txns — which order this refunds
   createdAt: Timestamp | null;
   resolvedAt: Timestamp | null;
   resolvedBy: string | null;
@@ -127,6 +157,13 @@ const MENU_ITEMS_COLLECTION = "messMenuItems";
 const ORDERS_COLLECTION = "messOrders";
 const WALLETS_COLLECTION = "wallets";
 const WALLET_TXNS_COLLECTION = "walletTransactions";
+// One doc per UPI reference ID ever submitted, keyed by the reference
+// itself. Its only job is to make that reference un-submittable a second
+// time — see requestRecharge() below — so the same real-world payment
+// can't be used to claim two separate wallet credits (by mistake or by a
+// student re-submitting after rejection with a friend's leftover ref, or
+// by two students racing to submit the same screenshot's reference).
+const WALLET_TXN_REFS_COLLECTION = "walletTxnRefs";
 const TOKEN_COUNTER_DOC = "counters/messToken";
 
 // ---------- Menu ----------
@@ -166,6 +203,66 @@ export function subscribeToAllMenuItems(
     );
     callback(items);
   });
+}
+
+// Adds a brand-new item to the menu (e.g. a new snack the mess starts
+// serving). Starts with no stock cap — staff sets a dailyQty from the
+// Stock tab once they know how many they're prepping, same as any other
+// item.
+export async function addMenuItem(
+  name: string,
+  category: MessCategory,
+  price: number,
+): Promise<string> {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Enter an item name.");
+  if (!Number.isFinite(price) || price < 0) throw new Error("Enter a valid price.");
+  const ref = await addDoc(collection(db, MENU_ITEMS_COLLECTION), {
+    name: trimmed,
+    category,
+    price: Math.round(price),
+    available: true,
+    dailyQty: null,
+    remainingQty: null,
+  });
+  return ref.id;
+}
+
+// Edits an existing item's name/category/price. Doesn't touch
+// stock/availability — use setDailyQuantity/clearDailyQuantity for that,
+// so a staffer correcting a typo in the name can't accidentally reset
+// today's remaining count.
+export async function updateMenuItem(
+  itemId: string,
+  updates: { name?: string; category?: MessCategory; price?: number },
+): Promise<void> {
+  const patch: Record<string, string | number> = {};
+  if (updates.name !== undefined) {
+    const trimmed = updates.name.trim();
+    if (!trimmed) throw new Error("Enter an item name.");
+    patch.name = trimmed;
+  }
+  if (updates.category !== undefined) patch.category = updates.category;
+  if (updates.price !== undefined) {
+    if (!Number.isFinite(updates.price) || updates.price < 0) {
+      throw new Error("Enter a valid price.");
+    }
+    patch.price = Math.round(updates.price);
+  }
+  if (Object.keys(patch).length === 0) return;
+  await setDoc(doc(db, MENU_ITEMS_COLLECTION, itemId), patch, { merge: true });
+}
+
+// Permanently removes an item from the menu. Past orders keep their own
+// copy of the name/price (CartLine snapshots them at order time), so
+// deleting an item here never rewrites order history — it just stops the
+// item from being orderable going forward. For a "we're out of this for
+// good today but might bring it back tomorrow" pause, prefer
+// setDailyQuantity(id, 0) instead, which keeps the item around at zero
+// stock rather than deleting it.
+export async function deleteMenuItem(itemId: string): Promise<void> {
+  const { deleteDoc } = await import("firebase/firestore");
+  await deleteDoc(doc(db, MENU_ITEMS_COLLECTION, itemId));
 }
 
 // Staff sets how many of an item are available today. Called once each
@@ -229,17 +326,35 @@ export async function requestRecharge(
   amount: number,
   upiRefId: string,
 ): Promise<void> {
-  await addDoc(collection(db, WALLET_TXNS_COLLECTION), {
-    uid,
-    studentName,
-    type: "credit",
-    amount,
-    reason: "Wallet recharge",
-    upiRefId: upiRefId || null,
-    status: "pending",
-    createdAt: serverTimestamp(),
-    resolvedAt: null,
-    resolvedBy: null,
+  const ref = upiRefId.trim();
+  if (!ref) {
+    throw new Error("Enter the UPI transaction ID from your payment.");
+  }
+  const refDocRef = doc(db, WALLET_TXN_REFS_COLLECTION, ref);
+  const txnRef = doc(collection(db, WALLET_TXNS_COLLECTION));
+
+  await runTransaction(db, async (tx) => {
+    const refSnap = await tx.get(refDocRef);
+    if (refSnap.exists()) {
+      throw new Error(
+        "This UPI reference has already been submitted for a recharge — each payment can only be claimed once.",
+      );
+    }
+    tx.set(refDocRef, { uid, txnId: txnRef.id, createdAt: serverTimestamp() });
+    tx.set(txnRef, {
+      uid,
+      studentName,
+      type: "credit",
+      amount,
+      reason: "Wallet recharge",
+      upiRefId: ref,
+      status: "pending",
+      source: "recharge",
+      orderId: null,
+      createdAt: serverTimestamp(),
+      resolvedAt: null,
+      resolvedBy: null,
+    });
   });
 }
 
@@ -313,36 +428,54 @@ function todayKey(): string {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
 
-// Every SLOT_MINUTES-wide slot between breakStart and breakEnd, as "H:MM"
-// strings. A break shorter than one slot still yields the single slot
-// starting at breakStart.
-function buildSlots(breakWindow: BreakWindow): string[] {
-  const start = toMinutes(breakWindow.start);
-  const end = toMinutes(breakWindow.end);
+// The next SLOT_LOOKAHEAD slots from right now (or from store-open if we're
+// asked before opening), as "H:MM" strings. Used purely to spread the
+// "ready around ~X" estimate shown to the student — it's no longer tied to
+// a per-section timetable break, and it no longer scans the whole day (see
+// SLOT_LOOKAHEAD's comment above): only the handful of slots anyone could
+// plausibly land in next actually needs checking.
+function upcomingSlots(now: Date): string[] {
+  const open = toMinutes(STORE_OPEN);
+  const close = toMinutes(STORE_CLOSE);
+  const nowMinutes = Math.max(open, now.getHours() * 60 + now.getMinutes());
+  // Snap to the current/next slot boundary so slots line up consistently
+  // across requests instead of drifting with each caller's exact second.
+  const start = nowMinutes - (nowMinutes % SLOT_MINUTES);
   const slots: string[] = [];
-  for (let t = start; t < end; t += SLOT_MINUTES) {
+  for (
+    let t = start;
+    t < close && slots.length < SLOT_LOOKAHEAD;
+    t += SLOT_MINUTES
+  ) {
     slots.push(fromMinutes(t));
   }
-  return slots.length > 0 ? slots : [breakWindow.start];
+  // Falls back to the single last slot of the day if we're called right at
+  // closing time and the loop above produces nothing.
+  if (slots.length === 0) slots.push(fromMinutes(close - SLOT_MINUTES));
+  return slots;
 }
 
-// Places an order: no wallet involved. Creates the order as unpaid and
-// hands back its id immediately so the screen can open the UPI payment
-// link right away — payment itself happens outside the app, and a staff
-// member confirms it landed via confirmPayment() below once they see it
-// in the canteen's own UPI account.
+// Places an order and pays for it out of the student's wallet in the same
+// breath — there is no more "create unpaid, staff confirms later" step.
+// That old flow is exactly the loophole we're closing: a manual "mark
+// paid" button is only as honest as whoever taps it, with nothing to
+// check it against. Debiting the wallet inside this transaction means an
+// order can only ever be created already-paid, for real, because the
+// balance check and the deduction are the same atomic write as the order
+// itself — there's no window where an order exists without the money
+// having actually left the wallet.
 //
-// Everything here — stock check, stock decrement, token number, and order
-// creation — happens inside ONE Firestore transaction. That matters under
-// crowd load: if two students tap "order" on the last plate at the same
-// instant, Firestore guarantees only one transaction commits with a
-// consistent read of remainingQty, so the second one fails cleanly with a
-// clear error instead of both succeeding and overselling.
+// Everything — order-window check, stock check + decrement, wallet
+// balance check + debit, token number, and order creation — happens
+// inside ONE Firestore transaction. That matters under crowd load: if two
+// students tap "order" on the last plate (or the last few rupees of
+// balance) at the same instant, Firestore guarantees only one transaction
+// commits with a consistent read, so the second one fails cleanly with a
+// clear error instead of both succeeding and overselling/overspending.
 export async function placeOrder(
   uid: string,
   studentName: string,
   cart: CartLine[],
-  breakWindow: BreakWindow | null,
 ): Promise<{ orderId: string; tokenNumber: string; pickupSlot: string | null }> {
   const totalAmount = cart.reduce(
     (sum, line) => sum + line.price * line.qty,
@@ -350,18 +483,31 @@ export async function placeOrder(
   );
   const orderRef = doc(collection(db, ORDERS_COLLECTION));
   const counterRef = doc(db, TOKEN_COUNTER_DOC);
+  const walletRef = doc(db, WALLETS_COLLECTION, uid);
   const itemRefs = cart.map((line) => doc(db, MENU_ITEMS_COLLECTION, line.itemId));
 
   const today = todayKey();
-  const slots = breakWindow ? buildSlots(breakWindow) : [];
+  const slots = upcomingSlots(new Date());
   const slotCounterRefs = slots.map((slot) =>
     doc(db, SLOT_COUNTERS_COLLECTION, `${today}_${slot}`),
   );
 
+  // Re-check the store window server-side-equivalent, inside the
+  // transaction — not just trusting the client's clock/UI state.
+  const windowStatus = getMessOrderingStatus(new Date());
+  if (windowStatus.state !== "open") {
+    throw new Error(
+      windowStatus.state === "before_open"
+        ? `The mess opens at ${STORE_OPEN}.`
+        : `Ordering's closed for today — last orders are taken ${PREP_LEAD_MINUTES} min before ${STORE_CLOSE}.`,
+    );
+  }
+
   const result = await runTransaction(db, async (tx) => {
     // Firestore transactions require all reads before any writes, so read
-    // every item + the counter + every slot counter up front.
+    // every item + the wallet + the counter + every slot counter up front.
     const itemSnaps = await Promise.all(itemRefs.map((ref) => tx.get(ref)));
+    const walletSnap = await tx.get(walletRef);
     const counterSnap = await tx.get(counterRef);
     const slotSnaps = await Promise.all(slotCounterRefs.map((ref) => tx.get(ref)));
 
@@ -381,6 +527,18 @@ export async function placeOrder(
       }
     });
 
+    // Validate wallet balance covers the order. No partial payment, no
+    // "order now, top up later" — insufficient balance simply blocks the
+    // order before anything is written.
+    const currentBalance = walletSnap.exists()
+      ? (walletSnap.data()!.balance as number)
+      : 0;
+    if (currentBalance < totalAmount) {
+      throw new Error(
+        `Not enough balance — you have ₹${currentBalance}, this order is ₹${totalAmount}. Recharge your wallet first.`,
+      );
+    }
+
     // All good — decrement stock for tracked items.
     itemSnaps.forEach((snap, i) => {
       const remaining = snap.data()!.remainingQty;
@@ -389,6 +547,13 @@ export async function placeOrder(
         tx.update(itemRefs[i], { remainingQty: next, available: next > 0 });
       }
     });
+
+    // Debit the wallet by exactly the order total.
+    tx.set(
+      walletRef,
+      { balance: currentBalance - totalAmount, updatedAt: serverTimestamp() },
+      { merge: true },
+    );
 
     // Token number (same daily-reset counter as before).
     let count = 1;
@@ -399,7 +564,10 @@ export async function placeOrder(
     const tokenNumber = `T-${String(count).padStart(3, "0")}`;
 
     // Pickup slot — first slot with room, else the last slot (soft overflow,
-    // never blocks an order over a scheduling quirk).
+    // never blocks an order over a scheduling quirk). Purely an ETA hint:
+    // since you can order from anywhere and collect whenever you arrive on
+    // campus, this isn't a hard appointment, just "roughly when it'll be
+    // ready".
     let pickupSlot: string | null = null;
     if (slots.length > 0) {
       let chosenIndex = slots.length - 1;
@@ -421,7 +589,8 @@ export async function placeOrder(
       );
     }
 
-    // Create the order itself.
+    // Create the order itself — already paid, since the debit above is
+    // part of this same transaction.
     tx.set(orderRef, {
       uid,
       studentName,
@@ -430,38 +599,22 @@ export async function placeOrder(
       tokenNumber,
       pickupSlot,
       status: "pending",
-      paymentStatus: "unpaid",
+      paymentStatus: "paid",
       paymentConfirmedBy: null,
       createdAt: serverTimestamp(),
       readyAt: null,
       readyBy: null,
       servedAt: null,
       servedBy: null,
+      cancelledAt: null,
+      cancelledBy: null,
+      cancelReason: null,
     });
 
     return { tokenNumber, pickupSlot };
   });
 
   return { orderId: orderRef.id, ...result };
-}
-
-// Staff confirms a payment landed in the canteen's UPI account for this
-// order (matched by amount + the token number in the payment note).
-export async function confirmPayment(
-  orderId: string,
-  staffUid: string,
-): Promise<void> {
-  const orderRef = doc(db, ORDERS_COLLECTION, orderId);
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(orderRef);
-    if (!snap.exists()) throw new Error("Order not found.");
-    if ((snap.data() as MessOrder).paymentStatus === "paid")
-      throw new Error("Already marked paid.");
-    tx.update(orderRef, {
-      paymentStatus: "paid",
-      paymentConfirmedBy: staffUid,
-    });
-  });
 }
 
 export function subscribeToOrder(
@@ -487,6 +640,192 @@ export function subscribeToMyActiveOrders(
   );
   return onSnapshot(q, (snap) => {
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as MessOrder));
+  });
+}
+
+// Every order the student has ever placed (any status), most recent first,
+// for the order-history / reorder screen. Capped at 30 — this is a "what
+// did I get last week" list, not a full statement.
+export function subscribeToMyOrderHistory(
+  uid: string,
+  callback: (orders: MessOrder[]) => void,
+) {
+  const q = query(
+    collection(db, ORDERS_COLLECTION),
+    where("uid", "==", uid),
+    orderBy("createdAt", "desc"),
+    limit(30),
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as MessOrder));
+  });
+}
+
+// Student cancels their own order. Only allowed while it's still "pending"
+// — once the kitchen has marked it "ready" the food is already made, so
+// from that point on only staff can cancel (see staffCancelOrder below).
+//
+// This does NOT credit the wallet directly — a student writing their own
+// wallet balance up is exactly the hole the security rules close (see
+// firestore.rules on `wallets`). Instead it files a refund request through
+// the same pending-then-staff-approved path as a UPI recharge
+// (requestRecharge/approveRecharge), reusing rules and code that are
+// already trusted with real money rather than opening a new one. The
+// walletTxnRefs doc, keyed by the order id, is what stops the same order
+// from being "cancelled" twice to double-claim a refund — plus the order's
+// own status guard below refuses a second cancel outright either way.
+export async function cancelOrder(
+  orderId: string,
+  uid: string,
+  studentName: string,
+): Promise<void> {
+  const orderRef = doc(db, ORDERS_COLLECTION, orderId);
+  const refDocRef = doc(db, WALLET_TXN_REFS_COLLECTION, `REFUND-${orderId}`);
+  const txnRef = doc(collection(db, WALLET_TXNS_COLLECTION));
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(orderRef);
+    if (!snap.exists()) throw new Error("Order not found.");
+    const order = snap.data() as MessOrder;
+    if (order.uid !== uid) throw new Error("This isn't your order.");
+    if (order.status !== "pending") {
+      throw new Error(
+        order.status === "ready"
+          ? "This order is already being prepared — ask mess staff to cancel it at the counter."
+          : "This order can no longer be cancelled.",
+      );
+    }
+    const refSnap = await tx.get(refDocRef);
+    if (refSnap.exists()) {
+      throw new Error("This order has already been cancelled.");
+    }
+
+    // Firestore transactions require every read to happen before any
+    // write, so gather all the item snapshots first, then write them all.
+    const itemRefsForOrder = order.items.map((line) =>
+      doc(db, MENU_ITEMS_COLLECTION, line.itemId),
+    );
+    const itemSnaps = await Promise.all(
+      itemRefsForOrder.map((ref) => tx.get(ref)),
+    );
+
+    // Restore stock for tracked items so the plates/cups go back on sale.
+    itemSnaps.forEach((itemSnap, i) => {
+      if (itemSnap.exists()) {
+        const remaining = itemSnap.data().remainingQty;
+        if (typeof remaining === "number") {
+          const next = remaining + order.items[i].qty;
+          tx.update(itemRefsForOrder[i], { remainingQty: next, available: next > 0 });
+        }
+      }
+    });
+
+    tx.update(orderRef, {
+      status: "cancelled",
+      cancelledAt: serverTimestamp(),
+      cancelledBy: uid,
+      cancelReason: "Cancelled by student",
+    });
+
+    tx.set(refDocRef, {
+      uid,
+      txnId: txnRef.id,
+      createdAt: serverTimestamp(),
+    });
+    tx.set(txnRef, {
+      uid,
+      studentName,
+      type: "credit",
+      amount: order.totalAmount,
+      reason: `Refund — order ${order.tokenNumber} cancelled`,
+      upiRefId: `REFUND-${orderId}`,
+      status: "pending",
+      source: "refund",
+      orderId,
+      createdAt: serverTimestamp(),
+      resolvedAt: null,
+      resolvedBy: null,
+    });
+  });
+}
+
+// Staff cancels an order (typically a no-show) and refunds it immediately
+// — unlike the student path above, staff already has unrestricted write
+// access to both messOrders and wallets (see firestore.rules), so this can
+// safely do the refund in the same atomic transaction instead of filing a
+// request staff would just have to approve themselves a moment later.
+// Works for "pending" or "ready" orders; "served"/"cancelled" orders are
+// done and can't be reopened.
+export async function staffCancelOrder(
+  orderId: string,
+  staffUid: string,
+  reason: string,
+): Promise<void> {
+  const orderRef = doc(db, ORDERS_COLLECTION, orderId);
+  const txnRef = doc(collection(db, WALLET_TXNS_COLLECTION));
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(orderRef);
+    if (!snap.exists()) throw new Error("Order not found.");
+    const order = snap.data() as MessOrder;
+    if (order.status === "served") throw new Error("Already served — can't cancel a completed order.");
+    if (order.status === "cancelled") throw new Error("Already cancelled.");
+
+    const walletDocRef = doc(db, WALLETS_COLLECTION, order.uid);
+    const walletSnap = await tx.get(walletDocRef);
+    const currentBalance = walletSnap.exists()
+      ? (walletSnap.data()!.balance as number)
+      : 0;
+
+    // Firestore transactions require every read to happen before any
+    // write, so gather all the item snapshots first, then write them all.
+    const itemRefsForOrder = order.items.map((line) =>
+      doc(db, MENU_ITEMS_COLLECTION, line.itemId),
+    );
+    const itemSnaps = await Promise.all(
+      itemRefsForOrder.map((ref) => tx.get(ref)),
+    );
+
+    // Restore stock for tracked items.
+    itemSnaps.forEach((itemSnap, i) => {
+      if (itemSnap.exists()) {
+        const remaining = itemSnap.data().remainingQty;
+        if (typeof remaining === "number") {
+          const next = remaining + order.items[i].qty;
+          tx.update(itemRefsForOrder[i], { remainingQty: next, available: next > 0 });
+        }
+      }
+    });
+
+    tx.set(
+      walletDocRef,
+      { balance: currentBalance + order.totalAmount, updatedAt: serverTimestamp() },
+      { merge: true },
+    );
+
+    tx.update(orderRef, {
+      status: "cancelled",
+      cancelledAt: serverTimestamp(),
+      cancelledBy: staffUid,
+      cancelReason: reason || "Cancelled by mess staff",
+    });
+
+    // Log it in wallet history too, already resolved — staff doing the
+    // cancel IS the approval, no separate step needed.
+    tx.set(txnRef, {
+      uid: order.uid,
+      studentName: order.studentName,
+      type: "credit",
+      amount: order.totalAmount,
+      reason: `Refund — order ${order.tokenNumber} cancelled by mess staff`,
+      upiRefId: null,
+      status: "approved",
+      source: "refund",
+      orderId,
+      createdAt: serverTimestamp(),
+      resolvedAt: serverTimestamp(),
+      resolvedBy: staffUid,
+    });
   });
 }
 
@@ -546,6 +885,132 @@ export async function markOrderReady(
       readyBy: staffUid,
     });
   });
+}
+
+// ---------- Feedback ----------
+
+export type MessFeedback = {
+  id: string;
+  orderId: string;
+  uid: string;
+  itemId: string;
+  itemName: string;
+  rating: 1 | 2 | 3 | 4 | 5;
+  comment: string | null;
+  createdAt: Timestamp | null;
+};
+
+const FEEDBACK_COLLECTION = "messFeedback";
+
+// One feedback doc per (order, item) — called once per item after an order
+// is served. Doc id is deterministic (`${orderId}_${itemId}`) so a second
+// submission overwrites rather than duplicating, and so the client can
+// check "have I already rated this" without a query.
+export async function submitFeedback(
+  uid: string,
+  orderId: string,
+  itemId: string,
+  itemName: string,
+  rating: 1 | 2 | 3 | 4 | 5,
+  comment: string,
+): Promise<void> {
+  const feedbackRef = doc(db, FEEDBACK_COLLECTION, `${orderId}_${itemId}`);
+  await setDoc(feedbackRef, {
+    orderId,
+    uid,
+    itemId,
+    itemName,
+    rating,
+    comment: comment.trim() || null,
+    createdAt: serverTimestamp(),
+  });
+}
+
+export function subscribeToFeedbackForOrder(
+  orderId: string,
+  callback: (feedback: MessFeedback[]) => void,
+) {
+  const q = query(
+    collection(db, FEEDBACK_COLLECTION),
+    where("orderId", "==", orderId),
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as MessFeedback));
+  });
+}
+
+// ---------- Analytics (staff) ----------
+// Client-side aggregation over served orders in a date range. Fine at
+// current volume (a college mess counter, not a chain) — if this ever
+// scans thousands of orders per query, move it to a scheduled Cloud
+// Function that writes a precomputed daily/monthly summary doc instead.
+
+export type ItemStat = { itemId: string; name: string; qty: number; revenue: number };
+export type MonthlyMessStats = {
+  totalOrders: number;
+  totalRevenue: number;
+  itemStats: ItemStat[]; // sorted most-ordered first
+  avgRating: number | null;
+  ratingCount: number;
+};
+
+export async function getMonthlyMessStats(
+  year: number,
+  month: number, // 1-12
+): Promise<MonthlyMessStats> {
+  const { getDocs, Timestamp: FsTimestamp } = await import("firebase/firestore");
+  const start = FsTimestamp.fromDate(new Date(year, month - 1, 1));
+  const end = FsTimestamp.fromDate(new Date(year, month, 1));
+
+  const ordersQ = query(
+    collection(db, ORDERS_COLLECTION),
+    where("status", "==", "served"),
+    where("createdAt", ">=", start),
+    where("createdAt", "<", end),
+  );
+  const ordersSnap = await getDocs(ordersQ);
+
+  const itemMap = new Map<string, ItemStat>();
+  let totalRevenue = 0;
+  ordersSnap.docs.forEach((d) => {
+    const order = d.data() as MessOrder;
+    totalRevenue += order.totalAmount;
+    order.items.forEach((line) => {
+      const existing = itemMap.get(line.itemId);
+      if (existing) {
+        existing.qty += line.qty;
+        existing.revenue += line.price * line.qty;
+      } else {
+        itemMap.set(line.itemId, {
+          itemId: line.itemId,
+          name: line.name,
+          qty: line.qty,
+          revenue: line.price * line.qty,
+        });
+      }
+    });
+  });
+
+  const feedbackQ = query(
+    collection(db, FEEDBACK_COLLECTION),
+    where("createdAt", ">=", start),
+    where("createdAt", "<", end),
+  );
+  const feedbackSnap = await getDocs(feedbackQ);
+  const ratings = feedbackSnap.docs.map((d) => (d.data() as MessFeedback).rating);
+  const ratingCount = ratings.length;
+  const avgRating =
+    ratingCount > 0
+      ? ratings.reduce((sum, r) => sum + r, 0) / ratingCount
+      : null;
+
+  return {
+    totalOrders: ordersSnap.size,
+    totalRevenue,
+    itemStats: Array.from(itemMap.values()).sort((a, b) => b.qty - a.qty),
+    avgRating,
+    ratingCount,
+  };
 }
 
 export async function markOrderServed(

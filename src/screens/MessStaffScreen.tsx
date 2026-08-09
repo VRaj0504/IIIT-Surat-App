@@ -28,7 +28,7 @@ import {
   getOrderById,
   markOrderServed,
   markOrderReady,
-  confirmPayment,
+  staffCancelOrder,
   subscribeToQueue,
   MessOrder,
   subscribeToPendingRecharges,
@@ -38,10 +38,17 @@ import {
   subscribeToAllMenuItems,
   setDailyQuantity,
   clearDailyQuantity,
+  addMenuItem,
+  updateMenuItem,
+  deleteMenuItem,
   MessMenuItem,
+  MessCategory,
+  getMonthlyMessStats,
+  MonthlyMessStats,
 } from "../firebase/messService";
 
-type Tab = "queue" | "verify" | "recharges" | "stock";
+type Tab = "queue" | "verify" | "recharges" | "stock" | "menu" | "stats";
+const MENU_CATEGORIES: MessCategory[] = ["Thali", "Snacks", "Beverages"];
 
 export default function MessStaffScreen() {
   const { profile } = useAuth();
@@ -62,6 +69,41 @@ export default function MessStaffScreen() {
   const [menuItems, setMenuItems] = useState<MessMenuItem[]>([]);
   const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
+
+  // New-item form for the Menu tab.
+  const [newItemName, setNewItemName] = useState("");
+  const [newItemPrice, setNewItemPrice] = useState("");
+  const [newItemCategory, setNewItemCategory] = useState<MessCategory>("Thali");
+  const [addingItem, setAddingItem] = useState(false);
+  // Inline edit drafts, keyed by item id — only items currently being
+  // edited have an entry here.
+  const [editDrafts, setEditDrafts] = useState<
+    Record<string, { name: string; price: string; category: MessCategory }>
+  >({});
+  const [menuBusyId, setMenuBusyId] = useState<string | null>(null);
+
+  const [statsMonth, setStatsMonth] = useState(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), month: d.getMonth() + 1 };
+  });
+  const [stats, setStats] = useState<MonthlyMessStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  useEffect(() => {
+    if (tab !== "stats") return;
+    let cancelled = false;
+    setStatsLoading(true);
+    getMonthlyMessStats(statsMonth.year, statsMonth.month)
+      .then((s) => {
+        if (!cancelled) setStats(s);
+      })
+      .finally(() => {
+        if (!cancelled) setStatsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, statsMonth]);
 
   useEffect(() => {
     const unsub = subscribeToQueue(setQueue);
@@ -107,6 +149,94 @@ export default function MessStaffScreen() {
     }
   };
 
+  const handleAddItem = async () => {
+    const price = parseFloat(newItemPrice);
+    if (!newItemName.trim()) {
+      Alert.alert("Enter a name", "Type what the item is called.");
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      Alert.alert("Enter a price", "Type a valid price in ₹.");
+      return;
+    }
+    setAddingItem(true);
+    try {
+      await addMenuItem(newItemName.trim(), newItemCategory, price);
+      setNewItemName("");
+      setNewItemPrice("");
+    } catch (e: any) {
+      Alert.alert("Could not add item", e?.message ?? "Please try again.");
+    } finally {
+      setAddingItem(false);
+    }
+  };
+
+  const startEditItem = (item: MessMenuItem) => {
+    setEditDrafts((prev) => ({
+      ...prev,
+      [item.id]: { name: item.name, price: String(item.price), category: item.category },
+    }));
+  };
+
+  const cancelEditItem = (itemId: string) => {
+    setEditDrafts((prev) => {
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+  };
+
+  const handleSaveEditItem = async (itemId: string) => {
+    const draft = editDrafts[itemId];
+    if (!draft) return;
+    const price = parseFloat(draft.price);
+    if (!draft.name.trim()) {
+      Alert.alert("Enter a name", "Item name can't be empty.");
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      Alert.alert("Enter a price", "Type a valid price in ₹.");
+      return;
+    }
+    setMenuBusyId(itemId);
+    try {
+      await updateMenuItem(itemId, {
+        name: draft.name.trim(),
+        category: draft.category,
+        price,
+      });
+      cancelEditItem(itemId);
+    } catch (e: any) {
+      Alert.alert("Could not save changes", e?.message ?? "Please try again.");
+    } finally {
+      setMenuBusyId(null);
+    }
+  };
+
+  const handleDeleteItem = (item: MessMenuItem) => {
+    Alert.alert(
+      `Delete ${item.name}?`,
+      "This removes it from the menu for good. Past orders keep their own record of it, so order history is unaffected. If you just want to pause it for today, use the Stock tab and set it to 0 instead.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setMenuBusyId(item.id);
+            try {
+              await deleteMenuItem(item.id);
+            } catch (e: any) {
+              Alert.alert("Could not delete", e?.message ?? "Please try again.");
+            } finally {
+              setMenuBusyId(null);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const lookupToken = async () => {
     if (!tokenInput.trim()) return;
     setLookupLoading(true);
@@ -139,29 +269,8 @@ export default function MessStaffScreen() {
     }
   };
 
-  const handleConfirmPayment = async () => {
-    if (!foundOrder || !profile?.uid) return;
-    try {
-      await confirmPayment(foundOrder.id, profile.uid);
-      setFoundOrder({
-        ...foundOrder,
-        paymentStatus: "paid",
-        paymentConfirmedBy: profile.uid,
-      });
-    } catch (e: any) {
-      Alert.alert("Could not confirm payment", e?.message ?? "Please try again.");
-    }
-  };
-
   const handleServe = async () => {
     if (!foundOrder || !profile?.uid) return;
-    if (foundOrder.paymentStatus !== "paid") {
-      Alert.alert(
-        "Payment not confirmed",
-        "Confirm the payment landed in the canteen's UPI account before serving.",
-      );
-      return;
-    }
     try {
       await markOrderServed(foundOrder.id, profile.uid);
       setFoundOrder({ ...foundOrder, status: "served" });
@@ -170,22 +279,12 @@ export default function MessStaffScreen() {
     }
   };
 
-  // Confirm payment / mark ready straight from the live queue, as orders
-  // come in — not gated on the student being physically at the counter.
-  // Doing this ambiently is what keeps the counter itself down to a single
-  // fast tap instead of a full check each time someone walks up.
-  const handleQueueConfirmPayment = async (order: MessOrder) => {
-    if (!profile?.uid) return;
-    setQueueActionId(order.id);
-    try {
-      await confirmPayment(order.id, profile.uid);
-    } catch (e: any) {
-      Alert.alert("Could not confirm payment", e?.message ?? "Please try again.");
-    } finally {
-      setQueueActionId(null);
-    }
-  };
-
+  // Mark ready straight from the live queue, as orders come in — not gated
+  // on the student being physically at the counter. Doing this ambiently is
+  // what keeps the counter itself down to a single fast tap instead of a
+  // full check each time someone walks up. There's no "confirm payment"
+  // step here anymore — every order in this queue was already paid for out
+  // of the student's wallet the instant it was placed.
   const handleQueueMarkReady = async (order: MessOrder) => {
     if (!profile?.uid) return;
     setQueueActionId(order.id);
@@ -196,6 +295,49 @@ export default function MessStaffScreen() {
     } finally {
       setQueueActionId(null);
     }
+  };
+
+  // Serve directly from the queue once an order is "ready" — closes the
+  // loop without staff having to switch to the Verify tab and re-look-up
+  // the same order they're already looking at.
+  const handleQueueServe = async (order: MessOrder) => {
+    if (!profile?.uid) return;
+    setQueueActionId(order.id);
+    try {
+      await markOrderServed(order.id, profile.uid);
+    } catch (e: any) {
+      Alert.alert("Could not mark served", e?.message ?? "Please try again.");
+    } finally {
+      setQueueActionId(null);
+    }
+  };
+
+  // No-show / mistaken-order cancellation, refunded to the student
+  // immediately (staff is already trusted with wallet writes, so this
+  // doesn't need the pending-approval detour a student's own cancel does).
+  const handleQueueCancel = (order: MessOrder) => {
+    if (!profile?.uid) return;
+    Alert.alert(
+      `Cancel token ${order.tokenNumber}?`,
+      `₹${order.totalAmount} will be refunded to ${order.studentName}'s wallet right away.`,
+      [
+        { text: "Back", style: "cancel" },
+        {
+          text: "Cancel & refund",
+          style: "destructive",
+          onPress: async () => {
+            setQueueActionId(order.id);
+            try {
+              await staffCancelOrder(order.id, profile.uid, "No-show / staff cancelled");
+            } catch (e: any) {
+              Alert.alert("Could not cancel", e?.message ?? "Please try again.");
+            } finally {
+              setQueueActionId(null);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleApprove = async (txn: WalletTransaction) => {
@@ -224,7 +366,12 @@ export default function MessStaffScreen() {
       <SafeAreaView style={styles.container} edges={["top"]}>
         <Text style={styles.title}>Mess Counter</Text>
 
-        <View style={styles.tabRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabRow}
+          contentContainerStyle={styles.tabRowContent}
+        >
           <TouchableOpacity
             style={[styles.tab, tab === "queue" && styles.tabActive]}
             onPress={() => setTab("queue")}
@@ -268,7 +415,27 @@ export default function MessStaffScreen() {
               Stock
             </Text>
           </TouchableOpacity>
-        </View>
+          <TouchableOpacity
+            style={[styles.tab, tab === "menu" && styles.tabActive]}
+            onPress={() => setTab("menu")}
+          >
+            <Text
+              style={[styles.tabText, tab === "menu" && styles.tabTextActive]}
+            >
+              Menu
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, tab === "stats" && styles.tabActive]}
+            onPress={() => setTab("stats")}
+          >
+            <Text
+              style={[styles.tabText, tab === "stats" && styles.tabTextActive]}
+            >
+              Stats
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
 
         {tab === "queue" && (
           <ScrollView
@@ -276,10 +443,9 @@ export default function MessStaffScreen() {
             showsVerticalScrollIndicator={false}
           >
             <Text style={styles.helperText}>
-              Confirm payments and mark food ready here as orders come in —
-              students only need a quick tap-and-go at the counter once
-              both are done, instead of everyone waiting while you check
-              each order from scratch.
+              Mark food ready and serve it — all from one screen, no need to
+              switch to Verify Token unless a student's showing up without
+              you having seen their order come through yet.
             </Text>
             {queue.length === 0 ? (
               <Text style={[styles.helperText, { marginTop: spacing.md }]}>
@@ -309,40 +475,20 @@ export default function MessStaffScreen() {
                       </Text>
                     )}
                     <View style={styles.queueActionsRow}>
-                      {order.paymentStatus === "paid" ? (
-                        <View style={styles.queueDoneBadge}>
-                          <Ionicons
-                            name="checkmark-circle"
-                            size={15}
-                            color={colors.success}
-                          />
-                          <Text style={styles.queueDoneText}>Paid</Text>
-                        </View>
-                      ) : (
+                      {order.status === "ready" ? (
                         <TouchableOpacity
                           style={styles.queueActionBtn}
                           disabled={busy}
-                          onPress={() => handleQueueConfirmPayment(order)}
+                          onPress={() => handleQueueServe(order)}
                         >
                           {busy ? (
                             <ActivityIndicator color="#fff" size="small" />
                           ) : (
                             <Text style={styles.queueActionBtnText}>
-                              Confirm Payment
+                              Serve
                             </Text>
                           )}
                         </TouchableOpacity>
-                      )}
-
-                      {order.status === "ready" ? (
-                        <View style={styles.queueDoneBadge}>
-                          <Ionicons
-                            name="checkmark-circle"
-                            size={15}
-                            color={colors.success}
-                          />
-                          <Text style={styles.queueDoneText}>Ready</Text>
-                        </View>
                       ) : (
                         <TouchableOpacity
                           style={[
@@ -369,6 +515,13 @@ export default function MessStaffScreen() {
                           )}
                         </TouchableOpacity>
                       )}
+                      <TouchableOpacity
+                        style={styles.queueCancelBtn}
+                        disabled={busy}
+                        onPress={() => handleQueueCancel(order)}
+                      >
+                        <Ionicons name="close" size={16} color={colors.danger} />
+                      </TouchableOpacity>
                     </View>
                   </View>
                 );
@@ -493,32 +646,6 @@ export default function MessStaffScreen() {
                     />
                     <Text style={styles.servedBadgeText}>Already served</Text>
                   </View>
-                ) : foundOrder.paymentStatus !== "paid" ? (
-                  <>
-                    <View style={styles.paymentPendingBadge}>
-                      <Ionicons
-                        name="hourglass-outline"
-                        size={16}
-                        color="#8a6d00"
-                      />
-                      <Text style={styles.paymentPendingText}>
-                        Payment not yet confirmed — check the canteen's UPI
-                        account for ₹{foundOrder.totalAmount} with note "Mess
-                        order {foundOrder.tokenNumber}"
-                      </Text>
-                    </View>
-                    <TouchableOpacity
-                      style={styles.confirmPaymentBtn}
-                      onPress={handleConfirmPayment}
-                    >
-                      <Ionicons
-                        name="checkmark-circle-outline"
-                        size={18}
-                        color="#fff"
-                      />
-                      <Text style={styles.serveBtnText}>Confirm Payment</Text>
-                    </TouchableOpacity>
-                  </>
                 ) : (
                   <TouchableOpacity
                     style={styles.serveBtn}
@@ -540,34 +667,54 @@ export default function MessStaffScreen() {
           >
             {pending.length === 0 ? (
               <Text style={styles.helperText}>
-                No pending recharge requests.
+                No pending requests.
               </Text>
             ) : (
-              pending.map((t) => (
-                <View key={t.id} style={styles.rechargeRow}>
-                  <View style={styles.rechargeInfo}>
-                    <Text style={styles.rechargeName}>{t.studentName}</Text>
-                    <Text style={styles.rechargeAmount}>₹{t.amount}</Text>
-                    <Text style={styles.rechargeRef}>
-                      UPI Ref: {t.upiRefId ?? "—"}
-                    </Text>
+              pending.map((t) => {
+                const isRefund = t.source === "refund";
+                return (
+                  <View key={t.id} style={styles.rechargeRow}>
+                    <View style={styles.rechargeInfo}>
+                      <View style={styles.rechargeNameRow}>
+                        <Text style={styles.rechargeName}>{t.studentName}</Text>
+                        <View
+                          style={[
+                            styles.sourceBadge,
+                            isRefund ? styles.sourceBadgeRefund : styles.sourceBadgeRecharge,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.sourceBadgeText,
+                              { color: isRefund ? colors.danger : colors.success },
+                            ]}
+                          >
+                            {isRefund ? "Refund" : "Recharge"}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.rechargeAmount}>₹{t.amount}</Text>
+                      <Text style={styles.rechargeRef}>
+                        {isRefund ? t.reason : `UPI Ref: ${t.upiRefId ?? "—"}`}
+                      </Text>
+                    </View>
+                    <View style={styles.rechargeActions}>
+                      <TouchableOpacity
+                        style={styles.rejectBtn}
+                        onPress={() => handleReject(t)}
+                      >
+                        <Ionicons name="close" size={18} color={colors.danger} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.approveBtn}
+                        onPress={() => handleApprove(t)}
+                      >
+                        <Ionicons name="checkmark" size={18} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  <View style={styles.rechargeActions}>
-                    <TouchableOpacity
-                      style={styles.rejectBtn}
-                      onPress={() => handleReject(t)}
-                    >
-                      <Ionicons name="close" size={18} color={colors.danger} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.approveBtn}
-                      onPress={() => handleApprove(t)}
-                    >
-                      <Ionicons name="checkmark" size={18} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))
+                );
+              })
             )}
           </ScrollView>
         )}
@@ -622,6 +769,254 @@ export default function MessStaffScreen() {
             ))}
           </ScrollView>
         )}
+
+        {tab === "menu" && (
+          <ScrollView
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.sectionTitle}>Add Item</Text>
+            <ClayCard soft style={styles.addItemCard}>
+              <TextInput
+                style={styles.stockInput2}
+                value={newItemName}
+                onChangeText={setNewItemName}
+                placeholder="Item name (e.g. Veg Thali)"
+                placeholderTextColor={colors.textSecondary}
+              />
+              <View style={styles.categoryPickerRow}>
+                {MENU_CATEGORIES.map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[
+                      styles.categoryPickerChip,
+                      newItemCategory === cat && styles.categoryPickerChipActive,
+                    ]}
+                    onPress={() => setNewItemCategory(cat)}
+                  >
+                    <Text
+                      style={[
+                        styles.categoryPickerText,
+                        newItemCategory === cat && styles.categoryPickerTextActive,
+                      ]}
+                    >
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.addItemBottomRow}>
+                <TextInput
+                  style={[styles.stockInput2, { flex: 1 }]}
+                  value={newItemPrice}
+                  onChangeText={(v) => setNewItemPrice(v.replace(/[^0-9.]/g, ""))}
+                  placeholder="Price (₹)"
+                  placeholderTextColor={colors.textSecondary}
+                  keyboardType="decimal-pad"
+                />
+                <TouchableOpacity
+                  style={styles.addItemBtn}
+                  onPress={handleAddItem}
+                  disabled={addingItem}
+                >
+                  {addingItem ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.stockSetBtnText}>Add Item</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ClayCard>
+
+            <Text style={styles.sectionTitle}>All Items</Text>
+            {menuItems.length === 0 ? (
+              <Text style={styles.helperText}>No items on the menu yet.</Text>
+            ) : (
+              menuItems.map((item) => {
+                const draft = editDrafts[item.id];
+                const busy = menuBusyId === item.id;
+                if (draft) {
+                  return (
+                    <ClayCard key={item.id} soft style={styles.editItemCard}>
+                      <TextInput
+                        style={styles.stockInput2}
+                        value={draft.name}
+                        onChangeText={(v) =>
+                          setEditDrafts((prev) => ({
+                            ...prev,
+                            [item.id]: { ...prev[item.id], name: v },
+                          }))
+                        }
+                        placeholderTextColor={colors.textSecondary}
+                      />
+                      <View style={styles.categoryPickerRow}>
+                        {MENU_CATEGORIES.map((cat) => (
+                          <TouchableOpacity
+                            key={cat}
+                            style={[
+                              styles.categoryPickerChip,
+                              draft.category === cat && styles.categoryPickerChipActive,
+                            ]}
+                            onPress={() =>
+                              setEditDrafts((prev) => ({
+                                ...prev,
+                                [item.id]: { ...prev[item.id], category: cat },
+                              }))
+                            }
+                          >
+                            <Text
+                              style={[
+                                styles.categoryPickerText,
+                                draft.category === cat && styles.categoryPickerTextActive,
+                              ]}
+                            >
+                              {cat}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      <View style={styles.addItemBottomRow}>
+                        <TextInput
+                          style={[styles.stockInput2, { flex: 1 }]}
+                          value={draft.price}
+                          onChangeText={(v) =>
+                            setEditDrafts((prev) => ({
+                              ...prev,
+                              [item.id]: { ...prev[item.id], price: v.replace(/[^0-9.]/g, "") },
+                            }))
+                          }
+                          keyboardType="decimal-pad"
+                          placeholderTextColor={colors.textSecondary}
+                        />
+                        <TouchableOpacity
+                          style={styles.stockClearBtn}
+                          onPress={() => cancelEditItem(item.id)}
+                          disabled={busy}
+                        >
+                          <Text style={styles.stockClearBtnText}>✕</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.addItemBtn}
+                          onPress={() => handleSaveEditItem(item.id)}
+                          disabled={busy}
+                        >
+                          {busy ? (
+                            <ActivityIndicator color="#fff" size="small" />
+                          ) : (
+                            <Text style={styles.stockSetBtnText}>Save</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </ClayCard>
+                  );
+                }
+                return (
+                  <View key={item.id} style={styles.stockRow}>
+                    <View style={styles.stockInfo}>
+                      <Text style={styles.rechargeName}>{item.name}</Text>
+                      <Text style={styles.rechargeRef}>
+                        {item.category} · ₹{item.price}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.stockClearBtn}
+                      onPress={() => startEditItem(item)}
+                      disabled={busy}
+                    >
+                      <Ionicons name="pencil" size={15} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.stockClearBtn}
+                      onPress={() => handleDeleteItem(item)}
+                      disabled={busy}
+                    >
+                      {busy ? (
+                        <ActivityIndicator color={colors.danger} size="small" />
+                      ) : (
+                        <Ionicons name="trash-outline" size={15} color={colors.danger} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              })
+            )}
+          </ScrollView>
+        )}
+
+        {tab === "stats" && (
+          <ScrollView
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.monthPicker}>
+              <TouchableOpacity
+                onPress={() =>
+                  setStatsMonth((m) => {
+                    const d = new Date(m.year, m.month - 2, 1);
+                    return { year: d.getFullYear(), month: d.getMonth() + 1 };
+                  })
+                }
+              >
+                <Ionicons name="chevron-back" size={20} color={colors.primary} />
+              </TouchableOpacity>
+              <Text style={styles.monthLabel}>
+                {new Date(statsMonth.year, statsMonth.month - 1, 1).toLocaleDateString(
+                  "en-US",
+                  { month: "long", year: "numeric" },
+                )}
+              </Text>
+              <TouchableOpacity
+                onPress={() =>
+                  setStatsMonth((m) => {
+                    const d = new Date(m.year, m.month, 1);
+                    return { year: d.getFullYear(), month: d.getMonth() + 1 };
+                  })
+                }
+              >
+                <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+
+            {statsLoading ? (
+              <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
+            ) : stats ? (
+              <>
+                <View style={styles.statsSummaryRow}>
+                  <View style={styles.statsSummaryCard}>
+                    <Text style={styles.statsSummaryValue}>{stats.totalOrders}</Text>
+                    <Text style={styles.statsSummaryLabel}>Orders</Text>
+                  </View>
+                  <View style={styles.statsSummaryCard}>
+                    <Text style={styles.statsSummaryValue}>₹{stats.totalRevenue}</Text>
+                    <Text style={styles.statsSummaryLabel}>Revenue</Text>
+                  </View>
+                  <View style={styles.statsSummaryCard}>
+                    <Text style={styles.statsSummaryValue}>
+                      {stats.avgRating !== null ? stats.avgRating.toFixed(1) : "—"}
+                    </Text>
+                    <Text style={styles.statsSummaryLabel}>
+                      Avg rating{stats.ratingCount > 0 ? ` (${stats.ratingCount})` : ""}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.sectionTitle}>Most Ordered</Text>
+                {stats.itemStats.length === 0 ? (
+                  <Text style={styles.helperText}>No served orders this month yet.</Text>
+                ) : (
+                  stats.itemStats.map((s) => (
+                    <View key={s.itemId} style={styles.statsItemRow}>
+                      <Text style={styles.rechargeName}>{s.name}</Text>
+                      <Text style={styles.rechargeRef}>
+                        {s.qty} sold · ₹{s.revenue}
+                      </Text>
+                    </View>
+                  ))
+                )}
+              </>
+            ) : null}
+          </ScrollView>
+        )}
       </SafeAreaView>
     </LinearGradient>
   );
@@ -635,13 +1030,70 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     marginBottom: spacing.md,
   },
-  tabRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
-  tab: {
+  tabRow: { flexGrow: 0, marginBottom: spacing.md },
+  tabRowContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  monthPicker: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  monthLabel: {
+    ...typography.h3,
+    color: colors.textPrimary,
+    minWidth: 160,
+    textAlign: "center",
+  },
+  statsSummaryRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  statsSummaryCard: {
     flex: 1,
+    backgroundColor: colors.claySurface,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+    ...clayShadowSoft,
+  },
+  statsSummaryValue: {
+    ...typography.h3,
+    color: colors.primary,
+    fontWeight: "800",
+  },
+  statsSummaryLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  statsItemRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: colors.claySurface,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    ...clayShadowSoft,
+  },
+  sectionTitle: {
+    ...typography.h3,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  tab: {
     paddingVertical: 10,
+    paddingHorizontal: spacing.md,
     borderRadius: radius.full,
     backgroundColor: colors.claySurface,
     alignItems: "center",
+    justifyContent: "center",
     ...clayShadowSoft,
   },
   tabActive: { backgroundColor: colors.primary },
@@ -858,6 +1310,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   queueActionBtnTextSecondary: { color: colors.primary },
+  queueCancelBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.full,
+    backgroundColor: colors.danger + "12",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   queueDoneBadge: {
     flex: 1,
     flexDirection: "row",
@@ -883,11 +1343,20 @@ const styles = StyleSheet.create({
     ...clayShadowSoft,
   },
   rechargeInfo: { flex: 1 },
+  rechargeNameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   rechargeName: {
     ...typography.body,
     color: colors.textPrimary,
     fontWeight: "700",
   },
+  sourceBadge: {
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: radius.full,
+  },
+  sourceBadgeRecharge: { backgroundColor: colors.success + "1A" },
+  sourceBadgeRefund: { backgroundColor: colors.danger + "1A" },
+  sourceBadgeText: { ...typography.caption, fontWeight: "700", fontSize: 11 },
   rechargeAmount: { ...typography.h3, color: colors.primary, marginTop: 2 },
   rechargeRef: {
     ...typography.caption,
@@ -946,6 +1415,48 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: radius.full,
     backgroundColor: colors.success,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  // ---------- Menu tab (add/edit item form) ----------
+  addItemCard: { padding: spacing.md, marginBottom: spacing.lg, gap: spacing.sm },
+  editItemCard: {
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  stockInput2: {
+    backgroundColor: colors.background,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    ...typography.body,
+    color: colors.textPrimary,
+    borderWidth: 1,
+    borderColor: "rgba(11,61,145,0.12)",
+  },
+  categoryPickerRow: { flexDirection: "row", gap: spacing.xs },
+  categoryPickerChip: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: radius.full,
+    backgroundColor: colors.background,
+    alignItems: "center",
+  },
+  categoryPickerChipActive: { backgroundColor: colors.primary },
+  categoryPickerText: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    fontWeight: "600",
+  },
+  categoryPickerTextActive: { color: "#fff" },
+  addItemBottomRow: { flexDirection: "row", gap: spacing.sm, alignItems: "center" },
+  addItemBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     alignItems: "center",
     justifyContent: "center",
   },

@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -26,6 +27,7 @@ import {
   subscribeToWalletBalance,
   subscribeToMyTransactions,
   requestRecharge,
+  buildUpiRechargeUrl,
   WalletTransaction,
 } from "../firebase/messService";
 
@@ -124,6 +126,33 @@ export default function MessWalletScreen() {
               placeholder="e.g. 200"
               placeholderTextColor={colors.textSecondary}
             />
+
+            <TouchableOpacity
+              style={styles.payUpiBtn}
+              onPress={async () => {
+                const amt = parseFloat(amount);
+                if (!amt || amt <= 0) {
+                  Alert.alert(
+                    "Enter an amount",
+                    "Enter how much you want to add before opening your UPI app.",
+                  );
+                  return;
+                }
+                const url = buildUpiRechargeUrl(amt);
+                const canOpen = await Linking.canOpenURL(url);
+                if (canOpen) {
+                  Linking.openURL(url);
+                } else {
+                  Alert.alert(
+                    "No UPI app found",
+                    "Pay the canteen directly using its QR code instead.",
+                  );
+                }
+              }}
+            >
+              <Ionicons name="qr-code-outline" size={16} color={colors.primary} />
+              <Text style={styles.payUpiBtnText}>Pay via UPI app</Text>
+            </TouchableOpacity>
 
             <Text style={styles.inputLabel}>UPI Transaction ID</Text>
             <TextInput
@@ -265,6 +294,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(11,61,145,0.12)",
     ...clayShadowSoft,
+  },
+  payUpiBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: colors.background,
+    borderRadius: radius.md,
+    paddingVertical: 8,
+    marginTop: spacing.sm,
+    ...clayShadowSoft,
+  },
+  payUpiBtnText: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: "700",
   },
   submitBtn: {
     backgroundColor: colors.primary,

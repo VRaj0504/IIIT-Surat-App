@@ -11,6 +11,7 @@ import MessMenuScreen from "../screens/MessMenuScreen";
 import MessOrderScreen from "../screens/MessOrderScreen";
 import MessTokenScreen from "../screens/MessTokenScreen";
 import MessWalletScreen from "../screens/MessWalletScreen";
+import MessOrderHistoryScreen from "../screens/MessOrderHistoryScreen";
 import MessStaffScreen from "../screens/MessStaffScreen";
 import ResourcesScreen from "../screens/ResourcesScreen";
 import PlaceholderScreen from "../screens/PlaceholderScreen";
@@ -74,6 +75,11 @@ export default function RootNavigator() {
         name="MessWallet"
         component={MessWalletScreen}
         options={{ title: "Mess Wallet" }}
+      />
+      <Stack.Screen
+        name="MessOrderHistory"
+        component={MessOrderHistoryScreen}
+        options={{ title: "Order History" }}
       />
       <Stack.Screen
         name="MessStaff"
