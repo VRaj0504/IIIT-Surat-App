@@ -223,7 +223,8 @@ service cloud.firestore {
       // totalAmount matches the cart's real price — that's still enforced
       // by going through placeOrder() rather than a raw client write. A
       // fully tamper-proof version of this would move order creation to a
-      // Cloud Function; fine for now given who has access to this app.
+      // Cloud Function (see functions/src/placeOrder.ts, on hold pending
+      // the Blaze plan); fine for now given who has access to this app.
       allow create: if request.auth != null &&
         request.resource.data.uid == request.auth.uid &&
         request.resource.data.paymentStatus == 'paid' &&
@@ -329,6 +330,28 @@ service cloud.firestore {
       allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
       allow update: if false;
       allow delete: if false;
+    }
+
+    // Written only by Cloud Functions (Admin SDK, bypasses these rules):
+    // dailyReconcile's daily run-log, and razorpayWebhook's flag for a
+    // captured payment that arrived with no student uid attached (so it
+    // couldn't be auto-credited and needs a manual wallet top-up). No
+    // client ever writes either — read-only here so staff tooling can
+    // eventually surface them.
+    match /reconciliationAlerts/{alertId} {
+      allow read: if isAdmin() || isFaculty();
+      allow write: if false;
+    }
+    match /paymentAlerts/{alertId} {
+      allow read: if isAdmin() || isFaculty();
+      allow write: if false;
+    }
+
+    // Idempotency keys for placeOrderFn. Written and read only by the
+    // Cloud Function itself via the Admin SDK, which bypasses these rules
+    // — default-deny here just means no client can read or forge one.
+    match /orderRequests/{requestId} {
+      allow read, write: if false;
     }
 
     // Per-item, per-order star rating + optional comment, submitted by the

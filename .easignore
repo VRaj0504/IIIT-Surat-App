@@ -1,0 +1,62 @@
+# Same as .gitignore, EXCEPT .env is deliberately NOT listed here.
+#
+# EAS Build uploads your project by respecting .gitignore — UNLESS this file
+# exists, in which case EAS uses ONLY this file instead. Since .env holds the
+# EXPO_PUBLIC_FIREBASE_*/SUPABASE_* keys the app needs at build time, and
+# .env is gitignored (correctly — it shouldn't be committed), a plain `eas
+# build` would silently ship an app with no Firebase/Supabase config and it
+# would fail to connect to anything. This file exists purely to carve out
+# that one exception for build uploads.
+#
+# For anything beyond a personal/demo build, prefer EAS's own Environment
+# Variables (`eas env:set ...`) instead of this file — see
+# https://docs.expo.dev/eas/environment-variables/
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files (but NOT .env itself — see note above)
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+serviceAccountKey.json
+scripts/seed-roster.js
+scripts/seed-allowlist.js
+scripts/seed-timetable.mjs
+*.apk
+build.log
+
+scripts/serviceAccountKey.json.env
+.firebase/

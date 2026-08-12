@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -46,13 +46,58 @@ export default function ClubsScreen() {
     return unsubscribe;
   }, []);
 
-  const openClub = (club: Club) => {
-    navigation.navigate('ClubDetail', { clubId: club.id, clubName: club.name });
-  };
+  const openClub = useCallback(
+    (club: Club) => {
+      navigation.navigate('ClubDetail', { clubId: club.id, clubName: club.name });
+    },
+    [navigation],
+  );
 
   const openEventsClub = (event: ClubEvent) => {
     navigation.navigate('ClubDetail', { clubId: event.clubId, clubName: event.clubName });
   };
+
+  // Events and clubs are both admin-authored content lists (not something
+  // that grows with concurrent student traffic the way live orders do), so
+  // there's no real lag risk here even unvirtualized. The clubs grid still
+  // moves to FlatList below since it's genuinely unbounded (no `limit()` on
+  // the query) and this comes for free; the events list stays as a plain
+  // header since a numColumns grid and a card list can't share one FlatList.
+  const EventsSection = (
+    <>
+      <Text style={styles.sectionTitle}>Upcoming Events</Text>
+      {loadingEvents ? (
+        <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.md }} />
+      ) : events.length === 0 ? (
+        <Text style={styles.emptyText}>No upcoming events yet.</Text>
+      ) : (
+        events.map((event) => {
+          const { icon, color } = getClubIcon(event.clubName);
+          return (
+            <GlassCard key={event.id} style={styles.eventCard}>
+              <TouchableOpacity style={styles.eventCardInner} onPress={() => openEventsClub(event)} activeOpacity={0.7}>
+                <View style={[styles.eventIconWrap, { backgroundColor: color + '22' }]}>
+                  <Ionicons name={icon} size={20} color={color} />
+                </View>
+                <View style={styles.eventInfo}>
+                  <Text style={styles.eventTitle}>{event.title}</Text>
+                  <Text style={[styles.eventClub, { color }]}>{event.clubName}</Text>
+                  <Text style={styles.eventDate}>{formatEventDate(event.dateTime)}</Text>
+                </View>
+              </TouchableOpacity>
+            </GlassCard>
+          );
+        })
+      )}
+      <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>All Clubs</Text>
+      {loadingClubs && (
+        <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.md }} />
+      )}
+      {!loadingClubs && clubs.length === 0 && (
+        <Text style={styles.emptyText}>No clubs yet.</Text>
+      )}
+    </>
+  );
 
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
@@ -66,45 +111,18 @@ export default function ClubsScreen() {
           )}
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <Text style={styles.sectionTitle}>Upcoming Events</Text>
-          {loadingEvents ? (
-            <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.md }} />
-          ) : events.length === 0 ? (
-            <Text style={styles.emptyText}>No upcoming events yet.</Text>
-          ) : (
-            events.map((event) => {
-              const { icon, color } = getClubIcon(event.clubName);
-              return (
-                <GlassCard key={event.id} style={styles.eventCard}>
-                  <TouchableOpacity style={styles.eventCardInner} onPress={() => openEventsClub(event)} activeOpacity={0.7}>
-                    <View style={[styles.eventIconWrap, { backgroundColor: color + '22' }]}>
-                      <Ionicons name={icon} size={20} color={color} />
-                    </View>
-                    <View style={styles.eventInfo}>
-                      <Text style={styles.eventTitle}>{event.title}</Text>
-                      <Text style={[styles.eventClub, { color }]}>{event.clubName}</Text>
-                      <Text style={styles.eventDate}>{formatEventDate(event.dateTime)}</Text>
-                    </View>
-                  </TouchableOpacity>
-                </GlassCard>
-              );
-            })
+        <FlatList
+          data={loadingClubs ? [] : clubs}
+          keyExtractor={(club) => club.id}
+          numColumns={3}
+          contentContainerStyle={styles.scrollContent}
+          columnWrapperStyle={styles.gridRow}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={EventsSection}
+          renderItem={({ item: club }) => (
+            <ClubIconTile name={club.name} onPress={() => openClub(club)} />
           )}
-
-          <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>All Clubs</Text>
-          {loadingClubs ? (
-            <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.md }} />
-          ) : clubs.length === 0 ? (
-            <Text style={styles.emptyText}>No clubs yet.</Text>
-          ) : (
-            <View style={styles.grid}>
-              {clubs.map((club) => (
-                <ClubIconTile key={club.id} name={club.name} onPress={() => openClub(club)} />
-              ))}
-            </View>
-          )}
-        </ScrollView>
+        />
       </SafeAreaView>
     </LinearGradient>
   );
@@ -132,4 +150,5 @@ const styles = StyleSheet.create({
   eventClub: { ...typography.caption, fontWeight: '600', marginTop: 2 },
   eventDate: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, justifyContent: 'flex-start' },
+  gridRow: { gap: spacing.sm, justifyContent: 'flex-start' },
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, memo } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -49,6 +50,88 @@ import {
 
 type Tab = "queue" | "verify" | "recharges" | "stock" | "menu" | "stats";
 const MENU_CATEGORIES: MessCategory[] = ["Thali", "Snacks", "Beverages"];
+
+// Extracted + memoized so that when the queue's onSnapshot fires on ANY
+// order changing (a routine, constant event during lunch rush — dozens of
+// staff/students touching orders a minute), React only re-renders the rows
+// whose own props actually changed instead of every row in the queue. Under
+// ScrollView+.map() every tick re-rendered (and, worse, kept mounted) the
+// full list — with the previous version scaling that the file already
+// covers, that's the one thing that could still visibly lag as the queue
+// grows to the size a full lunch rush produces.
+const QueueRow = memo(function QueueRow({
+  order,
+  busy,
+  onMarkReady,
+  onServe,
+  onCancel,
+}: {
+  order: MessOrder;
+  busy: boolean;
+  onMarkReady: (order: MessOrder) => void;
+  onServe: (order: MessOrder) => void;
+  onCancel: (order: MessOrder) => void;
+}) {
+  const itemSummary = order.items
+    .map((line) => `${line.qty}× ${line.name}`)
+    .join(", ");
+  return (
+    <View style={styles.queueRow}>
+      <View style={styles.queueTopRow}>
+        <Text style={styles.queueToken}>{order.tokenNumber}</Text>
+        <Text style={styles.queueAmount}>₹{order.totalAmount}</Text>
+      </View>
+      <Text style={styles.queueName}>{order.studentName}</Text>
+      <Text style={styles.queueItems} numberOfLines={2}>
+        {itemSummary}
+      </Text>
+      {order.pickupSlot && (
+        <Text style={styles.queueSlot}>Pickup slot: {order.pickupSlot}</Text>
+      )}
+      <View style={styles.queueActionsRow}>
+        {order.status === "ready" ? (
+          <TouchableOpacity
+            style={styles.queueActionBtn}
+            disabled={busy}
+            onPress={() => onServe(order)}
+          >
+            {busy ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.queueActionBtnText}>Serve</Text>
+            )}
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[styles.queueActionBtn, styles.queueActionBtnSecondary]}
+            disabled={busy}
+            onPress={() => onMarkReady(order)}
+          >
+            {busy ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <Text
+                style={[
+                  styles.queueActionBtnText,
+                  styles.queueActionBtnTextSecondary,
+                ]}
+              >
+                Mark Ready
+              </Text>
+            )}
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={styles.queueCancelBtn}
+          disabled={busy}
+          onPress={() => onCancel(order)}
+        >
+          <Ionicons name="close" size={16} color={colors.danger} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+});
 
 export default function MessStaffScreen() {
   const { profile } = useAuth();
@@ -285,60 +368,69 @@ export default function MessStaffScreen() {
   // full check each time someone walks up. There's no "confirm payment"
   // step here anymore — every order in this queue was already paid for out
   // of the student's wallet the instant it was placed.
-  const handleQueueMarkReady = async (order: MessOrder) => {
-    if (!profile?.uid) return;
-    setQueueActionId(order.id);
-    try {
-      await markOrderReady(order.id, profile.uid);
-    } catch (e: any) {
-      Alert.alert("Could not mark ready", e?.message ?? "Please try again.");
-    } finally {
-      setQueueActionId(null);
-    }
-  };
+  const handleQueueMarkReady = useCallback(
+    async (order: MessOrder) => {
+      if (!profile?.uid) return;
+      setQueueActionId(order.id);
+      try {
+        await markOrderReady(order.id, profile.uid);
+      } catch (e: any) {
+        Alert.alert("Could not mark ready", e?.message ?? "Please try again.");
+      } finally {
+        setQueueActionId(null);
+      }
+    },
+    [profile?.uid],
+  );
 
   // Serve directly from the queue once an order is "ready" — closes the
   // loop without staff having to switch to the Verify tab and re-look-up
   // the same order they're already looking at.
-  const handleQueueServe = async (order: MessOrder) => {
-    if (!profile?.uid) return;
-    setQueueActionId(order.id);
-    try {
-      await markOrderServed(order.id, profile.uid);
-    } catch (e: any) {
-      Alert.alert("Could not mark served", e?.message ?? "Please try again.");
-    } finally {
-      setQueueActionId(null);
-    }
-  };
+  const handleQueueServe = useCallback(
+    async (order: MessOrder) => {
+      if (!profile?.uid) return;
+      setQueueActionId(order.id);
+      try {
+        await markOrderServed(order.id, profile.uid);
+      } catch (e: any) {
+        Alert.alert("Could not mark served", e?.message ?? "Please try again.");
+      } finally {
+        setQueueActionId(null);
+      }
+    },
+    [profile?.uid],
+  );
 
   // No-show / mistaken-order cancellation, refunded to the student
   // immediately (staff is already trusted with wallet writes, so this
   // doesn't need the pending-approval detour a student's own cancel does).
-  const handleQueueCancel = (order: MessOrder) => {
-    if (!profile?.uid) return;
-    Alert.alert(
-      `Cancel token ${order.tokenNumber}?`,
-      `₹${order.totalAmount} will be refunded to ${order.studentName}'s wallet right away.`,
-      [
-        { text: "Back", style: "cancel" },
-        {
-          text: "Cancel & refund",
-          style: "destructive",
-          onPress: async () => {
-            setQueueActionId(order.id);
-            try {
-              await staffCancelOrder(order.id, profile.uid, "No-show / staff cancelled");
-            } catch (e: any) {
-              Alert.alert("Could not cancel", e?.message ?? "Please try again.");
-            } finally {
-              setQueueActionId(null);
-            }
+  const handleQueueCancel = useCallback(
+    (order: MessOrder) => {
+      if (!profile?.uid) return;
+      Alert.alert(
+        `Cancel token ${order.tokenNumber}?`,
+        `₹${order.totalAmount} will be refunded to ${order.studentName}'s wallet right away.`,
+        [
+          { text: "Back", style: "cancel" },
+          {
+            text: "Cancel & refund",
+            style: "destructive",
+            onPress: async () => {
+              setQueueActionId(order.id);
+              try {
+                await staffCancelOrder(order.id, profile.uid, "No-show / staff cancelled");
+              } catch (e: any) {
+                Alert.alert("Could not cancel", e?.message ?? "Please try again.");
+              } finally {
+                setQueueActionId(null);
+              }
+            },
           },
-        },
-      ],
-    );
-  };
+        ],
+      );
+    },
+    [profile?.uid],
+  );
 
   const handleApprove = async (txn: WalletTransaction) => {
     if (!profile?.uid) return;
@@ -438,96 +530,44 @@ export default function MessStaffScreen() {
         </ScrollView>
 
         {tab === "queue" && (
-          <ScrollView
+          <FlatList
+            data={queue}
+            keyExtractor={(order) => order.id}
             contentContainerStyle={styles.content}
             showsVerticalScrollIndicator={false}
-          >
-            <Text style={styles.helperText}>
-              Mark food ready and serve it — all from one screen, no need to
-              switch to Verify Token unless a student's showing up without
-              you having seen their order come through yet.
-            </Text>
-            {queue.length === 0 ? (
+            // Virtualized: only rows near the visible viewport are ever
+            // mounted, so this stays smooth whether the queue has 5 orders
+            // or 500 — the previous ScrollView+.map() mounted and re-rendered
+            // every row on every single realtime update, which is exactly
+            // the kind of thing that turns "a bit slow" into "frozen" the
+            // moment a lunch rush actually hits.
+            windowSize={7}
+            maxToRenderPerBatch={12}
+            updateCellsBatchingPeriod={50}
+            initialNumToRender={12}
+            removeClippedSubviews
+            ListHeaderComponent={
+              <Text style={styles.helperText}>
+                Mark food ready and serve it — all from one screen, no need to
+                switch to Verify Token unless a student's showing up without
+                you having seen their order come through yet.
+              </Text>
+            }
+            ListEmptyComponent={
               <Text style={[styles.helperText, { marginTop: spacing.md }]}>
                 No active orders right now.
               </Text>
-            ) : (
-              queue.map((order) => {
-                const busy = queueActionId === order.id;
-                const itemSummary = order.items
-                  .map((line) => `${line.qty}× ${line.name}`)
-                  .join(", ");
-                return (
-                  <View key={order.id} style={styles.queueRow}>
-                    <View style={styles.queueTopRow}>
-                      <Text style={styles.queueToken}>{order.tokenNumber}</Text>
-                      <Text style={styles.queueAmount}>
-                        ₹{order.totalAmount}
-                      </Text>
-                    </View>
-                    <Text style={styles.queueName}>{order.studentName}</Text>
-                    <Text style={styles.queueItems} numberOfLines={2}>
-                      {itemSummary}
-                    </Text>
-                    {order.pickupSlot && (
-                      <Text style={styles.queueSlot}>
-                        Pickup slot: {order.pickupSlot}
-                      </Text>
-                    )}
-                    <View style={styles.queueActionsRow}>
-                      {order.status === "ready" ? (
-                        <TouchableOpacity
-                          style={styles.queueActionBtn}
-                          disabled={busy}
-                          onPress={() => handleQueueServe(order)}
-                        >
-                          {busy ? (
-                            <ActivityIndicator color="#fff" size="small" />
-                          ) : (
-                            <Text style={styles.queueActionBtnText}>
-                              Serve
-                            </Text>
-                          )}
-                        </TouchableOpacity>
-                      ) : (
-                        <TouchableOpacity
-                          style={[
-                            styles.queueActionBtn,
-                            styles.queueActionBtnSecondary,
-                          ]}
-                          disabled={busy}
-                          onPress={() => handleQueueMarkReady(order)}
-                        >
-                          {busy ? (
-                            <ActivityIndicator
-                              color={colors.primary}
-                              size="small"
-                            />
-                          ) : (
-                            <Text
-                              style={[
-                                styles.queueActionBtnText,
-                                styles.queueActionBtnTextSecondary,
-                              ]}
-                            >
-                              Mark Ready
-                            </Text>
-                          )}
-                        </TouchableOpacity>
-                      )}
-                      <TouchableOpacity
-                        style={styles.queueCancelBtn}
-                        disabled={busy}
-                        onPress={() => handleQueueCancel(order)}
-                      >
-                        <Ionicons name="close" size={16} color={colors.danger} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                );
-              })
+            }
+            renderItem={({ item: order }) => (
+              <QueueRow
+                order={order}
+                busy={queueActionId === order.id}
+                onMarkReady={handleQueueMarkReady}
+                onServe={handleQueueServe}
+                onCancel={handleQueueCancel}
+              />
             )}
-          </ScrollView>
+          />
         )}
 
         {tab === "verify" && (

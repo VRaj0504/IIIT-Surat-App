@@ -14,6 +14,19 @@ import {
   limit,
 } from "firebase/firestore";
 import { db } from "./firestore";
+
+// Firestore's onSnapshot fires an "Uncaught Error in snapshot listener"
+// with just a generic "Missing or insufficient permissions" message when no
+// error callback is passed — which tells you nothing about WHICH listener
+// failed. Every subscribeTo* below passes this as the third arg so the
+// console instead prints exactly which collection/query choked, which is
+// the difference between a two-second fix and guessing across 10 listeners.
+function logListenerError(label: string) {
+  return (err: unknown) => {
+    // eslint-disable-next-line no-console
+    console.error(`[messService:${label}] listener error:`, err);
+  };
+}
 import { toMinutes, fromMinutes } from "../utils/breakWindow";
 import {
   STORE_OPEN,
@@ -184,7 +197,7 @@ export function subscribeToMenuItems(
         a.category.localeCompare(b.category) || a.name.localeCompare(b.name),
     );
     callback(items);
-  });
+  }, logListenerError("subscribeToMenuItems"));
 }
 
 // Unfiltered — includes sold-out/unavailable items too. For the staff stock
@@ -202,7 +215,7 @@ export function subscribeToAllMenuItems(
         a.category.localeCompare(b.category) || a.name.localeCompare(b.name),
     );
     callback(items);
-  });
+  }, logListenerError("subscribeToAllMenuItems"));
 }
 
 // Adds a brand-new item to the menu (e.g. a new snack the mess starts
@@ -298,9 +311,13 @@ export function subscribeToWalletBalance(
   uid: string,
   callback: (balance: number) => void,
 ) {
-  return onSnapshot(doc(db, WALLETS_COLLECTION, uid), (snap) => {
-    callback(snap.exists() ? (snap.data().balance as number) : 0);
-  });
+  return onSnapshot(
+    doc(db, WALLETS_COLLECTION, uid),
+    (snap) => {
+      callback(snap.exists() ? (snap.data().balance as number) : 0);
+    },
+    logListenerError("subscribeToWalletBalance"),
+  );
 }
 
 export function subscribeToMyTransactions(
@@ -313,11 +330,15 @@ export function subscribeToMyTransactions(
     orderBy("createdAt", "desc"),
     limit(50),
   );
-  return onSnapshot(q, (snap) => {
-    callback(
-      snap.docs.map((d) => ({ id: d.id, ...d.data() }) as WalletTransaction),
-    );
-  });
+  return onSnapshot(
+    q,
+    (snap) => {
+      callback(
+        snap.docs.map((d) => ({ id: d.id, ...d.data() }) as WalletTransaction),
+      );
+    },
+    logListenerError("subscribeToMyTransactions"),
+  );
 }
 
 export async function requestRecharge(
@@ -366,11 +387,15 @@ export function subscribeToPendingRecharges(
     where("status", "==", "pending"),
     orderBy("createdAt", "asc"),
   );
-  return onSnapshot(q, (snap) => {
-    callback(
-      snap.docs.map((d) => ({ id: d.id, ...d.data() }) as WalletTransaction),
-    );
-  });
+  return onSnapshot(
+    q,
+    (snap) => {
+      callback(
+        snap.docs.map((d) => ({ id: d.id, ...d.data() }) as WalletTransaction),
+      );
+    },
+    logListenerError("subscribeToPendingRecharges"),
+  );
 }
 
 export async function approveRecharge(
@@ -456,22 +481,21 @@ function upcomingSlots(now: Date): string[] {
 }
 
 // Places an order and pays for it out of the student's wallet in the same
-// breath — there is no more "create unpaid, staff confirms later" step.
-// That old flow is exactly the loophole we're closing: a manual "mark
-// paid" button is only as honest as whoever taps it, with nothing to
-// check it against. Debiting the wallet inside this transaction means an
-// order can only ever be created already-paid, for real, because the
-// balance check and the deduction are the same atomic write as the order
-// itself — there's no window where an order exists without the money
-// having actually left the wallet.
+// breath, entirely as a client-side Firestore transaction (no Cloud
+// Function — this project is running on the Spark plan for the demo, and
+// deploying Cloud Functions requires Blaze). Everything — order-window
+// check, stock check + decrement, wallet balance check + debit, token
+// number, and order creation — happens inside ONE Firestore transaction,
+// so two students tapping "order" on the last plate/last rupee at the same
+// instant can't both succeed.
 //
-// Everything — order-window check, stock check + decrement, wallet
-// balance check + debit, token number, and order creation — happens
-// inside ONE Firestore transaction. That matters under crowd load: if two
-// students tap "order" on the last plate (or the last few rupees of
-// balance) at the same instant, Firestore guarantees only one transaction
-// commits with a consistent read, so the second one fails cleanly with a
-// clear error instead of both succeeding and overselling/overspending.
+// Note for later: this trusts the client's own cart prices for
+// totalAmount (Firestore rules only check it's a number >= 0), which is
+// fine for a demo/small-trust-group deployment but not fully
+// tamper-proof. If/when the project is back on Blaze, moving order
+// creation into a Cloud Function (reading prices server-side) closes that
+// gap — see functions/src/placeOrder.ts, which already has that version
+// ready to redeploy.
 export async function placeOrder(
   uid: string,
   studentName: string,
@@ -492,8 +516,8 @@ export async function placeOrder(
     doc(db, SLOT_COUNTERS_COLLECTION, `${today}_${slot}`),
   );
 
-  // Re-check the store window server-side-equivalent, inside the
-  // transaction — not just trusting the client's clock/UI state.
+  // Re-check the store window client-side before opening the transaction —
+  // not just trusting stale UI state.
   const windowStatus = getMessOrderingStatus(new Date());
   if (windowStatus.state !== "open") {
     throw new Error(
@@ -621,11 +645,15 @@ export function subscribeToOrder(
   orderId: string,
   callback: (order: MessOrder | null) => void,
 ) {
-  return onSnapshot(doc(db, ORDERS_COLLECTION, orderId), (snap) => {
-    callback(
-      snap.exists() ? ({ id: snap.id, ...snap.data() } as MessOrder) : null,
-    );
-  });
+  return onSnapshot(
+    doc(db, ORDERS_COLLECTION, orderId),
+    (snap) => {
+      callback(
+        snap.exists() ? ({ id: snap.id, ...snap.data() } as MessOrder) : null,
+      );
+    },
+    logListenerError("subscribeToOrder"),
+  );
 }
 
 export function subscribeToMyActiveOrders(
@@ -638,9 +666,13 @@ export function subscribeToMyActiveOrders(
     where("status", "in", ["pending", "ready"]),
     orderBy("createdAt", "desc"),
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as MessOrder));
-  });
+  return onSnapshot(
+    q,
+    (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as MessOrder));
+    },
+    logListenerError("subscribeToMyActiveOrders"),
+  );
 }
 
 // Every order the student has ever placed (any status), most recent first,
@@ -656,9 +688,13 @@ export function subscribeToMyOrderHistory(
     orderBy("createdAt", "desc"),
     limit(30),
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as MessOrder));
-  });
+  return onSnapshot(
+    q,
+    (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as MessOrder));
+    },
+    logListenerError("subscribeToMyOrderHistory"),
+  );
 }
 
 // Student cancels their own order. Only allowed while it's still "pending"
@@ -835,9 +871,13 @@ export function subscribeToQueue(callback: (orders: MessOrder[]) => void) {
     where("status", "in", ["pending", "ready"]),
     orderBy("createdAt", "asc"),
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as MessOrder));
-  });
+  return onSnapshot(
+    q,
+    (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as MessOrder));
+    },
+    logListenerError("subscribeToQueue"),
+  );
 }
 
 export async function findOrderByToken(
@@ -926,17 +966,31 @@ export async function submitFeedback(
   });
 }
 
+// Needs a `uid` filter alongside `orderId`, not just orderId alone: the
+// messFeedback security rule can only verify "resource.data.uid ==
+// request.auth.uid" (it has no way to check orderId ownership without an
+// extra read), and Firestore rejects a whole list query up front —
+// "Missing or insufficient permissions", even though every matching doc
+// really would belong to this student — unless the query's own filters
+// already guarantee that per the rule. Filtering on uid here is what makes
+// the query provably safe to the rules engine, not just correct in practice.
 export function subscribeToFeedbackForOrder(
   orderId: string,
+  uid: string,
   callback: (feedback: MessFeedback[]) => void,
 ) {
   const q = query(
     collection(db, FEEDBACK_COLLECTION),
     where("orderId", "==", orderId),
+    where("uid", "==", uid),
   );
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as MessFeedback));
-  });
+  return onSnapshot(
+    q,
+    (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as MessFeedback));
+    },
+    logListenerError("subscribeToFeedbackForOrder"),
+  );
 }
 
 // ---------- Analytics (staff) ----------

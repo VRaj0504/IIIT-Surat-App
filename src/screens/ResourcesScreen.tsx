@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, memo } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  SectionList,
   TouchableOpacity,
   Linking,
   ActivityIndicator,
@@ -48,6 +48,51 @@ const typeIcons: Record<Resource["type"], keyof typeof Ionicons.glyphMap> = {
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
+const ResourceRow = memo(function ResourceRow({
+  item,
+  canDelete,
+  onOpen,
+  onDelete,
+}: {
+  item: Resource;
+  canDelete: boolean;
+  onOpen: (url: string) => void;
+  onDelete: (item: Resource) => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.itemCard}
+      onPress={() => onOpen(item.fileUrl)}
+    >
+      <View
+        style={[
+          styles.iconWrap,
+          { backgroundColor: typeColors[item.type] + "20" },
+        ]}
+      >
+        <Ionicons
+          name={typeIcons[item.type]}
+          size={18}
+          color={typeColors[item.type]}
+        />
+      </View>
+      <View style={styles.itemInfo}>
+        <Text style={styles.itemTitle}>{item.title}</Text>
+        <Text style={[styles.itemType, { color: typeColors[item.type] }]}>
+          {item.type} · {item.branch} · Sem {item.semester}
+        </Text>
+      </View>
+      {canDelete ? (
+        <TouchableOpacity onPress={() => onDelete(item)} hitSlop={8}>
+          <Ionicons name="trash-outline" size={18} color={colors.danger} />
+        </TouchableOpacity>
+      ) : (
+        <Ionicons name="open-outline" size={18} color={colors.textSecondary} />
+      )}
+    </TouchableOpacity>
+  );
+});
+
 export default function ResourcesScreen() {
   const { profile } = useAuth();
   const navigation = useNavigation<NavigationProp>();
@@ -60,12 +105,22 @@ export default function ResourcesScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Faculty get the unscoped "everything, across all subjects" view (see
+    // the faculty branch below) — everyone else only ever needs their own
+    // branch+semester, so scope the query itself instead of pulling the
+    // whole college's resource library to every student's phone and
+    // filtering client-side (see subscribeToResources's comment).
+    const scope =
+      profile?.role !== "faculty" && profile?.branch && profile?.admissionYear
+        ? { branch: profile.branch, semester: getCurrentSemester(profile.admissionYear) }
+        : undefined;
+    setLoading(true);
     const unsubscribe = subscribeToResources((data) => {
       setResources(data);
       setLoading(false);
-    });
+    }, scope);
     return () => unsubscribe();
-  }, []);
+  }, [profile?.role, profile?.branch, profile?.admissionYear]);
 
   useEffect(() => {
     if (!profile?.branch || !profile?.admissionYear) {
@@ -84,11 +139,11 @@ export default function ResourcesScreen() {
     return () => unsubscribe();
   }, [profile?.branch, profile?.admissionYear]);
 
-  const openLink = (url: string) => {
+  const openLink = useCallback((url: string) => {
     Linking.openURL(url).catch(() => {});
-  };
+  }, []);
 
-  const handleDelete = (item: Resource) => {
+  const handleDelete = useCallback((item: Resource) => {
     Alert.alert(
       "Delete resource?",
       `"${item.title}" will be permanently removed for everyone.`,
@@ -110,41 +165,7 @@ export default function ResourcesScreen() {
         },
       ],
     );
-  };
-
-  const renderResourceRow = (item: Resource) => (
-    <TouchableOpacity
-      key={item.id}
-      style={styles.itemCard}
-      onPress={() => openLink(item.fileUrl)}
-    >
-      <View
-        style={[
-          styles.iconWrap,
-          { backgroundColor: typeColors[item.type] + "20" },
-        ]}
-      >
-        <Ionicons
-          name={typeIcons[item.type]}
-          size={18}
-          color={typeColors[item.type]}
-        />
-      </View>
-      <View style={styles.itemInfo}>
-        <Text style={styles.itemTitle}>{item.title}</Text>
-        <Text style={[styles.itemType, { color: typeColors[item.type] }]}>
-          {item.type} · {item.branch} · Sem {item.semester}
-        </Text>
-      </View>
-      {profile?.uid === item.uploadedBy ? (
-        <TouchableOpacity onPress={() => handleDelete(item)} hitSlop={8}>
-          <Ionicons name="trash-outline" size={18} color={colors.danger} />
-        </TouchableOpacity>
-      ) : (
-        <Ionicons name="open-outline" size={18} color={colors.textSecondary} />
-      )}
-    </TouchableOpacity>
-  );
+  }, []);
 
   if (loading || curriculumLoading) {
     return (
@@ -162,7 +183,9 @@ export default function ResourcesScreen() {
   }
 
   // Faculty see everything they/others have posted, grouped by whatever
-  // subject names appear in the data — same as before.
+  // subject names appear in the data — same as before. This is the one
+  // truly unbounded list on this screen (whole college's resource library,
+  // forever), so it's the one worth virtualizing.
   if (profile?.role === "faculty") {
     const groupedBySubject = resources.reduce<Record<string, Resource[]>>(
       (acc, item) => {
@@ -171,6 +194,9 @@ export default function ResourcesScreen() {
         return acc;
       },
       {},
+    );
+    const sections = Object.entries(groupedBySubject).map(
+      ([subject, items]) => ({ title: subject, data: items }),
     );
 
     return (
@@ -183,17 +209,29 @@ export default function ResourcesScreen() {
           <Text style={styles.subtitle}>
             Everything posted, across all subjects
           </Text>
-          <ScrollView contentContainerStyle={styles.list}>
-            {Object.keys(groupedBySubject).length === 0 && (
+          <SectionList
+            sections={sections}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={false}
+            stickySectionHeadersEnabled={false}
+            windowSize={7}
+            removeClippedSubviews
+            ListEmptyComponent={
               <Text style={styles.emptyText}>No resources uploaded yet.</Text>
+            }
+            renderSectionHeader={({ section }) => (
+              <Text style={styles.subjectName}>{section.title}</Text>
             )}
-            {Object.entries(groupedBySubject).map(([subject, items]) => (
-              <View key={subject} style={styles.subjectSection}>
-                <Text style={styles.subjectName}>{subject}</Text>
-                {items.map(renderResourceRow)}
-              </View>
-            ))}
-          </ScrollView>
+            renderItem={({ item }) => (
+              <ResourceRow
+                item={item}
+                canDelete={profile?.uid === item.uploadedBy}
+                onOpen={openLink}
+                onDelete={handleDelete}
+              />
+            )}
+          />
           <TouchableOpacity
             style={styles.fab}
             onPress={() => navigation.navigate("UploadResource")}
@@ -227,6 +265,23 @@ export default function ResourcesScreen() {
   const branch = profile.branch!;
   const semester = getCurrentSemester(profile.admissionYear!);
 
+  // Bounded by curriculum size (a handful of subjects per semester) with a
+  // realistically small number of files per subject, so this list was never
+  // at real risk of lag — converted anyway for consistency with the faculty
+  // view above and because SectionList costs nothing extra here.
+  const studentSections = semesterSubjects.map((subject) => ({
+    title: subject.name,
+    code: subject.code,
+    // Matching by name, case-insensitive, since faculty type the subject as
+    // free text when uploading — not by code.
+    data: resources.filter(
+      (r) =>
+        r.branch === branch &&
+        r.semester === semester &&
+        r.subject.trim().toLowerCase() === subject.name.trim().toLowerCase(),
+    ),
+  }));
+
   return (
     <LinearGradient
       colors={[colors.gradientStart, colors.gradientEnd]}
@@ -238,39 +293,39 @@ export default function ResourcesScreen() {
           {branch} · Semester {semester}
         </Text>
 
-        <ScrollView contentContainerStyle={styles.list}>
-          {semesterSubjects.length === 0 && (
+        <SectionList
+          sections={studentSections}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          stickySectionHeadersEnabled={false}
+          ListEmptyComponent={
             <Text style={styles.emptyText}>
               No curriculum data for this semester yet.
             </Text>
+          }
+          renderSectionHeader={({ section }) => (
+            <View>
+              <Text style={styles.subjectName}>{section.title}</Text>
+              <Text style={styles.subjectCode}>{section.code}</Text>
+            </View>
           )}
-
-          {semesterSubjects.map((subject) => {
-            // Matching by name, case-insensitive, since faculty type the
-            // subject as free text when uploading — not by code.
-            const matches = resources.filter(
-              (r) =>
-                r.branch === branch &&
-                r.semester === semester &&
-                r.subject.trim().toLowerCase() ===
-                  subject.name.trim().toLowerCase(),
-            );
-
-            return (
-              <View key={subject.code} style={styles.subjectSection}>
-                <Text style={styles.subjectName}>{subject.name}</Text>
-                <Text style={styles.subjectCode}>{subject.code}</Text>
-                {matches.length === 0 ? (
-                  <Text style={styles.emptySubjectText}>
-                    No materials posted yet.
-                  </Text>
-                ) : (
-                  matches.map(renderResourceRow)
-                )}
-              </View>
-            );
-          })}
-        </ScrollView>
+          renderSectionFooter={({ section }) =>
+            section.data.length === 0 ? (
+              <Text style={styles.emptySubjectText}>
+                No materials posted yet.
+              </Text>
+            ) : null
+          }
+          renderItem={({ item }) => (
+            <ResourceRow
+              item={item}
+              canDelete={profile?.uid === item.uploadedBy}
+              onOpen={openLink}
+              onDelete={handleDelete}
+            />
+          )}
+        />
       </SafeAreaView>
     </LinearGradient>
   );

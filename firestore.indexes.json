@@ -17,6 +17,15 @@
       ]
     },
     {
+      "collectionGroup": "resources",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "branch", "order": "ASCENDING" },
+        { "fieldPath": "semester", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "messOrders",
       "queryScope": "COLLECTION",
       "fields": [
@@ -30,6 +39,14 @@
       "fields": [
         { "fieldPath": "uid", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "messOrders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tokenNumber", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
       ]
     },
     {

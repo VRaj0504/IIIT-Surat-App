@@ -97,9 +97,10 @@ export default function MessTokenScreen() {
   }, []);
 
   useEffect(() => {
-    const unsub = subscribeToFeedbackForOrder(orderId, setFeedback);
+    if (!profile?.uid) return;
+    const unsub = subscribeToFeedbackForOrder(orderId, profile.uid, setFeedback);
     return unsub;
-  }, [orderId]);
+  }, [orderId, profile?.uid]);
 
   const handleRate = async (itemId: string, itemName: string, rating: 1 | 2 | 3 | 4 | 5) => {
     if (!profile?.uid) return;
