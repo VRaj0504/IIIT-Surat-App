@@ -46,12 +46,19 @@ export default function NoticesScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Faculty/admin see every notice regardless of targeting (they need to
+    // moderate/manage all of them); students only see untargeted notices
+    // plus ones targeted at their own branch/section/year.
+    const viewer =
+      profile?.role === "student"
+        ? { branch: profile.branch, section: profile.section, admissionYear: profile.admissionYear }
+        : undefined;
     const unsubscribe = subscribeToNotices((updated) => {
       setNotices(updated);
       setLoading(false);
-    });
+    }, viewer);
     return unsubscribe;
-  }, []);
+  }, [profile?.role, profile?.branch, profile?.section, profile?.admissionYear]);
 
   const handleDelete = (notice: Notice) => {
     Alert.alert(
@@ -116,6 +123,11 @@ export default function NoticesScreen() {
                     : ""}
                 </Text>
               </View>
+              {(item.targetBranch || item.targetSection || item.targetAdmissionYear) && (
+                <Text style={styles.targetingLabel}>
+                  For {[item.targetBranch, item.targetSection, item.targetAdmissionYear].filter(Boolean).join(" · ")}
+                </Text>
+              )}
               <Text style={styles.noticeTitle}>{item.title}</Text>
               <Text style={styles.description}>{item.description}</Text>
               {item.link && (
@@ -215,6 +227,7 @@ const styles = StyleSheet.create({
   },
   badgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },
   date: { ...typography.caption, color: colors.textSecondary },
+  targetingLabel: { fontSize: 11, color: colors.primary, fontWeight: "600", marginBottom: 4 },
   noticeTitle: {
     ...typography.h3,
     color: colors.textPrimary,

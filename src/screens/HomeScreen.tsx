@@ -26,11 +26,15 @@ const quickLinks: { label: string; icon: keyof typeof Ionicons.glyphMap; route: 
   { label: 'Lost & Found', icon: 'search-outline', route: 'LostFound', tint: '#8B5CF6' },
   { label: 'Resources', icon: 'book-outline', route: 'Resources', tint: '#0EA5E9' },
   { label: 'Faculty Directory', icon: 'people-outline', route: 'Faculty', tint: '#F97316' },
+  { label: 'Apply for Leave', icon: 'document-text-outline', route: 'ApplyLeave', tint: '#0EA5E9' },
+  { label: 'Announcements', icon: 'notifications-outline', route: 'Announcements', tint: '#8B5CF6' },
   { label: 'Placements', icon: 'briefcase-outline', route: 'Placement', tint: '#EC4899' },
 ];
 
 const facultyQuickLinks: { label: string; icon: keyof typeof Ionicons.glyphMap; route: keyof RootStackParamList; tint: string }[] = [
   { label: 'Mess Counter', icon: 'qr-code-outline', route: 'MessStaff', tint: '#22A559' },
+  { label: 'Leave Requests', icon: 'mail-open-outline', route: 'LeaveRequests', tint: '#0B3D91' },
+  { label: 'Post Announcement', icon: 'megaphone-outline', route: 'PostAnnouncement', tint: '#8B5CF6' },
 ];
 
 export default function HomeScreen() {

@@ -31,7 +31,16 @@ service cloud.firestore {
     // email. Add/remove entries via the Firebase console or Admin SDK only —
     // there is no in-app way to write here, by design.
     match /allowlist/{email} {
-      allow read: if isAdmin() || (request.auth != null && request.auth.token.email.lower() == email);
+      // Widened beyond "your own entry" so FacultyDirectoryScreen (and the
+      // leave-application faculty picker) can list every allowlisted
+      // faculty member, not just the ones who've already signed in at
+      // least once. Scoped to role == 'faculty' specifically — this only
+      // exposes name/department for faculty, the same info already public
+      // once they do sign up; student roster entries and any other
+      // allowlist role stay locked to admin/self as before.
+      allow read: if isAdmin() ||
+        (request.auth != null && request.auth.token.email.lower() == email) ||
+        (request.auth != null && resource.data.role == 'faculty');
       allow write: if false;
     }
 
@@ -172,35 +181,39 @@ service cloud.firestore {
     // ever gets their own accounts distinct from teaching faculty.
     match /messMenuItems/{itemId} {
       allow read: if request.auth != null;
+      // Stock decrement on order happens inside placeOrderFn (Cloud
+      // Function, Admin SDK — bypasses these rules), not as a client
+      // write anymore, so there's no student-facing update path left to
+      // scope here: staff/admin via `write` above is the only writer.
       allow write: if isAdmin() || isFaculty();
-      // Students placing an order decrement remainingQty/available on this
-      // same doc inside placeOrder()'s transaction (see messService.ts) —
-      // scoped so they can only touch stock, never price/name/category/
-      // dailyQty (that stays staff-only via the `write` rule above).
-      allow update: if request.auth != null &&
-        request.resource.data.name == resource.data.name &&
-        request.resource.data.price == resource.data.price &&
-        request.resource.data.category == resource.data.category &&
-        request.resource.data.dailyQty == resource.data.dailyQty;
     }
 
-    // Daily token counter (single doc: counters/messToken) used to hand out
-    // sequential, per-day token numbers. Only ever touched via the atomic
-    // transaction in messService.placeOrder(), never written directly by
-    // the client outside that flow.
+    // Legacy single-doc token counter from the pre-Cloud-Functions client
+    // transaction. placeOrderFn uses the sharded counters_messTokenShards
+    // collection below instead; this is kept only so old data doesn't 404,
+    // and is no longer written by anyone.
     match /counters/{counterId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Sharded daily token counters (8 shards — see TOKEN_SHARD_LETTERS in
+    // functions/src/placeOrder.ts) used to hand out sequential, per-day
+    // token numbers without every order serializing on one document.
+    // Written only by placeOrderFn via the Admin SDK, which bypasses these
+    // rules — default-deny here just means no client can forge one.
+    match /counters_messTokenShards/{shardId} {
+      allow read: if isAdmin() || isFaculty();
+      allow write: if false;
     }
 
     // Per-(day, pickup-slot) order counters used to spread demand across
     // the break instead of everyone converging at once (see SLOT_CAPACITY
-    // in messService.ts). Same "only touched via placeOrder()'s
-    // transaction" pattern as counters/messToken above — no sensitive
-    // data here, just a date/slot/count.
+    // in functions/src/placeOrder.ts). Written only by placeOrderFn via
+    // the Admin SDK now — no client write path.
     match /messSlotCounters/{slotId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow write: if false;
     }
 
     // A student can only ever create their own orders (never someone
@@ -216,21 +229,11 @@ service cloud.firestore {
       allow read: if isAdmin() || isFaculty() ||
         (request.auth != null && resource.data.uid == request.auth.uid) ||
         (request.auth != null && resource.data.status in ['pending', 'ready']);
-      // A student can only create an order for themself, and it must
-      // already be paid: placeOrder()'s transaction debits the wallet in
-      // the same write, so there's no "unpaid" order state to create
-      // anymore. This doesn't (and can't, from rules alone) verify
-      // totalAmount matches the cart's real price — that's still enforced
-      // by going through placeOrder() rather than a raw client write. A
-      // fully tamper-proof version of this would move order creation to a
-      // Cloud Function (see functions/src/placeOrder.ts, on hold pending
-      // the Blaze plan); fine for now given who has access to this app.
-      allow create: if request.auth != null &&
-        request.resource.data.uid == request.auth.uid &&
-        request.resource.data.paymentStatus == 'paid' &&
-        request.resource.data.status == 'pending' &&
-        request.resource.data.totalAmount is number &&
-        request.resource.data.totalAmount >= 0;
+      // Order creation is exclusively via placeOrderFn (Cloud Function,
+      // Admin SDK — bypasses these rules): it reads real prices from
+      // messMenuItems server-side, so the client's cart can only ever say
+      // WHAT to order, never what it costs. No client create path remains.
+      allow create: if false;
       // Staff can update anything (status transitions, etc). A student can
       // ALSO self-cancel their own order, but only while it's still
       // 'pending' (not yet 'ready' — once the kitchen has plated it, only
@@ -259,24 +262,13 @@ service cloud.firestore {
     }
 
     // One doc per student, id == their uid. Faculty/admin can freely
-    // credit/adjust (approveRecharge) and can create the doc fresh. The
-    // student who owns a wallet can only ever DEBIT an *existing* wallet —
-    // balance must strictly decrease and never go negative — so
-    // placeOrder()'s transaction can spend from it, but a client can never
-    // top up their own balance or conjure a wallet into existence by
-    // writing here directly. In practice a student can never have a
-    // nonzero balance to spend without staff having approved a recharge
-    // first (which is what creates the doc), so requiring it to already
-    // exist for a self-write costs nothing real.
+    // credit/adjust (approveRecharge) and can create the doc fresh.
+    // Debiting on order now happens inside placeOrderFn via the Admin SDK
+    // (bypasses these rules), so there's no client self-write path left —
+    // a student can read their own balance but never write to it directly.
     match /wallets/{uid} {
       allow read: if isAdmin() || isFaculty() || (request.auth != null && request.auth.uid == uid);
-      allow write: if isAdmin() || isFaculty() || (
-        request.auth != null && request.auth.uid == uid &&
-        resource != null &&
-        request.resource.data.balance is number &&
-        request.resource.data.balance >= 0 &&
-        request.resource.data.balance < resource.data.balance
-      );
+      allow write: if isAdmin() || isFaculty();
     }
 
     // Recharge requests (student-submitted, faculty/mess-staff-approved)
@@ -354,11 +346,94 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Quick class-targeted announcements ("class cancelled today") — kept
+    // separate from notices: any faculty can post, only the poster (or
+    // admin) can delete, nobody can edit after the fact (a stale edited
+    // "cancelled" notice would be dangerous — delete and repost instead).
+    // targetBranch is required; reads are open to any signed-in user and
+    // the per-student filtering happens client-side (same as notices).
+    match /announcements/{announcementId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.message is string &&
+        request.resource.data.message.size() > 0 &&
+        request.resource.data.targetBranch is string &&
+        request.resource.data.targetBranch.size() > 0;
+      allow update: if false;
+      allow delete: if isAdmin() ||
+        (request.auth != null && resource.data.createdBy == request.auth.uid);
+    }
+
+    // Leave applications: a student addresses their request to one
+    // specific faculty member, identified by email (facultyEmail — works
+    // even before that faculty member has ever signed up, since
+    // FacultyDirectoryScreen lists the full official allowlist, not just
+    // signed-up accounts). Matched against the resolver's own verified
+    // sign-in email rather than a uid, since a pre-signup faculty member
+    // has no uid yet to match against. Every field except
+    // status/facultyRemark/resolvedAt/resolvedBy must stay byte-identical
+    // on resolve, so approving a request can't be used to quietly rewrite
+    // its dates or reason.
+    match /leaveApplications/{appId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.studentUid == request.auth.uid) ||
+        (request.auth != null && resource.data.facultyEmail == request.auth.token.email.lower());
+      allow create: if request.auth != null &&
+        request.resource.data.studentUid == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.type in ['medical', 'casual'] &&
+        request.resource.data.facultyEmail is string &&
+        request.resource.data.facultyEmail.size() > 0 &&
+        request.resource.data.reason is string &&
+        request.resource.data.reason.size() > 0;
+      allow update: if isAdmin() || (
+        request.auth != null &&
+        resource.data.facultyEmail == request.auth.token.email.lower() &&
+        resource.data.status == 'pending' &&
+        request.resource.data.status in ['approved', 'rejected'] &&
+        request.resource.data.studentUid == resource.data.studentUid &&
+        request.resource.data.facultyEmail == resource.data.facultyEmail &&
+        request.resource.data.type == resource.data.type &&
+        request.resource.data.fromDate == resource.data.fromDate &&
+        request.resource.data.toDate == resource.data.toDate &&
+        request.resource.data.reason == resource.data.reason &&
+        request.resource.data.resolvedBy == request.auth.uid
+      );
+      allow delete: if isAdmin();
+    }
+
     // Per-item, per-order star rating + optional comment, submitted by the
     // student once their order is served. Doc id is deterministic
     // (`${orderId}_${itemId}`) so a resubmission overwrites their own
     // rating rather than spamming duplicates — enforced here by requiring
     // the order to belong to them and to already be served.
+    // Lost & Found: any signed-in student or faculty can post and browse.
+    // "Contact" is done via the poster's own institute email (already
+    // verified at signup — see AuthContext's @iiitsurat.ac.in gate), not a
+    // manually-typed phone number, so this doesn't add a new place to
+    // store personal contact details. Only the original poster can mark
+    // their own post resolved or delete it; nobody can edit someone
+    // else's post at all.
+    match /lostFoundItems/{itemId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null &&
+        request.resource.data.postedBy == request.auth.uid &&
+        request.resource.data.status == 'open' &&
+        request.resource.data.title is string && request.resource.data.title.size() > 0 &&
+        request.resource.data.type in ['lost', 'found'];
+      allow update: if isAdmin() || (
+        request.auth != null &&
+        resource.data.postedBy == request.auth.uid &&
+        resource.data.status == 'open' &&
+        request.resource.data.status == 'resolved' &&
+        request.resource.data.title == resource.data.title &&
+        request.resource.data.description == resource.data.description &&
+        request.resource.data.postedBy == resource.data.postedBy
+      );
+      allow delete: if isAdmin() || (request.auth != null && resource.data.postedBy == request.auth.uid);
+    }
+
     match /messFeedback/{feedbackId} {
       allow read: if isAdmin() || isFaculty() ||
         (request.auth != null && resource.data.uid == request.auth.uid);

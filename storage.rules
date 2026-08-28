@@ -1,0 +1,26 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Notes/PYQs/slides filed by faculty (see src/firebase/resourceService.ts
+    // and faculty-upload-web/src/Upload.tsx, which both write here). Any
+    // signed-in user can read (students need to open these); only faculty
+    // can upload or delete, mirroring the /resources Firestore rule for the
+    // metadata doc that points at each file. firestore.get() here is a
+    // cross-service rule read of the SAME project's Firestore — no separate
+    // config needed, just enable Firestore's API if it isn't already.
+    match /resources/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'faculty';
+    }
+
+    // Lost & Found photos — any signed-in user can read (browsing the
+    // feed) or write (posting their own item); a matching delete on
+    // Firestore is what actually removes the item, this just needs to not
+    // block that. No faculty-only gate here since anyone can post.
+    match /lostFound/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+  }
+}

@@ -1,14 +1,12 @@
 import { collection, addDoc, query, where, orderBy, limit as fsLimit, onSnapshot, serverTimestamp, Timestamp, deleteDoc, doc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db } from './firestore';
-import { supabase } from '../supabaseClient';
-
+import { storage } from './storage';
 
 // This is the "shape" of one resource's metadata, stored in Firestore.
 // Note: this does NOT include the actual file bytes — just information
-// ABOUT the file, plus a URL pointing to where the real file lives
-// (in Supabase Storage). Using Supabase for files (not Firebase Storage)
-// because Firebase Storage requires the Blaze billing plan; Supabase's
-// free tier needs no card on file.
+// ABOUT the file, plus a URL pointing to where the real file lives (in
+// Firebase Storage, now that the project is on the Blaze plan).
 export type Resource = {
   id: string;
   title: string;
@@ -16,7 +14,7 @@ export type Resource = {
   branch: string;      // e.g. 'CSE', 'ECE', 'MnC'
   semester: number;         // e.g. 1 to 8
   type: 'Notes' | 'PYQ' | 'Slides';
-  fileUrl: string;      // public URL from Supabase Storage
+  fileUrl: string;      // download URL from Firebase Storage
   storagePath: string;
   uploadedBy: string;
   uploadedByName: string;
@@ -31,7 +29,7 @@ const RESOURCES_COLLECTION = 'resources';
 // read (and re-read on every live update) thousands of docs at once.
 const FACULTY_VIEW_LIMIT = 500;
 
-// Uploads a file to Supabase Storage, then saves its metadata to Firestore.
+// Uploads a file to Firebase Storage, then saves its metadata to Firestore.
 // "localFileUri" is the path to the file ON THE PHONE (before upload) —
 // this comes from a file picker (wired up in the faculty screen).
 export async function uploadResource(
@@ -46,42 +44,42 @@ export async function uploadResource(
   // copies of an inflated file in memory at once — real risk of a slideshow
   // or scan-heavy PDF upload running a low-end phone out of memory, and
   // needless latency for every faculty upload regardless of device.
-  // fetch(uri).arrayBuffer() gives Supabase the raw bytes directly.
+  // fetch(uri).arrayBuffer() gives Storage the raw bytes directly.
   const fileResponse = await fetch(localFileUri);
   const fileBytes = await fileResponse.arrayBuffer();
 
   // Build a unique path inside the bucket, e.g.
-  // CSE/3/Data Structures/1737000000-notes.pdf
-  const storagePath = `${metadata.branch}/${metadata.semester}/${metadata.subject}/${Date.now()}-${fileName}`;
+  // resources/CSE/3/Data Structures/1737000000-notes.pdf
+  const storagePath = `resources/${metadata.branch}/${metadata.semester}/${metadata.subject}/${Date.now()}-${fileName}`;
 
-  // Upload the bytes to the "resources" bucket. cacheControl tells
-  // Supabase's CDN to cache this file for a year — safe because
-  // storagePath already embeds Date.now(), so a given path's content
-  // never changes; a new upload always gets a new path. Without this,
-  // every one of hundreds of students opening the same shared PDF re-pulls
-  // it from origin storage instead of a cached edge copy, which is exactly
-  // the kind of repeat load that burns through a free-tier bandwidth cap
-  // fastest during exam-week PYQ downloads.
-  const { error: uploadError } = await supabase.storage
-    .from('resources')
-    .upload(storagePath, fileBytes, {
+  // Upload the bytes, with a long cacheControl — safe because storagePath
+  // already embeds Date.now(), so a given path's content never changes; a
+  // new upload always gets a new path. Without this, every one of hundreds
+  // of students opening the same shared PDF re-pulls it from origin
+  // storage instead of a cached edge copy, which is exactly the kind of
+  // repeat load that costs the most bandwidth during exam-week PYQ
+  // download spikes.
+  const fileRef = ref(storage, storagePath);
+  try {
+    await uploadBytes(fileRef, fileBytes, {
       contentType: fileName.endsWith('.pdf') ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      cacheControl: '31536000',
+      cacheControl: 'public,max-age=31536000,immutable',
     });
-
-  if (uploadError) {
-    throw new Error(`Upload failed: ${uploadError.message}`);
+  } catch (err: any) {
+    throw new Error(`Upload failed: ${err.message}`);
   }
 
-  // Get the public URL for the file we just uploaded — this is what
-  // students will actually open/download later.
-  const { data: urlData } = supabase.storage.from('resources').getPublicUrl(storagePath);
+  // Get the download URL for the file we just uploaded — this is what
+  // students will actually open/download later. Firebase's download URLs
+  // carry their own access token, so they work for anyone with the link
+  // regardless of the caller's auth state, same as Supabase's public URL did.
+  const fileUrl = await getDownloadURL(fileRef);
 
   // Save the metadata (NOT the file itself) into Firestore, including
-  // the public URL we just got.
+  // the download URL we just got.
   await addDoc(collection(db, RESOURCES_COLLECTION), {
     ...metadata,
-    fileUrl: urlData.publicUrl,
+    fileUrl,
     storagePath,
     createdAt: serverTimestamp(),
   });
@@ -129,9 +127,10 @@ export function subscribeToResources(
 /// deleting the slides of resources function
 
 export async function deleteResource(resource: Resource): Promise<void> {
-  const { error } = await supabase.storage.from('resources').remove([resource.storagePath]);
-  if (error) {
-    throw new Error(`Could not delete file: ${error.message}`);
+  try {
+    await deleteObject(ref(storage, resource.storagePath));
+  } catch (err: any) {
+    throw new Error(`Could not delete file: ${err.message}`);
   }
   await deleteDoc(doc(db, RESOURCES_COLLECTION, resource.id));
 }

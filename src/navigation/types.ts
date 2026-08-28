@@ -25,6 +25,11 @@ export type RootStackParamList = {
   MessStaff: undefined;
   CGPACalculator: undefined;
   LostFound: undefined;
+  PostLostFound: { type?: "lost" | "found" } | undefined;
+  ApplyLeave: undefined;
+  LeaveRequests: undefined;
+  Announcements: undefined;
+  PostAnnouncement: undefined;
   Resources: undefined;
   UploadResource: undefined;
   Faculty: undefined;

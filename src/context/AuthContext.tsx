@@ -65,6 +65,19 @@ export type UserProfile = {
   branch?: Branch;
   section?: string;
   admissionYear?: number;
+  // Faculty-only, optional — self-filled via EditProfileScreen, shown in
+  // FacultyDirectoryScreen. Left blank by default; nothing here is
+  // required at signup since the allowlist gate already covers who's
+  // allowed to be faculty at all.
+  department?: string;
+  designation?: string;
+  officeLocation?: string;
+  officeHours?: string;
+  phone?: string;
+  // Set only via the allowlist at signup (see scripts/seed-allowlist.js),
+  // never self-edited — a role-based address like hod.cse@iiitsurat.ac.in
+  // that stays valid across whoever currently holds that position.
+  roleEmail?: string;
 };
 
 type AuthContextValue = {
@@ -78,6 +91,15 @@ type AuthContextValue = {
   completeGoogleProfile: (params: { role: Role; enrollmentNumber?: string }) => Promise<void>;
   logOut: () => Promise<void>;
   updateProfileName: (name: string) => Promise<void>;
+  // Faculty-only fields (see UserProfile) — a partial update, so callers
+  // only send what changed rather than the whole profile every time.
+  updateFacultyDetails: (details: {
+    department?: string;
+    designation?: string;
+    officeLocation?: string;
+    officeHours?: string;
+    phone?: string;
+  }) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
 };
 
@@ -98,12 +120,31 @@ async function buildGatedProfile(params: {
   let branchOut: Branch | undefined;
   let sectionOut: string | undefined;
   let admissionYearOut: number | undefined;
+  let departmentOut: string | undefined;
+  let designationOut: string | undefined;
+  let roleEmailOut: string | undefined;
 
   if (role === 'faculty') {
     const allowSnap = await getDoc(doc(db, 'allowlist', normalizedEmail));
-    if (!allowSnap.exists() || (allowSnap.data() as { role?: string }).role !== 'faculty') {
+    const allowData = allowSnap.data() as { role?: string; department?: string; designation?: string; roleEmail?: string } | undefined;
+    if (!allowSnap.exists() || allowData?.role !== 'faculty') {
       throw new Error('This email is not on the approved faculty list. Contact an admin if you believe this is a mistake.');
     }
+    // Carries the department code, designation, and (for a HOD/Dean) their
+    // role-based email address — all already seeded in the allowlist (see
+    // scripts/seed-allowlist.js) — straight onto the profile at signup, the
+    // same way a student's branch/section come from the roster below — so
+    // this shows up correctly in FacultyDirectoryScreen immediately, with
+    // no manual entry needed. A faculty member can still overwrite either
+    // via EditProfileScreen later — this is just what's true from day one.
+    // roleEmail specifically MUST be carried over here: once someone signs
+    // up, their `users` doc takes over from the allowlist entry in
+    // FacultyDirectoryScreen's merge (see facultyService.ts) — without
+    // copying it here, a HOD's office email would silently vanish from the
+    // directory the moment they actually signed in.
+    departmentOut = allowData?.department;
+    designationOut = allowData?.designation;
+    roleEmailOut = allowData?.roleEmail;
   } else {
     if (!typedRegNo) {
       throw new Error('Enrollment number is required for students.');
@@ -128,6 +169,9 @@ async function buildGatedProfile(params: {
     ...(branchOut ? { branch: branchOut } : {}),
     ...(sectionOut ? { section: sectionOut } : {}),
     ...(admissionYearOut ? { admissionYear: admissionYearOut } : {}),
+    ...(departmentOut ? { department: departmentOut } : {}),
+    ...(designationOut ? { designation: designationOut } : {}),
+    ...(roleEmailOut ? { roleEmail: roleEmailOut } : {}),
   };
 }
 
@@ -305,6 +349,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile((prev) => (prev ? { ...prev, name: trimmed } : prev));
   };
 
+  const updateFacultyDetails: AuthContextValue['updateFacultyDetails'] = async (details) => {
+    if (!user) throw new Error('You must be signed in.');
+    // Trim every field that was actually passed; leave anything not
+    // included in `details` untouched on both Firestore and local state.
+    const patch: Record<string, string> = {};
+    (Object.keys(details) as (keyof typeof details)[]).forEach((key) => {
+      const value = details[key];
+      if (value !== undefined) patch[key] = value.trim();
+    });
+    await updateDoc(doc(db, 'users', user.uid), patch);
+    setProfile((prev) => (prev ? { ...prev, ...patch } : prev));
+  };
+
   const sendPasswordReset = async (email: string) => {
     await sendPasswordResetEmail(auth, email.trim());
   };
@@ -322,6 +379,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         completeGoogleProfile,
         logOut,
         updateProfileName,
+        updateFacultyDetails,
         sendPasswordReset,
       }}
     >

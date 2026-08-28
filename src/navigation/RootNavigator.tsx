@@ -14,6 +14,13 @@ import MessWalletScreen from "../screens/MessWalletScreen";
 import MessOrderHistoryScreen from "../screens/MessOrderHistoryScreen";
 import MessStaffScreen from "../screens/MessStaffScreen";
 import ResourcesScreen from "../screens/ResourcesScreen";
+import LostFoundScreen from "../screens/LostFoundScreen";
+import PostLostFoundScreen from "../screens/PostLostFoundScreen";
+import FacultyDirectoryScreen from "../screens/FacultyDirectoryScreen";
+import ApplyLeaveScreen from "../screens/ApplyLeaveScreen";
+import LeaveRequestsScreen from "../screens/LeaveRequestsScreen";
+import AnnouncementsScreen from "../screens/AnnouncementsScreen";
+import PostAnnouncementScreen from "../screens/PostAnnouncementScreen";
 import PlaceholderScreen from "../screens/PlaceholderScreen";
 import ClubDetailScreen from "../screens/ClubDetailScreen";
 import CreateClubScreen from "../screens/CreateClubScreen";
@@ -86,15 +93,16 @@ export default function RootNavigator() {
         component={MessStaffScreen}
         options={{ title: "Mess Counter" }}
       />
-      <Stack.Screen name="LostFound" options={{ title: "Lost & Found" }}>
-        {() => (
-          <PlaceholderScreen
-            title="Lost & Found"
-            icon="search-outline"
-            description="Post and browse lost or found items around campus."
-          />
-        )}
-      </Stack.Screen>
+      <Stack.Screen
+        name="LostFound"
+        component={LostFoundScreen}
+        options={{ title: "Lost & Found" }}
+      />
+      <Stack.Screen
+        name="PostLostFound"
+        component={PostLostFoundScreen}
+        options={{ title: "Post an Item" }}
+      />
       <Stack.Screen
         name="Resources"
         component={ResourcesScreen}
@@ -105,15 +113,31 @@ export default function RootNavigator() {
         component={UploadResourceScreen}
         options={{ title: "Upload Resource" }}
       />
-      <Stack.Screen name="Faculty" options={{ title: "Faculty Directory" }}>
-        {() => (
-          <PlaceholderScreen
-            title="Faculty Directory"
-            icon="people-outline"
-            description="Contact details and office hours for all faculty members."
-          />
-        )}
-      </Stack.Screen>
+      <Stack.Screen
+        name="Faculty"
+        component={FacultyDirectoryScreen}
+        options={{ title: "Faculty Directory" }}
+      />
+      <Stack.Screen
+        name="ApplyLeave"
+        component={ApplyLeaveScreen}
+        options={{ title: "Apply for Leave" }}
+      />
+      <Stack.Screen
+        name="LeaveRequests"
+        component={LeaveRequestsScreen}
+        options={{ title: "Leave Requests" }}
+      />
+      <Stack.Screen
+        name="Announcements"
+        component={AnnouncementsScreen}
+        options={{ title: "Announcements" }}
+      />
+      <Stack.Screen
+        name="PostAnnouncement"
+        component={PostAnnouncementScreen}
+        options={{ title: "Quick Announcement" }}
+      />
       <Stack.Screen
         name="Placement"
         component={PlacementsScreen}

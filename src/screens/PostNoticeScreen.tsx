@@ -42,6 +42,8 @@ const GENERAL_CATEGORIES: Notice["category"][] = [
   "General",
 ];
 
+const BRANCHES = ["CSE", "ECE", "MNC"] as const;
+
 export default function PostNoticeScreen() {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<PostNoticeRoute>();
@@ -63,6 +65,19 @@ export default function PostNoticeScreen() {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Targeting — a General/Academic/Placement notice can optionally be
+  // scoped to one branch, one section within it, and/or one admission
+  // year. Any of these left unset ("Everyone") reaches every student on
+  // that dimension. Not shown for club notices (those stay open to
+  // everyone interested, same as before).
+  const [targetBranch, setTargetBranch] = useState<(typeof BRANCHES)[number] | null>(
+    (editingNotice?.targetBranch as (typeof BRANCHES)[number] | undefined) ?? null,
+  );
+  const [targetSection, setTargetSection] = useState(editingNotice?.targetSection ?? "");
+  const [targetAdmissionYear, setTargetAdmissionYear] = useState(
+    editingNotice?.targetAdmissionYear ? String(editingNotice.targetAdmissionYear) : "",
+  );
+
   const handlePost = async () => {
     setError(null);
     if (!title.trim() || !description.trim()) {
@@ -75,12 +90,20 @@ export default function PostNoticeScreen() {
     }
     setLoading(true);
     try {
+      const targeting = isClubNotice
+        ? undefined
+        : {
+            branch: targetBranch,
+            section: targetSection.trim() || null,
+            admissionYear: targetAdmissionYear.trim() ? Number(targetAdmissionYear.trim()) : null,
+          };
       if (isEditing) {
         await updateNotice(
           editingNotice.id,
           title.trim(),
           description.trim(),
           link.trim(),
+          targeting,
         );
       } else {
         await createNotice(
@@ -91,6 +114,7 @@ export default function PostNoticeScreen() {
           profile.name,
           isClubNotice ? { id: clubId!, name: clubName! } : undefined,
           link.trim() || undefined,
+          targeting,
         );
       }
       navigation.goBack();
@@ -161,6 +185,57 @@ export default function PostNoticeScreen() {
                     </TouchableOpacity>
                   ))}
                 </View>
+              </>
+            )}
+
+            {!isClubNotice && (
+              <>
+                <Text style={styles.label}>Who's this for? (leave blank for everyone)</Text>
+                <View style={styles.categoryRow}>
+                  <TouchableOpacity
+                    style={[styles.categoryChip, targetBranch === null && styles.categoryChipActive]}
+                    onPress={() => setTargetBranch(null)}
+                  >
+                    <Text style={[styles.categoryChipText, targetBranch === null && styles.categoryChipTextActive]}>
+                      Everyone
+                    </Text>
+                  </TouchableOpacity>
+                  {BRANCHES.map((b) => (
+                    <TouchableOpacity
+                      key={b}
+                      style={[styles.categoryChip, targetBranch === b && styles.categoryChipActive]}
+                      onPress={() => setTargetBranch(b)}
+                    >
+                      <Text style={[styles.categoryChipText, targetBranch === b && styles.categoryChipTextActive]}>
+                        {b}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {targetBranch && (
+                  <>
+                    <Text style={styles.label}>Section (optional — e.g. CSE1, leave blank for all sections)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g. CSE1"
+                      placeholderTextColor={colors.textSecondary}
+                      value={targetSection}
+                      onChangeText={setTargetSection}
+                      autoCapitalize="characters"
+                    />
+
+                    <Text style={styles.label}>Admission Year (optional — leave blank for all years)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g. 2024"
+                      placeholderTextColor={colors.textSecondary}
+                      value={targetAdmissionYear}
+                      onChangeText={setTargetAdmissionYear}
+                      keyboardType="number-pad"
+                    />
+                  </>
+                )}
               </>
             )}
 

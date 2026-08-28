@@ -13,7 +13,9 @@ import {
   Timestamp,
   limit,
 } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 import { db } from "./firestore";
+import { functions } from "./functionsClient";
 
 // Firestore's onSnapshot fires an "Uncaught Error in snapshot listener"
 // with just a generic "Missing or insufficient permissions" message when no
@@ -447,6 +449,14 @@ export async function rejectRecharge(
 }
 
 // ---------- Orders / Tokens ----------
+//
+// todayKey/upcomingSlots (and the TOKEN_COUNTER_DOC/SLOT_COUNTERS_COLLECTION
+// constants above) were only used by the old client-side placeOrder()
+// transaction. Now that placeOrder() calls placeOrderFn instead, the token
+// counter and slot-spreading logic live server-side in
+// functions/src/messHours.ts + functions/src/placeOrder.ts. Left here
+// unused rather than deleted, same as breakWindow.ts's older
+// getOrderingWindowStatus — nothing currently calls these.
 
 function todayKey(): string {
   const d = new Date();
@@ -480,44 +490,38 @@ function upcomingSlots(now: Date): string[] {
   return slots;
 }
 
-// Places an order and pays for it out of the student's wallet in the same
-// breath, entirely as a client-side Firestore transaction (no Cloud
-// Function — this project is running on the Spark plan for the demo, and
-// deploying Cloud Functions requires Blaze). Everything — order-window
-// check, stock check + decrement, wallet balance check + debit, token
-// number, and order creation — happens inside ONE Firestore transaction,
-// so two students tapping "order" on the last plate/last rupee at the same
-// instant can't both succeed.
-//
-// Note for later: this trusts the client's own cart prices for
-// totalAmount (Firestore rules only check it's a number >= 0), which is
-// fine for a demo/small-trust-group deployment but not fully
-// tamper-proof. If/when the project is back on Blaze, moving order
-// creation into a Cloud Function (reading prices server-side) closes that
-// gap — see functions/src/placeOrder.ts, which already has that version
-// ready to redeploy.
+// Generates a one-off id per order ATTEMPT (not per order) — this is what
+// lets placeOrderFn tell "the same tap retried" apart from "a new order",
+// see requestId in functions/src/placeOrder.ts. Doesn't need to be
+// cryptographically unpredictable, just unique in practice: Hermes/React
+// Native don't reliably expose crypto.randomUUID(), so this rolls its own
+// rather than adding a dependency for one random string.
+function generateRequestId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+const placeOrderCallable = httpsCallable<
+  { cart: { itemId: string; qty: number }[]; requestId: string; studentName: string },
+  { orderId: string; tokenNumber: string; pickupSlot: string | null }
+>(functions, "placeOrderFn");
+
+// Places an order and pays for it out of the student's wallet, via the
+// placeOrderFn Cloud Function (functions/src/placeOrder.ts) rather than a
+// client-side Firestore transaction. The function reads real prices from
+// messMenuItems server-side and does the order-window check, stock
+// check + decrement, wallet balance check + debit, token number, and order
+// creation all inside one Firestore transaction on its end — so the
+// client's cart can only ever say WHAT to order, never what it costs, and
+// two students tapping "order" on the last plate/last rupee at the same
+// instant still can't both succeed.
 export async function placeOrder(
   uid: string,
   studentName: string,
   cart: CartLine[],
 ): Promise<{ orderId: string; tokenNumber: string; pickupSlot: string | null }> {
-  const totalAmount = cart.reduce(
-    (sum, line) => sum + line.price * line.qty,
-    0,
-  );
-  const orderRef = doc(collection(db, ORDERS_COLLECTION));
-  const counterRef = doc(db, TOKEN_COUNTER_DOC);
-  const walletRef = doc(db, WALLETS_COLLECTION, uid);
-  const itemRefs = cart.map((line) => doc(db, MENU_ITEMS_COLLECTION, line.itemId));
-
-  const today = todayKey();
-  const slots = upcomingSlots(new Date());
-  const slotCounterRefs = slots.map((slot) =>
-    doc(db, SLOT_COUNTERS_COLLECTION, `${today}_${slot}`),
-  );
-
-  // Re-check the store window client-side before opening the transaction —
-  // not just trusting stale UI state.
+  // Re-check the store window client-side before calling the function —
+  // not strictly necessary (the function checks too) but gives a faster,
+  // clearer error than a round trip for something obviously closed.
   const windowStatus = getMessOrderingStatus(new Date());
   if (windowStatus.state !== "open") {
     throw new Error(
@@ -527,118 +531,19 @@ export async function placeOrder(
     );
   }
 
-  const result = await runTransaction(db, async (tx) => {
-    // Firestore transactions require all reads before any writes, so read
-    // every item + the wallet + the counter + every slot counter up front.
-    const itemSnaps = await Promise.all(itemRefs.map((ref) => tx.get(ref)));
-    const walletSnap = await tx.get(walletRef);
-    const counterSnap = await tx.get(counterRef);
-    const slotSnaps = await Promise.all(slotCounterRefs.map((ref) => tx.get(ref)));
-
-    // Validate stock for every line before writing anything.
-    itemSnaps.forEach((snap, i) => {
-      const line = cart[i];
-      if (!snap.exists()) {
-        throw new Error(`${line.name} is no longer on the menu — please remove it from your cart.`);
-      }
-      const remaining = snap.data()!.remainingQty;
-      if (typeof remaining === "number" && remaining < line.qty) {
-        throw new Error(
-          remaining === 0
-            ? `${line.name} just sold out — please remove it from your cart.`
-            : `Only ${remaining} × ${line.name} left — please lower the quantity.`,
-        );
-      }
-    });
-
-    // Validate wallet balance covers the order. No partial payment, no
-    // "order now, top up later" — insufficient balance simply blocks the
-    // order before anything is written.
-    const currentBalance = walletSnap.exists()
-      ? (walletSnap.data()!.balance as number)
-      : 0;
-    if (currentBalance < totalAmount) {
-      throw new Error(
-        `Not enough balance — you have ₹${currentBalance}, this order is ₹${totalAmount}. Recharge your wallet first.`,
-      );
-    }
-
-    // All good — decrement stock for tracked items.
-    itemSnaps.forEach((snap, i) => {
-      const remaining = snap.data()!.remainingQty;
-      if (typeof remaining === "number") {
-        const next = remaining - cart[i].qty;
-        tx.update(itemRefs[i], { remainingQty: next, available: next > 0 });
-      }
-    });
-
-    // Debit the wallet by exactly the order total.
-    tx.set(
-      walletRef,
-      { balance: currentBalance - totalAmount, updatedAt: serverTimestamp() },
-      { merge: true },
-    );
-
-    // Token number (same daily-reset counter as before).
-    let count = 1;
-    if (counterSnap.exists() && counterSnap.data()!.date === today) {
-      count = (counterSnap.data()!.count as number) + 1;
-    }
-    tx.set(counterRef, { date: today, count }, { merge: true });
-    const tokenNumber = `T-${String(count).padStart(3, "0")}`;
-
-    // Pickup slot — first slot with room, else the last slot (soft overflow,
-    // never blocks an order over a scheduling quirk). Purely an ETA hint:
-    // since you can order from anywhere and collect whenever you arrive on
-    // campus, this isn't a hard appointment, just "roughly when it'll be
-    // ready".
-    let pickupSlot: string | null = null;
-    if (slots.length > 0) {
-      let chosenIndex = slots.length - 1;
-      for (let i = 0; i < slots.length; i++) {
-        const count = slotSnaps[i].exists() ? (slotSnaps[i].data()!.count as number) : 0;
-        if (count < SLOT_CAPACITY) {
-          chosenIndex = i;
-          break;
-        }
-      }
-      pickupSlot = slots[chosenIndex];
-      const currentCount = slotSnaps[chosenIndex].exists()
-        ? (slotSnaps[chosenIndex].data()!.count as number)
-        : 0;
-      tx.set(
-        slotCounterRefs[chosenIndex],
-        { date: today, slot: pickupSlot, count: currentCount + 1 },
-        { merge: true },
-      );
-    }
-
-    // Create the order itself — already paid, since the debit above is
-    // part of this same transaction.
-    tx.set(orderRef, {
-      uid,
+  try {
+    const result = await placeOrderCallable({
+      cart: cart.map((line) => ({ itemId: line.itemId, qty: line.qty })),
+      requestId: generateRequestId(),
       studentName,
-      items: cart,
-      totalAmount,
-      tokenNumber,
-      pickupSlot,
-      status: "pending",
-      paymentStatus: "paid",
-      paymentConfirmedBy: null,
-      createdAt: serverTimestamp(),
-      readyAt: null,
-      readyBy: null,
-      servedAt: null,
-      servedBy: null,
-      cancelledAt: null,
-      cancelledBy: null,
-      cancelReason: null,
     });
-
-    return { tokenNumber, pickupSlot };
-  });
-
-  return { orderId: orderRef.id, ...result };
+    return result.data;
+  } catch (err: any) {
+    // httpsCallable wraps server-thrown HttpsError messages in err.message
+    // already in human-readable form (see the strings placeOrderFn throws)
+    // — just surface that directly rather than a generic "call failed".
+    throw new Error(err?.message ?? "Could not place order. Please try again.");
+  }
 }
 
 export function subscribeToOrder(
