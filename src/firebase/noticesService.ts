@@ -30,6 +30,11 @@ export type Notice = {
   targetBranch?: 'CSE' | 'ECE' | 'MNC' | null;
   targetSection?: string | null;
   targetAdmissionYear?: number | null;
+  // Only meaningful when the targeted section actually mixes
+  // specializations within the same branch (e.g. CSE C split into
+  // Core/Cyber Security) — null means "everyone in this section", not
+  // "nobody".
+  targetSpecialization?: string | null;
 };
 
 const NOTICES_COLLECTION = 'notices';
@@ -42,7 +47,7 @@ export async function createNotice(
   createdByName: string,
   club?: { id: string; name: string },
   link?: string,
-  targeting?: { branch?: string | null; section?: string | null; admissionYear?: number | null },
+  targeting?: { branch?: string | null; section?: string | null; admissionYear?: number | null; specialization?: string | null },
 ): Promise<void> {
   await addDoc(collection(db, NOTICES_COLLECTION), {
     title,
@@ -54,6 +59,7 @@ export async function createNotice(
     targetBranch: targeting?.branch ?? null,
     targetSection: targeting?.section ?? null,
     targetAdmissionYear: targeting?.admissionYear ?? null,
+    targetSpecialization: targeting?.specialization ?? null,
     createdBy,
     createdByName,
     createdAt: serverTimestamp(),
@@ -68,7 +74,7 @@ export async function updateNotice(
   title: string,
   description: string,
   link?: string,
-  targeting?: { branch?: string | null; section?: string | null; admissionYear?: number | null },
+  targeting?: { branch?: string | null; section?: string | null; admissionYear?: number | null; specialization?: string | null },
 ): Promise<void> {
   await updateDoc(doc(db, NOTICES_COLLECTION, noticeId), {
     title,
@@ -79,6 +85,7 @@ export async function updateNotice(
           targetBranch: targeting.branch ?? null,
           targetSection: targeting.section ?? null,
           targetAdmissionYear: targeting.admissionYear ?? null,
+          targetSpecialization: targeting.specialization ?? null,
         }
       : {}),
   });
@@ -101,7 +108,7 @@ const NOTICE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 // regardless of targeting, since staff need to moderate/manage all of them.
 export function subscribeToNotices(
   onUpdate: (notices: Notice[]) => void,
-  viewer?: { branch?: string; section?: string; admissionYear?: number } | null,
+  viewer?: { branch?: string; section?: string; admissionYear?: number; specialization?: string } | null,
 ): () => void {
   const q = query(collection(db, NOTICES_COLLECTION), orderBy('createdAt', 'desc'));
   return onSnapshot(q, (snapshot) => {
@@ -117,6 +124,7 @@ export function subscribeToNotices(
         if (n.targetBranch && n.targetBranch !== viewer?.branch) return false;
         if (n.targetSection && n.targetSection !== viewer?.section) return false;
         if (n.targetAdmissionYear && n.targetAdmissionYear !== viewer?.admissionYear) return false;
+        if (n.targetSpecialization && n.targetSpecialization !== viewer?.specialization) return false;
         return true;
       });
     onUpdate(notices);

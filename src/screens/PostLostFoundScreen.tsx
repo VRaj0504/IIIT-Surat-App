@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
@@ -42,13 +42,24 @@ export default function PostLostFoundScreen() {
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<LostFoundCategory>("Other");
   const [location, setLocation] = useState("");
-  const [photo, setPhoto] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
+  const [photo, setPhoto] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [posting, setPosting] = useState(false);
 
+  // Opens the camera directly — no gallery/camera choice dialog — since
+  // reporting a lost/found item is almost always "take a photo of the
+  // thing right now", not picking an existing one. quality is capped a
+  // bit below max to keep the upload quick without a visible loss of
+  // detail; not resizing dimensions here since Firebase Storage handles
+  // arbitrary sizes fine for this use case.
   const pickPhoto = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: ["image/jpeg", "image/png"],
-      copyToCacheDirectory: true,
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Camera permission needed", "Allow camera access to attach a photo.");
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      quality: 0.7,
+      allowsEditing: true,
     });
     if (!result.canceled && result.assets.length > 0) {
       setPhoto(result.assets[0]);
@@ -57,8 +68,8 @@ export default function PostLostFoundScreen() {
 
   const handlePost = async () => {
     if (!profile) return;
-    if (!title.trim() || !description.trim() || !location.trim()) {
-      Alert.alert("Missing details", "Please fill in title, description, and location.");
+    if (!title.trim()) {
+      Alert.alert("Missing title", "Please give this post a title.");
       return;
     }
     setPosting(true);
@@ -72,19 +83,12 @@ export default function PostLostFoundScreen() {
         postedBy: profile.uid,
         postedByName: profile.name,
         postedByEmail: profile.email,
+        postedByPhone: profile.phone ?? null,
         localPhotoUri: photo?.uri ?? null,
       });
       navigation.goBack();
     } catch (err: any) {
-      // Storage isn't live until the project's on the Blaze plan — if a
-      // photo was attached before then, this is the error that surfaces.
-      // Posting without a photo still works regardless.
-      Alert.alert(
-        "Couldn't post",
-        photo
-          ? `${err.message ?? "Please try again."}\n\nIf this mentions Storage, try posting without a photo for now.`
-          : err.message ?? "Please try again.",
-      );
+      Alert.alert("Couldn't post", err.message ?? "Please try again.");
     } finally {
       setPosting(false);
     }
@@ -120,7 +124,7 @@ export default function PostLostFoundScreen() {
             placeholderTextColor={colors.textSecondary}
           />
 
-          <Text style={styles.label}>Description</Text>
+          <Text style={styles.label}>Description (optional)</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
             value={description}
@@ -144,7 +148,7 @@ export default function PostLostFoundScreen() {
           </View>
 
           <Text style={styles.label}>
-            {type === "lost" ? "Where you lost it" : "Where you found it"}
+            {type === "lost" ? "Where you lost it (optional)" : "Where you found it (optional)"}
           </Text>
           <TextInput
             style={styles.input}

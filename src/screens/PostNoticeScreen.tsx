@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -29,6 +29,7 @@ import {
   deleteNotice,
   Notice,
 } from "../firebase/noticesService";
+import { getAdmissionYears, getClassOptionsForYear, yearOfStudyLabel, ClassOption } from "../firebase/announcementsService";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 type PostNoticeRoute = RouteProp<RootStackParamList, "PostNotice">;
@@ -41,8 +42,6 @@ const GENERAL_CATEGORIES: Notice["category"][] = [
   "Event",
   "General",
 ];
-
-const BRANCHES = ["CSE", "ECE", "MNC"] as const;
 
 export default function PostNoticeScreen() {
   const navigation = useNavigation<NavProp>();
@@ -66,17 +65,57 @@ export default function PostNoticeScreen() {
   const [error, setError] = useState<string | null>(null);
 
   // Targeting — a General/Academic/Placement notice can optionally be
-  // scoped to one branch, one section within it, and/or one admission
-  // year. Any of these left unset ("Everyone") reaches every student on
-  // that dimension. Not shown for club notices (those stay open to
-  // everyone interested, same as before).
-  const [targetBranch, setTargetBranch] = useState<(typeof BRANCHES)[number] | null>(
-    (editingNotice?.targetBranch as (typeof BRANCHES)[number] | undefined) ?? null,
+  // scoped to a specific class (year + branch/section), picked from live
+  // roster data — not free-typed, since a typo here would mean the
+  // notice silently reaches nobody. "Everyone" (no targeting at all)
+  // stays available as its own explicit choice. Not shown for club
+  // notices (those stay open to everyone interested, same as before).
+  const [targetEnabled, setTargetEnabled] = useState(
+    !!(editingNotice?.targetBranch || editingNotice?.targetAdmissionYear),
   );
-  const [targetSection, setTargetSection] = useState(editingNotice?.targetSection ?? "");
-  const [targetAdmissionYear, setTargetAdmissionYear] = useState(
-    editingNotice?.targetAdmissionYear ? String(editingNotice.targetAdmissionYear) : "",
+  const [years, setYears] = useState<number[]>([]);
+  const [selectedYear, setSelectedYear] = useState<number | null>(
+    editingNotice?.targetAdmissionYear ?? null,
   );
+  const [classOptions, setClassOptions] = useState<ClassOption[]>([]);
+  const [classesLoading, setClassesLoading] = useState(false);
+  const [selectedClass, setSelectedClass] = useState<ClassOption | null>(null);
+  const [selectedSpecialization, setSelectedSpecialization] = useState<string | null>(
+    editingNotice?.targetSpecialization ?? null,
+  );
+
+  useEffect(() => {
+    if (targetEnabled) {
+      getAdmissionYears().then(setYears).catch(() => setYears([]));
+    }
+  }, [targetEnabled]);
+
+  useEffect(() => {
+    if (selectedYear === null) {
+      setClassOptions([]);
+      return;
+    }
+    setClassesLoading(true);
+    getClassOptionsForYear(selectedYear)
+      .then((options) => {
+        setClassOptions(options);
+        // Editing an existing notice — once this year's real classes load,
+        // find and pre-select whichever one matches what was already
+        // saved, so re-opening a targeted notice for editing shows the
+        // same class already picked instead of an empty picker.
+        if (editingNotice?.targetBranch) {
+          const match = options.find(
+            (o) => o.branch === editingNotice.targetBranch && o.section === (editingNotice.targetSection ?? null),
+          );
+          if (match) setSelectedClass(match);
+        }
+      })
+      .catch(() => setClassOptions([]))
+      .finally(() => setClassesLoading(false));
+    // editingNotice is only relevant for this one-time hydration on
+    // mount, not a live dependency — intentionally omitted below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedYear]);
 
   const handlePost = async () => {
     setError(null);
@@ -90,13 +129,19 @@ export default function PostNoticeScreen() {
     }
     setLoading(true);
     try {
-      const targeting = isClubNotice
+      const targeting = isClubNotice || !targetEnabled || !selectedClass || selectedYear === null
         ? undefined
         : {
-            branch: targetBranch,
-            section: targetSection.trim() || null,
-            admissionYear: targetAdmissionYear.trim() ? Number(targetAdmissionYear.trim()) : null,
+            branch: selectedClass.branch,
+            section: selectedClass.section,
+            admissionYear: selectedYear,
+            specialization: selectedSpecialization === "__ALL__" ? null : selectedSpecialization,
           };
+      if (!isClubNotice && targetEnabled && (!selectedClass || selectedYear === null)) {
+        setError("Pick a year and class to target, or switch back to Everyone.");
+        setLoading(false);
+        return;
+      }
       if (isEditing) {
         await updateNotice(
           editingNotice.id,
@@ -190,50 +235,118 @@ export default function PostNoticeScreen() {
 
             {!isClubNotice && (
               <>
-                <Text style={styles.label}>Who's this for? (leave blank for everyone)</Text>
+                <Text style={styles.label}>Who's this for?</Text>
                 <View style={styles.categoryRow}>
                   <TouchableOpacity
-                    style={[styles.categoryChip, targetBranch === null && styles.categoryChipActive]}
-                    onPress={() => setTargetBranch(null)}
+                    style={[styles.categoryChip, !targetEnabled && styles.categoryChipActive]}
+                    onPress={() => {
+                      setTargetEnabled(false);
+                      setSelectedYear(null);
+                      setSelectedClass(null);
+                      setSelectedSpecialization(null);
+                    }}
                   >
-                    <Text style={[styles.categoryChipText, targetBranch === null && styles.categoryChipTextActive]}>
+                    <Text style={[styles.categoryChipText, !targetEnabled && styles.categoryChipTextActive]}>
                       Everyone
                     </Text>
                   </TouchableOpacity>
-                  {BRANCHES.map((b) => (
-                    <TouchableOpacity
-                      key={b}
-                      style={[styles.categoryChip, targetBranch === b && styles.categoryChipActive]}
-                      onPress={() => setTargetBranch(b)}
-                    >
-                      <Text style={[styles.categoryChipText, targetBranch === b && styles.categoryChipTextActive]}>
-                        {b}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                  <TouchableOpacity
+                    style={[styles.categoryChip, targetEnabled && styles.categoryChipActive]}
+                    onPress={() => setTargetEnabled(true)}
+                  >
+                    <Text style={[styles.categoryChipText, targetEnabled && styles.categoryChipTextActive]}>
+                      A specific class
+                    </Text>
+                  </TouchableOpacity>
                 </View>
 
-                {targetBranch && (
+                {targetEnabled && (
                   <>
-                    <Text style={styles.label}>Section (optional — e.g. CSE1, leave blank for all sections)</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="e.g. CSE1"
-                      placeholderTextColor={colors.textSecondary}
-                      value={targetSection}
-                      onChangeText={setTargetSection}
-                      autoCapitalize="characters"
-                    />
+                    <Text style={styles.label}>Year (batch)</Text>
+                    <View style={styles.categoryRow}>
+                      {years.map((y) => (
+                        <TouchableOpacity
+                          key={y}
+                          style={[styles.categoryChip, selectedYear === y && styles.categoryChipActive]}
+                          onPress={() => {
+                            setSelectedYear(y);
+                            setSelectedClass(null);
+                            setSelectedSpecialization(null);
+                          }}
+                        >
+                          <Text style={[styles.categoryChipText, selectedYear === y && styles.categoryChipTextActive]}>
+                            {yearOfStudyLabel(y)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
 
-                    <Text style={styles.label}>Admission Year (optional — leave blank for all years)</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="e.g. 2024"
-                      placeholderTextColor={colors.textSecondary}
-                      value={targetAdmissionYear}
-                      onChangeText={setTargetAdmissionYear}
-                      keyboardType="number-pad"
-                    />
+                    {selectedYear !== null && (
+                      <>
+                        <Text style={styles.label}>Class</Text>
+                        {classesLoading ? (
+                          <ActivityIndicator color={colors.primary} />
+                        ) : (
+                          <View style={styles.categoryRow}>
+                            {classOptions.map((c) => {
+                              const active =
+                                selectedClass?.branch === c.branch && selectedClass?.section === c.section;
+                              return (
+                                <TouchableOpacity
+                                  key={`${c.branch}||${c.section ?? ""}`}
+                                  style={[styles.categoryChip, active && styles.categoryChipActive]}
+                                  onPress={() => {
+                                    setSelectedClass(c);
+                                    setSelectedSpecialization(null);
+                                  }}
+                                >
+                                  <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>
+                                    {c.label}
+                                  </Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        )}
+                      </>
+                    )}
+
+                    {selectedClass && selectedClass.specializations.length > 0 && (
+                      <>
+                        <Text style={styles.label}>Specialization ({selectedClass.label} has more than one)</Text>
+                        <View style={styles.categoryRow}>
+                          <TouchableOpacity
+                            style={[styles.categoryChip, selectedSpecialization === "__ALL__" && styles.categoryChipActive]}
+                            onPress={() => setSelectedSpecialization("__ALL__")}
+                          >
+                            <Text
+                              style={[
+                                styles.categoryChipText,
+                                selectedSpecialization === "__ALL__" && styles.categoryChipTextActive,
+                              ]}
+                            >
+                              All of {selectedClass.label}
+                            </Text>
+                          </TouchableOpacity>
+                          {selectedClass.specializations.map((spec) => (
+                            <TouchableOpacity
+                              key={spec}
+                              style={[styles.categoryChip, selectedSpecialization === spec && styles.categoryChipActive]}
+                              onPress={() => setSelectedSpecialization(spec)}
+                            >
+                              <Text
+                                style={[
+                                  styles.categoryChipText,
+                                  selectedSpecialization === spec && styles.categoryChipTextActive,
+                                ]}
+                              >
+                                {spec}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </>
+                    )}
                   </>
                 )}
               </>

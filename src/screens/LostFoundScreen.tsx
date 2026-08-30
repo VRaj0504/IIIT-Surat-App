@@ -21,6 +21,7 @@ import {
   subscribeToLostFoundItems,
   resolveLostFoundItem,
   deleteLostFoundItem,
+  notifyLostFoundContact,
   LostFoundItem,
   LostFoundType,
 } from "../firebase/lostFoundService";
@@ -46,7 +47,7 @@ const ItemCard = memo(function ItemCard({
 }: {
   item: LostFoundItem;
   isOwner: boolean;
-  onContact: (item: LostFoundItem) => void;
+  onContact: (item: LostFoundItem, method: "email" | "call" | "whatsapp") => void;
   onResolve: (item: LostFoundItem) => void;
   onDelete: (item: LostFoundItem) => void;
 }) {
@@ -69,17 +70,41 @@ const ItemCard = memo(function ItemCard({
             </View>
           )}
         </View>
-        <Text style={[styles.category, { color: tint }]}>{item.category} · {item.location}</Text>
-        <Text style={styles.description} numberOfLines={2}>{item.description}</Text>
+        <Text style={[styles.category, { color: tint }]}>
+          {item.location ? `${item.category} · ${item.location}` : item.category}
+        </Text>
+        {item.description ? (
+          <Text style={styles.description} numberOfLines={2}>{item.description}</Text>
+        ) : null}
         <Text style={styles.poster}>Posted by {item.postedByName}</Text>
 
         {item.status === "open" && (
           <View style={styles.actionRow}>
             {!isOwner && (
-              <TouchableOpacity style={styles.contactButton} onPress={() => onContact(item)}>
-                <Ionicons name="mail-outline" size={14} color={colors.surface} />
-                <Text style={styles.contactButtonText}>Contact</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity
+                  style={styles.contactIconButton}
+                  onPress={() => onContact(item, "email")}
+                >
+                  <Ionicons name="mail-outline" size={16} color={colors.surface} />
+                </TouchableOpacity>
+                {item.postedByPhone && (
+                  <>
+                    <TouchableOpacity
+                      style={[styles.contactIconButton, styles.callButton]}
+                      onPress={() => onContact(item, "call")}
+                    >
+                      <Ionicons name="call-outline" size={16} color={colors.surface} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.contactIconButton, styles.whatsappButton]}
+                      onPress={() => onContact(item, "whatsapp")}
+                    >
+                      <Ionicons name="logo-whatsapp" size={16} color={colors.surface} />
+                    </TouchableOpacity>
+                  </>
+                )}
+              </>
             )}
             {isOwner && (
               <>
@@ -115,14 +140,49 @@ export default function LostFoundScreen() {
     return () => unsubscribe();
   }, [type]);
 
-  const handleContact = useCallback((item: LostFoundItem) => {
-    const subject = `[Lost & Found] ${item.title}`;
-    Linking.openURL(
-      `mailto:${item.postedByEmail}?subject=${encodeURIComponent(subject)}`,
-    ).catch(() => {
-      Alert.alert("Couldn't open mail app", `Email them directly at ${item.postedByEmail}`);
-    });
-  }, []);
+  // Firebase/WhatsApp deep links need a country code — a plain 10-digit
+  // Indian number typed without one is the overwhelmingly common case for
+  // this specific college app, so that's the one assumption made here.
+  // A number already starting with a country code (11+ digits, or
+  // already has a + typed) is left as-is.
+  const toWhatsAppNumber = (phone: string): string => {
+    const digits = phone.replace(/[^\d]/g, "");
+    return digits.length === 10 ? `91${digits}` : digits;
+  };
+
+  const handleContact = useCallback(
+    (item: LostFoundItem, method: "email" | "call" | "whatsapp") => {
+      if (method === "email") {
+        const subject = `[Lost & Found] ${item.title}`;
+        Linking.openURL(`mailto:${item.postedByEmail}?subject=${encodeURIComponent(subject)}`).catch(() => {
+          Alert.alert("Couldn't open mail app", `Email them directly at ${item.postedByEmail}`);
+        });
+      } else if (method === "call" && item.postedByPhone) {
+        Linking.openURL(`tel:${item.postedByPhone}`).catch(() => {});
+      } else if (method === "whatsapp" && item.postedByPhone) {
+        const number = toWhatsAppNumber(item.postedByPhone);
+        const message = `Hi, I'm reaching out about your ${item.type} item: "${item.title}"`;
+        Linking.openURL(`https://wa.me/${number}?text=${encodeURIComponent(message)}`).catch(() => {
+          Alert.alert("Couldn't open WhatsApp", "Make sure WhatsApp is installed.");
+        });
+      }
+
+      // Fire-and-forget — never blocks the actual contact action above,
+      // and a failure here (e.g. offline) is silently swallowed since the
+      // person already got what they came for (email/call/WhatsApp opened).
+      if (profile) {
+        notifyLostFoundContact({
+          itemId: item.id,
+          itemTitle: item.title,
+          posterUid: item.postedBy,
+          contactedByUid: profile.uid,
+          contactedByName: profile.name,
+          method,
+        }).catch(() => {});
+      }
+    },
+    [profile],
+  );
 
   const handleResolve = useCallback((item: LostFoundItem) => {
     Alert.alert(
@@ -284,16 +344,16 @@ const styles = StyleSheet.create({
   description: { ...typography.caption, color: colors.textSecondary },
   poster: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   actionRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.xs },
-  contactButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
+  contactIconButton: {
+    width: 30,
+    height: 30,
     borderRadius: radius.full,
+    backgroundColor: colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  contactButtonText: { color: colors.surface, fontSize: 12, fontWeight: "600" },
+  callButton: { backgroundColor: colors.success },
+  whatsappButton: { backgroundColor: "#25D366" },
   resolveButton: {
     flexDirection: "row",
     alignItems: "center",

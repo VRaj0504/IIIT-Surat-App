@@ -22,5 +22,14 @@ service firebase.storage {
       allow read: if request.auth != null;
       allow write: if request.auth != null;
     }
+
+    // Event poster photos uploaded for OCR scanning (see
+    // posterScanService.ts) — a temporary working file for
+    // extractPosterInfo to read, not a permanent record like Resources or
+    // Lost & Found. Only the uploader can read/write/delete their own scan;
+    // nobody else has any reason to see someone else's poster photo.
+    match /posterScans/{uid}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
   }
 }

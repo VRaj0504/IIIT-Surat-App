@@ -22,19 +22,21 @@ const quickLinks: { label: string; icon: keyof typeof Ionicons.glyphMap; route: 
   { label: 'Order Food', icon: 'fast-food-outline', route: 'MessOrder', tint: '#E5484D' },
   { label: 'Mess Menu', icon: 'restaurant-outline', route: 'MessMenu', tint: '#E5484D' },
   { label: 'CGPA Calculator', icon: 'calculator-outline', route: 'CGPACalculator', tint: '#22A559' },
+  { label: 'Transcript', icon: 'school-outline', route: 'Transcript', tint: '#22A559' },
   { label: 'Academic Calendar', icon: 'calendar-outline', route: 'AcademicCalendar', tint: '#F5A623' },
   { label: 'Lost & Found', icon: 'search-outline', route: 'LostFound', tint: '#8B5CF6' },
   { label: 'Resources', icon: 'book-outline', route: 'Resources', tint: '#0EA5E9' },
   { label: 'Faculty Directory', icon: 'people-outline', route: 'Faculty', tint: '#F97316' },
   { label: 'Apply for Leave', icon: 'document-text-outline', route: 'ApplyLeave', tint: '#0EA5E9' },
   { label: 'Announcements', icon: 'notifications-outline', route: 'Announcements', tint: '#8B5CF6' },
+  { label: 'Scan Event Poster', icon: 'scan-outline', route: 'ScanPoster', tint: '#F97316' },
   { label: 'Placements', icon: 'briefcase-outline', route: 'Placement', tint: '#EC4899' },
 ];
 
 const facultyQuickLinks: { label: string; icon: keyof typeof Ionicons.glyphMap; route: keyof RootStackParamList; tint: string }[] = [
   { label: 'Mess Counter', icon: 'qr-code-outline', route: 'MessStaff', tint: '#22A559' },
   { label: 'Leave Requests', icon: 'mail-open-outline', route: 'LeaveRequests', tint: '#0B3D91' },
-  { label: 'Post Announcement', icon: 'megaphone-outline', route: 'PostAnnouncement', tint: '#8B5CF6' },
+  { label: 'Enter Grades', icon: 'create-outline', route: 'GradeEntry', tint: '#22A559' },
 ];
 
 export default function HomeScreen() {

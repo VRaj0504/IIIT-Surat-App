@@ -4,6 +4,10 @@ import { db } from './firestore';
 export type CurriculumSubject = {
   code: string;
   name: string;
+  // Optional since the faculty-upload-web uploader doesn't collect this
+  // yet for older entries — the grading screen falls back to asking
+  // faculty to confirm/type it inline when missing.
+  credits?: number;
 };
 
 // Live-subscribes to just the subjects matching one branch + semester —
@@ -23,7 +27,7 @@ export function subscribeToCurriculum(
   return onSnapshot(q, (snapshot) => {
     const subjects: CurriculumSubject[] = snapshot.docs.map((docSnap) => {
       const data = docSnap.data();
-      return { code: data.code, name: data.name };
+      return { code: data.code, name: data.name, credits: data.credits };
     });
     onUpdate(subjects);
   });

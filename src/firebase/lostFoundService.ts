@@ -40,6 +40,12 @@ export type LostFoundItem = {
   // see AuthContext.ts) and doesn't add a new place to store personal phone
   // numbers just for this one feature.
   postedByEmail: string;
+  // Denormalized from the poster's profile.phone at post time — null if
+  // they never set one. Powers the Call/WhatsApp buttons alongside Email;
+  // a poster who adds a phone number later won't retroactively show it on
+  // already-posted items, same tradeoff every other denormalized "posted
+  // by" field here already accepts.
+  postedByPhone: string | null;
   status: "open" | "resolved";
   createdAt: Timestamp | null;
   resolvedAt: Timestamp | null;
@@ -56,21 +62,28 @@ export async function postLostFoundItem(params: {
   postedBy: string;
   postedByName: string;
   postedByEmail: string;
-  // Local file URI from the image picker — optional. Posting works fine
-  // without one; Storage just isn't live until the project is on Blaze
-  // (see src/firebase/storage.ts), at which point this starts working
-  // with no other code changes needed.
+  postedByPhone?: string | null;
+  // Local file URI from the image picker — optional, posting works fine
+  // without one.
   localPhotoUri?: string | null;
 }): Promise<void> {
   let photoUrl: string | null = null;
   let storagePath: string | null = null;
 
   if (params.localPhotoUri) {
+    // fetch(uri).blob() directly, NOT .arrayBuffer() — Firebase's SDK
+    // internally tries to wrap an ArrayBuffer into a Blob before
+    // uploading, and React Native's Blob implementation can't construct
+    // one from a raw ArrayBuffer (throws exactly the "Creating blobs
+    // from 'ArrayBuffer'... not supported" error). Getting a real Blob
+    // straight from the fetch response sidesteps that internal step
+    // entirely — this works fine on RN even though the ArrayBuffer path
+    // would look identical and work fine on web.
     const fileResponse = await fetch(params.localPhotoUri);
-    const fileBytes = await fileResponse.arrayBuffer();
+    const fileBlob = await fileResponse.blob();
     storagePath = `lostFound/${params.postedBy}/${Date.now()}.jpg`;
     const fileRef = ref(storage, storagePath);
-    await uploadBytes(fileRef, fileBytes, {
+    await uploadBytes(fileRef, fileBlob, {
       contentType: "image/jpeg",
       cacheControl: "public,max-age=31536000,immutable",
     });
@@ -88,6 +101,7 @@ export async function postLostFoundItem(params: {
     postedBy: params.postedBy,
     postedByName: params.postedByName,
     postedByEmail: params.postedByEmail,
+    postedByPhone: params.postedByPhone ?? null,
     status: "open",
     createdAt: serverTimestamp(),
     resolvedAt: null,
@@ -141,4 +155,30 @@ export async function deleteLostFoundItem(item: LostFoundItem): Promise<void> {
     }
   }
   await deleteDoc(doc(db, COLLECTION, item.id));
+}
+
+// Fired whenever someone taps Email/Call/WhatsApp on a post — writes a
+// small record that a Cloud Function (sendLostFoundContactPush) picks up
+// to push-notify the poster immediately, instead of them having to
+// notice a new email. Also doubles as a light audit trail of who
+// contacted whom, which costs nothing extra since it's already being
+// written. Fire-and-forget from the caller's perspective — a failure
+// here should never block the actual mailto/tel/wa.me action opening.
+export async function notifyLostFoundContact(params: {
+  itemId: string;
+  itemTitle: string;
+  posterUid: string;
+  contactedByUid: string;
+  contactedByName: string;
+  method: "email" | "call" | "whatsapp";
+}): Promise<void> {
+  await addDoc(collection(db, "lostFoundContacts"), {
+    itemId: params.itemId,
+    itemTitle: params.itemTitle,
+    posterUid: params.posterUid,
+    contactedByUid: params.contactedByUid,
+    contactedByName: params.contactedByName,
+    method: params.method,
+    createdAt: serverTimestamp(),
+  });
 }

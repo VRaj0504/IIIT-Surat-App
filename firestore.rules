@@ -365,6 +365,31 @@ service cloud.firestore {
         (request.auth != null && resource.data.createdBy == request.auth.uid);
     }
 
+    // Official grades — one doc per (student, subject), id
+    // `${enrollmentNumber}_${subjectCode}` (see gradesService.ts). Only
+    // faculty can write; a student can read their own (matched by looking
+    // up their own profile's enrollmentNumber server-side, not trusting
+    // whatever the query claims); the faculty who entered a grade can read
+    // it too, to review what they've graded. No student write access at
+    // all — grades come from faculty only.
+    match /grades/{gradeId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.enteredBy == request.auth.uid) ||
+        (request.auth != null &&
+          resource.data.studentEnrollmentNumber ==
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrollmentNumber);
+      allow create, update: if isAdmin() || (
+        request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty' &&
+        request.resource.data.enteredBy == request.auth.uid &&
+        request.resource.data.grade in ['O', 'A+', 'A', 'B+', 'B', 'C', 'P', 'F'] &&
+        request.resource.data.credits is number &&
+        request.resource.data.credits > 0
+      );
+      allow delete: if isAdmin() ||
+        (request.auth != null && resource.data.enteredBy == request.auth.uid);
+    }
+
     // Leave applications: a student addresses their request to one
     // specific faculty member, identified by email (facultyEmail — works
     // even before that faculty member has ever signed up, since
@@ -432,6 +457,23 @@ service cloud.firestore {
         request.resource.data.postedBy == resource.data.postedBy
       );
       allow delete: if isAdmin() || (request.auth != null && resource.data.postedBy == request.auth.uid);
+    }
+
+    // Fired when someone taps Email/Call/WhatsApp on a Lost & Found post
+    // (see notifyLostFoundContact in lostFoundService.ts) — write-only
+    // from the client, self-attributed, never editable/deletable by a
+    // regular user afterward (it's a light audit trail as much as a push
+    // trigger). Read access is scoped to the two people actually
+    // involved, plus admin.
+    match /lostFoundContacts/{contactId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.contactedByUid == request.auth.uid) ||
+        (request.auth != null && resource.data.posterUid == request.auth.uid);
+      allow create: if request.auth != null &&
+        request.resource.data.contactedByUid == request.auth.uid &&
+        request.resource.data.method in ['email', 'call', 'whatsapp'];
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
     match /messFeedback/{feedbackId} {

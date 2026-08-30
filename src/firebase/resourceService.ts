@@ -37,16 +37,24 @@ export async function uploadResource(
   fileName: string,
   metadata: Omit<Resource, 'id' | 'fileUrl' | 'createdAt' | 'storagePath'>
 ): Promise<void> {
-  // Read the file straight into an ArrayBuffer via fetch(), rather than
-  // reading it as a base64 STRING first (FileSystem.readAsStringAsync) and
-  // then decoding that back into bytes. Base64 text is ~33% larger than
-  // the file's real byte size, so the old two-step path held two full
-  // copies of an inflated file in memory at once — real risk of a slideshow
-  // or scan-heavy PDF upload running a low-end phone out of memory, and
-  // needless latency for every faculty upload regardless of device.
-  // fetch(uri).arrayBuffer() gives Storage the raw bytes directly.
+  // Read the file via fetch(uri).blob() rather than reading it as a
+  // base64 STRING first (FileSystem.readAsStringAsync) and decoding that
+  // back into bytes — base64 text is ~33% larger than the file's real
+  // byte size, so that two-step path held two full copies of an inflated
+  // file in memory at once, a real risk of running a low-end phone out
+  // of memory on a slideshow or scan-heavy PDF, plus needless latency for
+  // every faculty upload regardless of device.
+  //
+  // Specifically .blob(), NOT .arrayBuffer(): Firebase's SDK internally
+  // tries to wrap raw bytes into a Blob before uploading, and React
+  // Native's Blob implementation can't construct one from an ArrayBuffer
+  // (throws "Creating blobs from 'ArrayBuffer'... not supported" on
+  // upload, even though the exact same code works fine on web). Getting a
+  // real Blob straight from the fetch response sidesteps that internal
+  // conversion entirely, with the same one-copy memory efficiency as the
+  // ArrayBuffer approach would have had if RN supported it.
   const fileResponse = await fetch(localFileUri);
-  const fileBytes = await fileResponse.arrayBuffer();
+  const fileBlob = await fileResponse.blob();
 
   // Build a unique path inside the bucket, e.g.
   // resources/CSE/3/Data Structures/1737000000-notes.pdf
@@ -61,7 +69,7 @@ export async function uploadResource(
   // download spikes.
   const fileRef = ref(storage, storagePath);
   try {
-    await uploadBytes(fileRef, fileBytes, {
+    await uploadBytes(fileRef, fileBlob, {
       contentType: fileName.endsWith('.pdf') ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       cacheControl: 'public,max-age=31536000,immutable',
     });

@@ -24,6 +24,12 @@ export type Announcement = {
   targetBranch: string;
   targetSection: string | null;
   targetAdmissionYear: number | null;
+  // Only meaningful when the targeted section actually mixes
+  // specializations — null means "everyone in this section", not
+  // "nobody". A student with no specialization set (unsplit section)
+  // never matches a specialization-targeted announcement, which is
+  // correct: that announcement wasn't meant for them anyway.
+  targetSpecialization: string | null;
   createdBy: string;
   createdByName: string;
   createdAt: Timestamp | null;
@@ -32,14 +38,25 @@ export type Announcement = {
 const COLLECTION = "announcements";
 
 // Distinct (branch, section) options actually present in the roster for a
-// given admission year — powers the section picker in
-// PostAnnouncementScreen so faculty tap a real class instead of free-typing
+// given admission year — powers the class picker in AnnouncementsScreen's
+// compose form (and the same picker reused in Notices/Grade Entry) so
+// faculty tap a real class instead of free-typing
 // one (which had to match the stored value byte-for-byte or silently reach
 // nobody). Derived live from roster data, so it self-updates every year as
 // new batches are seeded — nothing about sections is hardcoded. A student
 // with no section on their profile (e.g. a branch with a single unsectioned
 // batch) surfaces as branch-only, targetSection left null.
-export type ClassOption = { branch: string; section: string | null; label: string };
+export type ClassOption = {
+  branch: string;
+  section: string | null;
+  label: string;
+  // Distinct specializations actually present among students in this
+  // exact class (e.g. ["Core", "AI/ML", "Cyber"] for a mixed section like
+  // CSE B) — empty for an unsplit section like CSE A or ECE. Lets the
+  // picker offer a specialization sub-choice only when one's actually
+  // needed, instead of always asking.
+  specializations: string[];
+};
 
 export async function getClassOptionsForYear(admissionYear: number): Promise<ClassOption[]> {
   const { getDocs, query: q2, where } = await import("firebase/firestore");
@@ -48,23 +65,49 @@ export async function getClassOptionsForYear(admissionYear: number): Promise<Cla
   );
   const seen = new Map<string, ClassOption>();
   snap.docs.forEach((d) => {
-    const data = d.data() as { branch?: string; section?: string };
+    const data = d.data() as { branch?: string; section?: string; specialization?: string };
     if (!data.branch) return;
     const section = data.section ?? null;
     const key = `${data.branch}||${section ?? ""}`;
-    if (!seen.has(key)) {
+    const existing = seen.get(key);
+    if (existing) {
+      if (data.specialization && !existing.specializations.includes(data.specialization)) {
+        existing.specializations.push(data.specialization);
+      }
+    } else {
       seen.set(key, {
         branch: data.branch,
         section,
         label: section ? `${data.branch} ${section}` : data.branch,
+        specializations: data.specialization ? [data.specialization] : [],
       });
     }
   });
-  return Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label));
+  const options = Array.from(seen.values());
+  options.forEach((o) => o.specializations.sort());
+  return options.sort((a, b) => a.label.localeCompare(b.label));
 }
 
 // Distinct admission years present in the roster, newest first — powers the
 // year picker. Also derived live, so a new batch appears automatically.
+// Turns a raw admission year into a "Nth Year" label computed against
+// today's date — never hardcoded, so it stays correct automatically as
+// each academic year rolls over, instead of silently going stale (an
+// admission year that means "2nd year" today will mean "3rd year" next
+// August). IIIT Surat's academic year starts around July/August each
+// year, so a student is treated as starting their next year of study
+// once July arrives — everyone picking a year sees "1st Year"/"2nd
+// Year"/etc. instead of having to mentally calculate it from a bare
+// admission-year number.
+export function yearOfStudyLabel(admissionYear: number): string {
+  const now = new Date();
+  const academicYearStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1; // July = month index 6
+  const yearOfStudy = academicYearStart - admissionYear + 1;
+  if (yearOfStudy < 1) return `Admission ${admissionYear}`; // not yet started — edge case, shouldn't normally show up
+  const suffix = yearOfStudy === 1 ? "1st" : yearOfStudy === 2 ? "2nd" : yearOfStudy === 3 ? "3rd" : `${yearOfStudy}th`;
+  return `${suffix} Year (${admissionYear})`;
+}
+
 export async function getAdmissionYears(): Promise<number[]> {
   const { getDocs } = await import("firebase/firestore");
   const snap = await getDocs(collection(db, "roster"));
@@ -86,6 +129,7 @@ export async function postAnnouncement(params: {
   targetBranch: string;
   targetSection: string | null;
   targetAdmissionYear: number | null;
+  targetSpecialization: string | null;
   createdBy: string;
   createdByName: string;
 }): Promise<void> {
@@ -94,6 +138,7 @@ export async function postAnnouncement(params: {
     targetBranch: params.targetBranch,
     targetSection: params.targetSection,
     targetAdmissionYear: params.targetAdmissionYear,
+    targetSpecialization: params.targetSpecialization,
     createdBy: params.createdBy,
     createdByName: params.createdByName,
     createdAt: serverTimestamp(),
@@ -108,7 +153,7 @@ export async function postAnnouncement(params: {
 // review what's been posted.
 export function subscribeToAnnouncements(
   onUpdate: (items: Announcement[]) => void,
-  viewer: { branch?: string; section?: string; admissionYear?: number } | null,
+  viewer: { branch?: string; section?: string; admissionYear?: number; specialization?: string } | null,
 ): () => void {
   const q = query(collection(db, COLLECTION), orderBy("createdAt", "desc"));
   return onSnapshot(
@@ -123,6 +168,7 @@ export function subscribeToAnnouncements(
           if (a.targetBranch && a.targetBranch !== viewer.branch) return false;
           if (a.targetSection && a.targetSection !== viewer.section) return false;
           if (a.targetAdmissionYear && a.targetAdmissionYear !== viewer.admissionYear) return false;
+          if (a.targetSpecialization && a.targetSpecialization !== viewer.specialization) return false;
           return true;
         });
       onUpdate(items);

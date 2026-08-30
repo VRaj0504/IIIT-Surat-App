@@ -20,7 +20,9 @@ import FacultyDirectoryScreen from "../screens/FacultyDirectoryScreen";
 import ApplyLeaveScreen from "../screens/ApplyLeaveScreen";
 import LeaveRequestsScreen from "../screens/LeaveRequestsScreen";
 import AnnouncementsScreen from "../screens/AnnouncementsScreen";
-import PostAnnouncementScreen from "../screens/PostAnnouncementScreen";
+import TranscriptScreen from "../screens/TranscriptScreen";
+import GradeEntryScreen from "../screens/GradeEntryScreen";
+import ScanPosterScreen from "../screens/ScanPosterScreen";
 import PlaceholderScreen from "../screens/PlaceholderScreen";
 import ClubDetailScreen from "../screens/ClubDetailScreen";
 import CreateClubScreen from "../screens/CreateClubScreen";
@@ -133,10 +135,21 @@ export default function RootNavigator() {
         component={AnnouncementsScreen}
         options={{ title: "Announcements" }}
       />
+      
       <Stack.Screen
-        name="PostAnnouncement"
-        component={PostAnnouncementScreen}
-        options={{ title: "Quick Announcement" }}
+        name="Transcript"
+        component={TranscriptScreen}
+        options={{ title: "Official Transcript" }}
+      />
+      <Stack.Screen
+        name="GradeEntry"
+        component={GradeEntryScreen}
+        options={{ title: "Enter Grades" }}
+      />
+            <Stack.Screen
+        name="ScanPoster"
+        component={ScanPosterScreen}
+        options={{ title: "Scan Event Poster" }}
       />
       <Stack.Screen
         name="Placement"

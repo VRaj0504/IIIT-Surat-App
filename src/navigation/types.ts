@@ -29,7 +29,9 @@ export type RootStackParamList = {
   ApplyLeave: undefined;
   LeaveRequests: undefined;
   Announcements: undefined;
-  PostAnnouncement: undefined;
+  Transcript: undefined;
+  GradeEntry: undefined;
+  ScanPoster: undefined;
   Resources: undefined;
   UploadResource: undefined;
   Faculty: undefined;

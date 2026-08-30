@@ -15,6 +15,7 @@ import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth } from '../firebase/auth';
 import { db } from '../firebase/firestore';
 import { claimPendingClubLead } from '../firebase/clubsService';
+import { registerForPushNotificationsAsync, clearPushToken } from '../firebase/pushService';
 
 // NOTE: this is intentionally NOT a static `import` for GoogleSignin. This
 // package's native-module spec file runs `TurboModuleRegistry.getEnforcing(...)`
@@ -64,6 +65,10 @@ export type UserProfile = {
   enrollmentNumber?: string;
   branch?: Branch;
   section?: string;
+  // Only set for students in a section that mixes multiple specializations
+  // (e.g. CSE B = Core + AI/ML + Cyber) — comes from an optional column in
+  // the roster upload, blank for everyone in an unsplit section.
+  specialization?: string;
   admissionYear?: number;
   // Faculty-only, optional — self-filled via EditProfileScreen, shown in
   // FacultyDirectoryScreen. Left blank by default; nothing here is
@@ -78,6 +83,11 @@ export type UserProfile = {
   // never self-edited — a role-based address like hod.cse@iiitsurat.ac.in
   // that stays valid across whoever currently holds that position.
   roleEmail?: string;
+  shortForm?: string;
+  // Set by pushService.ts after the device registers for notifications —
+  // never self-edited, and cleared on sign-out so a shared device doesn't
+  // keep receiving a previous user's pushes.
+  expoPushToken?: string;
 };
 
 type AuthContextValue = {
@@ -100,6 +110,7 @@ type AuthContextValue = {
     officeHours?: string;
     phone?: string;
   }) => Promise<void>;
+  updatePhone: (phone: string) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
 };
 
@@ -119,14 +130,16 @@ async function buildGatedProfile(params: {
   let enrollmentNumberOut: string | undefined;
   let branchOut: Branch | undefined;
   let sectionOut: string | undefined;
+  let specializationOut: string | undefined;
   let admissionYearOut: number | undefined;
   let departmentOut: string | undefined;
   let designationOut: string | undefined;
   let roleEmailOut: string | undefined;
+  let shortFormOut: string | undefined;
 
   if (role === 'faculty') {
     const allowSnap = await getDoc(doc(db, 'allowlist', normalizedEmail));
-    const allowData = allowSnap.data() as { role?: string; department?: string; designation?: string; roleEmail?: string } | undefined;
+    const allowData = allowSnap.data() as { role?: string; department?: string; designation?: string; roleEmail?: string; shortForm?: string } | undefined;
     if (!allowSnap.exists() || allowData?.role !== 'faculty') {
       throw new Error('This email is not on the approved faculty list. Contact an admin if you believe this is a mistake.');
     }
@@ -145,6 +158,7 @@ async function buildGatedProfile(params: {
     departmentOut = allowData?.department;
     designationOut = allowData?.designation;
     roleEmailOut = allowData?.roleEmail;
+    shortFormOut = allowData?.shortForm;
   } else {
     if (!typedRegNo) {
       throw new Error('Enrollment number is required for students.');
@@ -153,11 +167,12 @@ async function buildGatedProfile(params: {
     if (!rosterSnap.exists()) {
       throw new Error('This enrollment number was not found on the student roster. Contact an admin if you believe this is a mistake.');
     }
-    const rosterData = rosterSnap.data() as { branch: Branch; section: string; admissionYear: number };
+    const rosterData = rosterSnap.data() as { branch: Branch; section: string; admissionYear: number; specialization?: string };
     enrollmentNumberOut = typedRegNo;
     branchOut = rosterData.branch;
     sectionOut = rosterData.section;
     admissionYearOut = rosterData.admissionYear;
+    specializationOut = rosterData.specialization;
   }
 
   return {
@@ -168,10 +183,12 @@ async function buildGatedProfile(params: {
     ...(enrollmentNumberOut ? { enrollmentNumber: enrollmentNumberOut } : {}),
     ...(branchOut ? { branch: branchOut } : {}),
     ...(sectionOut ? { section: sectionOut } : {}),
+    ...(specializationOut ? { specialization: specializationOut } : {}),
     ...(admissionYearOut ? { admissionYear: admissionYearOut } : {}),
     ...(departmentOut ? { department: departmentOut } : {}),
     ...(designationOut ? { designation: designationOut } : {}),
     ...(roleEmailOut ? { roleEmail: roleEmailOut } : {}),
+    ...(shortFormOut ? { shortForm: shortFormOut } : {}),
   };
 }
 
@@ -197,6 +214,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setProfileLoading(false);
           }
         }
+        // Fire-and-forget: registers this device for push and saves the
+        // token onto the profile. Never awaited/blocking — a slow or
+        // failed push registration should never delay getting into the
+        // app. Safe to call every time auth state resolves to "signed
+        // in" (covers app relaunch, not just fresh sign-in), since it's
+        // just overwriting the same token field each time.
+        registerForPushNotificationsAsync(firebaseUser.uid);
       } else {
         setProfile(null);
       }
@@ -327,6 +351,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logOut = async () => {
+    // Clear the push token BEFORE signing out — once signed out, we no
+    // longer have a uid to write to, and a stale token left behind would
+    // mean this device keeps getting this user's pushes if someone else
+    // signs into the same phone afterward.
+    if (user) {
+      await clearPushToken(user.uid);
+    }
     await signOut(auth);
     // Best-effort — clears Google's local session so the next sign-in shows
     // the account picker again instead of silently reusing the last account.
@@ -366,6 +397,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await sendPasswordResetEmail(auth, email.trim());
   };
 
+  // Unlike updateFacultyDetails (faculty-only, shows in Faculty
+  // Directory), this works for any role — a student's phone is used
+  // purely for Lost & Found Call/WhatsApp contact buttons, not shown
+  // anywhere else.
+  const updatePhone: AuthContextValue['updatePhone'] = async (phone) => {
+    if (!user) throw new Error('You must be signed in.');
+    const trimmed = phone.trim();
+    await updateDoc(doc(db, 'users', user.uid), { phone: trimmed });
+    setProfile((prev) => (prev ? { ...prev, phone: trimmed } : prev));
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -380,6 +422,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logOut,
         updateProfileName,
         updateFacultyDetails,
+        updatePhone,
         sendPasswordReset,
       }}
     >

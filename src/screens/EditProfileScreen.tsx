@@ -21,7 +21,7 @@ import { useAuth } from "../context/AuthContext";
 
 export default function EditProfileScreen() {
   const navigation = useNavigation();
-  const { profile, updateProfileName, updateFacultyDetails } = useAuth();
+  const { profile, updateProfileName, updateFacultyDetails, updatePhone } = useAuth();
   const [name, setName] = useState(profile?.name ?? "");
   const [department, setDepartment] = useState(profile?.department ?? "");
   const [designation, setDesignation] = useState(profile?.designation ?? "");
@@ -45,6 +45,8 @@ export default function EditProfileScreen() {
       // it doesn't touch fields that don't apply to them.
       if (profile?.role === "faculty") {
         await updateFacultyDetails({ department, designation, officeLocation, officeHours, phone });
+      } else if (profile?.role === "student") {
+        await updatePhone(phone);
       }
       navigation.goBack();
     } catch (e: any) {
@@ -90,6 +92,16 @@ export default function EditProfileScreen() {
                 roster and can't be changed here — contact an admin if any of
                 this is wrong.
               </Text>
+
+              <Text style={styles.label}>Phone (optional — used for Lost &amp; Found contact)</Text>
+              <TextInput
+                style={styles.input}
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="Leave blank to keep private"
+                placeholderTextColor={colors.textSecondary}
+                keyboardType="phone-pad"
+              />
             </>
           )}
 

@@ -51,14 +51,19 @@ export default function NoticesScreen() {
     // plus ones targeted at their own branch/section/year.
     const viewer =
       profile?.role === "student"
-        ? { branch: profile.branch, section: profile.section, admissionYear: profile.admissionYear }
+        ? {
+            branch: profile.branch,
+            section: profile.section,
+            admissionYear: profile.admissionYear,
+            specialization: profile.specialization,
+          }
         : undefined;
     const unsubscribe = subscribeToNotices((updated) => {
       setNotices(updated);
       setLoading(false);
     }, viewer);
     return unsubscribe;
-  }, [profile?.role, profile?.branch, profile?.section, profile?.admissionYear]);
+  }, [profile?.role, profile?.branch, profile?.section, profile?.admissionYear, profile?.specialization]);
 
   const handleDelete = (notice: Notice) => {
     Alert.alert(
@@ -125,7 +130,7 @@ export default function NoticesScreen() {
               </View>
               {(item.targetBranch || item.targetSection || item.targetAdmissionYear) && (
                 <Text style={styles.targetingLabel}>
-                  For {[item.targetBranch, item.targetSection, item.targetAdmissionYear].filter(Boolean).join(" · ")}
+                  For {[item.targetBranch, item.targetSection, item.targetSpecialization, item.targetAdmissionYear].filter(Boolean).join(" · ")}
                 </Text>
               )}
               <Text style={styles.noticeTitle}>{item.title}</Text>
