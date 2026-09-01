@@ -16,6 +16,7 @@ import { useAuth } from "../context/AuthContext";
 import { getAdmissionYears, getClassOptionsForYear, yearOfStudyLabel, ClassOption } from "../firebase/announcementsService";
 import { subscribeToCurriculum, CurriculumSubject } from "../firebase/curriculumService";
 import { getClassRoster, getExistingGrades, setGrade, GRADES, RosterStudent, GradeEntry } from "../firebase/gradesService";
+import LoadingSpinner from "../components/LoadingSpinner";
 
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
@@ -272,7 +273,7 @@ export default function GradeEntryScreen() {
         {selectedSubject && resolvedCredits && (
           <>
             {rosterLoading ? (
-              <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: spacing.lg }} />
+              <LoadingSpinner style={{ marginTop: spacing.lg }} />
             ) : roster.length === 0 ? (
               <Text style={styles.emptyNote}>No students found in this class.</Text>
             ) : (

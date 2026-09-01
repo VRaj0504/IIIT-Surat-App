@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { subscribeToMyGrades, computeTranscript, GradeEntry } from "../firebase/gradesService";
+import LoadingSpinner from "../components/LoadingSpinner";
 
 export default function TranscriptScreen() {
   const { profile } = useAuth();
@@ -40,7 +41,7 @@ export default function TranscriptScreen() {
           <Text style={styles.subtitle}>Entered by your subject faculty — this is your official record.</Text>
 
           {loading ? (
-            <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: spacing.xl }} />
+            <LoadingSpinner style={{ marginTop: spacing.xl }} />
           ) : grades.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Ionicons name="school-outline" size={40} color={colors.textSecondary} />

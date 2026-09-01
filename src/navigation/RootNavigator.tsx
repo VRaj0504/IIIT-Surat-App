@@ -6,13 +6,14 @@ import type { RootStackParamList } from "./types";
 import TabNavigator from "./TabNavigator";
 import CGPACalculatorScreen from "../screens/CGPACalculatorScreen";
 import AcademicCalendarScreen from "../screens/AcademicCalendarScreen";
-import AttendanceScreen from "../screens/AttendanceScreen";
 import MessMenuScreen from "../screens/MessMenuScreen";
 import MessOrderScreen from "../screens/MessOrderScreen";
 import MessTokenScreen from "../screens/MessTokenScreen";
 import MessWalletScreen from "../screens/MessWalletScreen";
 import MessOrderHistoryScreen from "../screens/MessOrderHistoryScreen";
 import MessStaffScreen from "../screens/MessStaffScreen";
+import ThaliPassScreen from "../screens/ThaliPassScreen";
+import ScanThaliPassScreen from "../screens/ScanThaliPassScreen";
 import ResourcesScreen from "../screens/ResourcesScreen";
 import LostFoundScreen from "../screens/LostFoundScreen";
 import PostLostFoundScreen from "../screens/PostLostFoundScreen";
@@ -23,6 +24,11 @@ import AnnouncementsScreen from "../screens/AnnouncementsScreen";
 import TranscriptScreen from "../screens/TranscriptScreen";
 import GradeEntryScreen from "../screens/GradeEntryScreen";
 import ScanPosterScreen from "../screens/ScanPosterScreen";
+import RechargeCheckoutScreen from "../screens/RechargeCheckoutScreen";
+import MarkAttendanceScreen from "../screens/MarkAttendanceScreen";
+import MyAttendanceScreen from "../screens/MyAttendanceScreen";
+import SubmitEventExcusalScreen from "../screens/SubmitEventExcusalScreen";
+import EventExcusalRequestsScreen from "../screens/EventExcusalRequestsScreen";
 import PlaceholderScreen from "../screens/PlaceholderScreen";
 import ClubDetailScreen from "../screens/ClubDetailScreen";
 import CreateClubScreen from "../screens/CreateClubScreen";
@@ -43,6 +49,12 @@ export default function RootNavigator() {
         headerTintColor: colors.primary,
         headerTitleStyle: { color: colors.textPrimary },
         headerShadowVisible: false,
+        // Previously unset — meant iOS and Android used their own,
+        // slightly different default push transitions, one small but
+        // real contributor to the app feeling inconsistent screen to
+        // screen. Setting this once here applies everywhere without
+        // touching any individual screen file.
+        animation: "slide_from_right",
       }}
     >
       <Stack.Screen
@@ -59,11 +71,6 @@ export default function RootNavigator() {
         name="AcademicCalendar"
         component={AcademicCalendarScreen}
         options={{ title: "Academic Calendar" }}
-      />
-      <Stack.Screen
-        name="Attendance"
-        component={AttendanceScreen}
-        options={{ title: "Attendance" }}
       />
       <Stack.Screen
         name="MessMenu"
@@ -94,6 +101,16 @@ export default function RootNavigator() {
         name="MessStaff"
         component={MessStaffScreen}
         options={{ title: "Mess Counter" }}
+      />
+      <Stack.Screen
+        name="ThaliPass"
+        component={ThaliPassScreen}
+        options={{ title: "Thali Pass" }}
+      />
+      <Stack.Screen
+        name="ScanThaliPass"
+        component={ScanThaliPassScreen}
+        options={{ title: "Scan Thali Pass" }}
       />
       <Stack.Screen
         name="LostFound"
@@ -135,7 +152,6 @@ export default function RootNavigator() {
         component={AnnouncementsScreen}
         options={{ title: "Announcements" }}
       />
-      
       <Stack.Screen
         name="Transcript"
         component={TranscriptScreen}
@@ -146,10 +162,35 @@ export default function RootNavigator() {
         component={GradeEntryScreen}
         options={{ title: "Enter Grades" }}
       />
-            <Stack.Screen
+      <Stack.Screen
         name="ScanPoster"
         component={ScanPosterScreen}
         options={{ title: "Scan Event Poster" }}
+      />
+      <Stack.Screen
+        name="RechargeCheckout"
+        component={RechargeCheckoutScreen}
+        options={{ title: "Recharge Wallet" }}
+      />
+      <Stack.Screen
+        name="MarkAttendance"
+        component={MarkAttendanceScreen}
+        options={{ title: "Mark Attendance" }}
+      />
+      <Stack.Screen
+        name="MyAttendance"
+        component={MyAttendanceScreen}
+        options={{ title: "My Attendance" }}
+      />
+      <Stack.Screen
+        name="SubmitEventExcusal"
+        component={SubmitEventExcusalScreen}
+        options={{ title: "Event Excusal" }}
+      />
+      <Stack.Screen
+        name="EventExcusalRequests"
+        component={EventExcusalRequestsScreen}
+        options={{ title: "Excusal Requests" }}
       />
       <Stack.Screen
         name="Placement"

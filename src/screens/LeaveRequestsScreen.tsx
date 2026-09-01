@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, TextInput } from "react-native";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
+import LoadingSpinner from "../components/LoadingSpinner";
 import {
   subscribeToLeaveRequestsForFaculty,
   resolveLeaveApplication,
@@ -49,7 +50,7 @@ export default function LeaveRequestsScreen() {
         <Text style={styles.headerTitle}>Leave Requests</Text>
 
         {loading ? (
-          <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: spacing.xl }} />
+          <LoadingSpinner style={{ marginTop: spacing.xl }} />
         ) : applications.length === 0 ? (
           <Text style={styles.emptyText}>No leave requests addressed to you.</Text>
         ) : (
@@ -72,6 +73,11 @@ export default function LeaveRequestsScreen() {
                   {item.type === "medical" ? "Medical" : "Casual"} · {item.fromDate} to {item.toDate}
                 </Text>
                 <Text style={styles.reason}>{item.reason}</Text>
+                {item.documentUrl && (
+                  <TouchableOpacity onPress={() => Linking.openURL(item.documentUrl!)}>
+                    <Text style={styles.documentLink}>View attached document</Text>
+                  </TouchableOpacity>
+                )}
 
                 {item.status === "pending" ? (
                   <>
@@ -119,6 +125,7 @@ const styles = StyleSheet.create({
   studentName: { ...typography.h3, color: colors.textPrimary, flex: 1 },
   meta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
   reason: { ...typography.body, color: colors.textPrimary, marginTop: spacing.xs },
+  documentLink: { fontSize: 12, color: colors.primary, marginTop: 6, fontWeight: "600" },
   remarkInput: {
     backgroundColor: colors.background,
     borderRadius: radius.sm,

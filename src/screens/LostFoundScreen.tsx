@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Image,
   Linking,
-  ActivityIndicator,
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -26,6 +25,7 @@ import {
   LostFoundType,
 } from "../firebase/lostFoundService";
 import type { RootStackParamList } from "../navigation/types";
+import LoadingSpinner from "../components/LoadingSpinner";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -130,6 +130,13 @@ export default function LostFoundScreen() {
   const [type, setType] = useState<LostFoundType>("lost");
   const [items, setItems] = useState<LostFoundItem[]>([]);
   const [loading, setLoading] = useState(true);
+  // Resolved items are hidden from the default feed — an item marked
+  // resolved is done, and leaving it in the main list just adds clutter
+  // for something nobody needs to act on anymore. This toggle is an
+  // escape hatch for a poster wanting to confirm they did mark
+  // something resolved, not the default browsing experience.
+  const [showResolved, setShowResolved] = useState(false);
+  const visibleItems = items.filter((item) => showResolved || item.status !== "resolved");
 
   useEffect(() => {
     setLoading(true);
@@ -250,11 +257,23 @@ export default function LostFoundScreen() {
           </TouchableOpacity>
         </View>
 
+        <TouchableOpacity
+          onPress={() => setShowResolved((v) => !v)}
+          style={styles.showResolvedRow}
+        >
+          <Ionicons
+            name={showResolved ? "checkbox-outline" : "square-outline"}
+            size={16}
+            color={colors.textSecondary}
+          />
+          <Text style={styles.showResolvedText}>Show resolved items</Text>
+        </TouchableOpacity>
+
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
+            <LoadingSpinner />
           </View>
-        ) : items.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Ionicons name="search-outline" size={40} color={colors.textSecondary} />
             <Text style={styles.emptyText}>
@@ -263,7 +282,7 @@ export default function LostFoundScreen() {
           </View>
         ) : (
           <FlatList
-            data={items}
+            data={visibleItems}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
             renderItem={({ item }) => (
@@ -310,6 +329,14 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     padding: 4,
   },
+  showResolvedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+  },
+  showResolvedText: { fontSize: 13, color: colors.textSecondary },
   toggleButton: {
     flex: 1,
     paddingVertical: spacing.sm,

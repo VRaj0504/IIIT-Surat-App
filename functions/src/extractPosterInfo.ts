@@ -17,25 +17,41 @@ type ExtractPosterInfoResponse = {
 
 // Matches "25 August 2026", "25th Aug 2026", "August 25, 2026", "25/08/2026",
 // "25-08-2026" — the handful of date formats actually common on posters.
-// Deliberately NOT trying to cover every possible format: a missed date
-// just means the confirm screen's date field starts blank instead of
-// pre-filled, which is a minor inconvenience, not a wrong-data risk —
-// unlike guessing wrong and silently trusting it.
+// Month names are matched by their first 3-4 letters as a PREFIX inside
+// the OCR'd word, not as an exact full-word match — real posters have
+// typos ("SEPTEMEBER" instead of "SEPTEMBER") and OCR itself
+// misreads characters sometimes, and requiring an exact match breaks on
+// either. A missed date just means the confirm screen's date field
+// starts blank instead of pre-filled, which is a minor inconvenience,
+// not a wrong-data risk — unlike guessing wrong and silently trusting
+// it.
 const MONTH_NAMES = [
   "january", "february", "march", "april", "may", "june",
   "july", "august", "september", "october", "november", "december",
 ];
+const MONTH_PATTERN = "[a-z]{3,12}"; // any word-like token; matched against MONTH_NAMES afterward, not by literal name
+
+function monthIndexFromToken(token: string): number {
+  const t = token.toLowerCase();
+  // Try each real month name's first 4 letters (3 for "may") as a prefix
+  // of the OCR'd token — catches "SEPTEMEBER" matching "sept", "AUGUST"
+  // matching "augu", etc., without needing an exact full-word match.
+  return MONTH_NAMES.findIndex((m) => {
+    const prefixLen = Math.min(4, m.length);
+    return t.startsWith(m.slice(0, prefixLen)) || m.startsWith(t.slice(0, prefixLen));
+  });
+}
 
 function extractDate(text: string): string | null {
   const lower = text.toLowerCase();
 
-  // "25 August 2026" / "25th Aug 2026"
+  // "25 August 2026" / "25th Aug 2026" / "1ST SEPTEMEBER,2026"
   const namedMonthMatch = lower.match(
-    /\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december)[a-z]*\s+(\d{4})\b/,
+    new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s*,?\\s*(${MONTH_PATTERN})\\s*,?\\s*(\\d{4})\\b`),
   );
   if (namedMonthMatch) {
     const day = namedMonthMatch[1].padStart(2, "0");
-    const monthIndex = MONTH_NAMES.findIndex((m) => namedMonthMatch[2].startsWith(m.slice(0, 3)));
+    const monthIndex = monthIndexFromToken(namedMonthMatch[2]);
     const year = namedMonthMatch[3];
     if (monthIndex !== -1) {
       return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${day}`;
@@ -44,10 +60,10 @@ function extractDate(text: string): string | null {
 
   // "August 25, 2026" / "Aug 25 2026"
   const monthFirstMatch = lower.match(
-    /\b(january|february|march|april|may|june|july|august|september|october|november|december)[a-z]*\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b/,
+    new RegExp(`\\b(${MONTH_PATTERN})\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`),
   );
   if (monthFirstMatch) {
-    const monthIndex = MONTH_NAMES.findIndex((m) => monthFirstMatch[1].startsWith(m.slice(0, 3)));
+    const monthIndex = monthIndexFromToken(monthFirstMatch[1]);
     const day = monthFirstMatch[2].padStart(2, "0");
     const year = monthFirstMatch[3];
     if (monthIndex !== -1) {

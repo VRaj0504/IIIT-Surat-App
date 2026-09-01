@@ -14,7 +14,6 @@ export type RootTabParamList = {
 
 export type RootStackParamList = {
   Tabs: undefined;
-  Attendance: undefined;
   MessMenu: undefined;
   // reorderItems, when present, prefills the cart with a past order's
   // items (quantities capped to whatever's actually in stock right now).
@@ -23,6 +22,8 @@ export type RootStackParamList = {
   MessWallet: undefined;
   MessOrderHistory: undefined;
   MessStaff: undefined;
+  ThaliPass: undefined;
+  ScanThaliPass: undefined;
   CGPACalculator: undefined;
   LostFound: undefined;
   PostLostFound: { type?: "lost" | "found" } | undefined;
@@ -32,6 +33,11 @@ export type RootStackParamList = {
   Transcript: undefined;
   GradeEntry: undefined;
   ScanPoster: undefined;
+  RechargeCheckout: { amount: number };
+  MarkAttendance: undefined;
+  MyAttendance: undefined;
+  SubmitEventExcusal: undefined;
+  EventExcusalRequests: undefined;
   Resources: undefined;
   UploadResource: undefined;
   Faculty: undefined;

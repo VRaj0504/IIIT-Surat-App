@@ -22,14 +22,14 @@ type Course = { id: string; credits: string; grade: string };
 type Semester = { id: string; sgpa: string; credits: string };
 
 const gradePoints: Record<string, number> = {
-  O: 10,
-  "A+": 9,
-  A: 8,
-  "B+": 7,
-  B: 6,
-  C: 5,
-  P: 4,
-  F: 0,
+  AA: 10,
+  AB: 9,
+  BB: 8,
+  BC: 7,
+  CC: 6,
+  CD: 5,
+  DD: 4,
+  FF: 0,
 };
 
 let idCounter = 1;
@@ -133,7 +133,7 @@ export default function CGPACalculatorScreen() {
           {/* ---- SGPA section ---- */}
           <Text style={styles.title}>SGPA — This Semester</Text>
           <Text style={styles.subtitle}>
-            Enter credits and grade for each course (O, A+, A, B+, B, C, P, F)
+            Enter credits and grade for each course (AA, AB, BB, BC, CC, CD, DD, FF)
           </Text>
 
           <View style={styles.resultCard}>

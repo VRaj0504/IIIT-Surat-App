@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   TextInput,
   Linking,
-  ActivityIndicator,
   BackHandler,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
@@ -16,6 +15,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
 import { subscribeToFacultyDirectory, FacultyMember } from "../firebase/facultyService";
+import { subscribeToTnpCoordinators, StudentCoordinator } from "../firebase/tnpCoordinatorsService";
+import LoadingSpinner from "../components/LoadingSpinner";
 
 // Department codes as seeded in scripts/seed-allowlist.js (from the
 // allowlist, carried onto the profile at signup — see AuthContext.ts).
@@ -147,8 +148,62 @@ const FacultyCard = memo(function FacultyCard({ member }: { member: FacultyMembe
   );
 });
 
+// Deliberately a separate, simpler component from FacultyCard rather than
+// reusing it — designation/department/officeHours/roleEmail all make
+// sense for faculty but not for a student in an informal coordinator
+// role, and forcing StudentCoordinator into FacultyMember's shape would
+// mean a lot of blank/undefined fields rendered conditionally for no
+// real benefit. The "STUDENT" badge (instead of HOD/DEAN) is the visual
+// cue that keeps these clearly distinct from actual faculty.
+const StudentCoordinatorCard = memo(function StudentCoordinatorCard({
+  coordinator,
+}: {
+  coordinator: StudentCoordinator;
+}) {
+  const initial = coordinator.name?.trim()?.[0]?.toUpperCase() ?? "?";
+
+  const handleEmail = () => {
+    Linking.openURL(`mailto:${coordinator.email}`).catch(() => {});
+  };
+  const handleCall = () => {
+    if (coordinator.phone) Linking.openURL(`tel:${coordinator.phone}`).catch(() => {});
+  };
+
+  return (
+    <View style={styles.card}>
+      <View style={[styles.avatar, styles.studentAvatar]}>
+        <Text style={styles.avatarText}>{initial}</Text>
+      </View>
+      <View style={styles.cardBody}>
+        <View style={styles.nameRow}>
+          <Text style={styles.name}>{coordinator.name}</Text>
+          <View style={styles.studentBadge}>
+            <Text style={styles.studentBadgeText}>STUDENT</Text>
+          </View>
+        </View>
+        <Text style={styles.subtitle}>
+          {[coordinator.role, coordinator.branch, coordinator.yearLabel].filter(Boolean).join(" · ")}
+        </Text>
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={styles.actionButton} onPress={handleEmail}>
+            <Ionicons name="mail-outline" size={14} color={colors.primary} />
+            <Text style={styles.actionText}>Email</Text>
+          </TouchableOpacity>
+          {coordinator.phone && (
+            <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
+              <Ionicons name="call-outline" size={14} color={colors.primary} />
+              <Text style={styles.actionText}>Call</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+});
+
 export default function FacultyDirectoryScreen() {
   const [faculty, setFaculty] = useState<FacultyMember[]>([]);
+  const [coordinators, setCoordinators] = useState<StudentCoordinator[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedFolder, setSelectedFolder] = useState<FolderId | null>(null);
@@ -158,6 +213,11 @@ export default function FacultyDirectoryScreen() {
       setFaculty(data);
       setLoading(false);
     });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToTnpCoordinators(setCoordinators);
     return () => unsubscribe();
   }, []);
 
@@ -220,7 +280,7 @@ export default function FacultyDirectoryScreen() {
           <Text style={styles.headerTitle}>Faculty Directory</Text>
           {loading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={colors.primary} />
+              <LoadingSpinner />
             </View>
           ) : (
             <View style={styles.folderList}>
@@ -286,6 +346,16 @@ export default function FacultyDirectoryScreen() {
             keyExtractor={(item) => item.uid ?? item.email}
             contentContainerStyle={styles.listContent}
             renderItem={renderItem}
+            ListFooterComponent={
+              selectedFolder === "TNP" && coordinators.length > 0 ? (
+                <View style={styles.coordinatorsSection}>
+                  <Text style={styles.coordinatorsSectionTitle}>Student Coordinators</Text>
+                  {coordinators.map((c) => (
+                    <StudentCoordinatorCard key={c.id} coordinator={c} />
+                  ))}
+                </View>
+              ) : null
+            }
           />
         )}
       </SafeAreaView>
@@ -339,6 +409,16 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   leadershipBadgeText: { fontSize: 10, fontWeight: "800", color: colors.surface, letterSpacing: 0.5 },
+  studentAvatar: { backgroundColor: colors.success + "30" },
+  studentBadge: {
+    backgroundColor: colors.success,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+  },
+  studentBadgeText: { fontSize: 10, fontWeight: "800", color: colors.surface, letterSpacing: 0.5 },
+  coordinatorsSection: { marginTop: spacing.lg, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.surface },
+  coordinatorsSectionTitle: { ...typography.h3, color: colors.textPrimary, marginBottom: spacing.sm },
   shortForm: { fontSize: 13, color: colors.textSecondary, fontWeight: "600" },
   name: { ...typography.h3, color: colors.textPrimary },
   subtitle: { fontSize: 13, color: colors.textSecondary, fontWeight: "600" },

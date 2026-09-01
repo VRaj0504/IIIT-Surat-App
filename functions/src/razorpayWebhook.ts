@@ -21,7 +21,12 @@ export const razorpayWebhook = onRequest(
     // concurrency/instance cap keeps this cheap without needing to scale
     // anywhere near placeOrderFn's ceiling.
     concurrency: 40,
-    maxInstances: 5,
+    // Bumped from 5 — with an explicit goal of ~1000 payments landing in
+    // a tight window (e.g. everyone recharging at semester start), more
+    // headroom here costs nothing at rest (Cloud Functions only bills for
+    // instances actually running) and avoids webhook calls queuing
+    // behind each other during a genuine burst.
+    maxInstances: 15,
   },
   async (req, res) => {
     const signature = req.headers["x-razorpay-signature"] as string;

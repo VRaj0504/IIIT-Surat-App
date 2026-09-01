@@ -8,11 +8,13 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../navigation/types";
 import {
   colors,
   spacing,
@@ -27,17 +29,21 @@ import {
   subscribeToWalletBalance,
   subscribeToMyTransactions,
   requestRecharge,
-  buildUpiRechargeUrl,
   WalletTransaction,
 } from "../firebase/messService";
 
 const QUICK_AMOUNTS = [50, 100, 200, 500];
 
+type NavProp = NativeStackNavigationProp<RootStackParamList, "MessWallet">;
+
 export default function MessWalletScreen() {
+  const navigation = useNavigation<NavProp>();
   const { profile } = useAuth();
   const [balance, setBalance] = useState(0);
   const [txns, setTxns] = useState<WalletTransaction[]>([]);
   const [amount, setAmount] = useState("");
+  const [showManualFallback, setShowManualFallback] = useState(false);
+  const [manualAmount, setManualAmount] = useState("");
   const [upiRef, setUpiRef] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -51,8 +57,17 @@ export default function MessWalletScreen() {
     };
   }, [profile?.uid]);
 
-  const handleSubmit = async () => {
+  const handleRecharge = () => {
     const amt = parseFloat(amount);
+    if (!amt || amt <= 0) {
+      Alert.alert("Enter an amount", "Please enter a valid recharge amount.");
+      return;
+    }
+    navigation.navigate("RechargeCheckout", { amount: amt });
+  };
+
+  const handleManualSubmit = async () => {
+    const amt = parseFloat(manualAmount);
     if (!profile?.uid || !amt || amt <= 0) {
       Alert.alert("Enter an amount", "Please enter a valid recharge amount.");
       return;
@@ -67,7 +82,7 @@ export default function MessWalletScreen() {
     setSubmitting(true);
     try {
       await requestRecharge(profile.uid, profile.name, amt, upiRef.trim());
-      setAmount("");
+      setManualAmount("");
       setUpiRef("");
       Alert.alert(
         "Request sent",
@@ -99,12 +114,6 @@ export default function MessWalletScreen() {
 
           <Text style={styles.sectionTitle}>Recharge Wallet</Text>
           <ClayCard soft style={styles.rechargeCard}>
-            <Text style={styles.helperText}>
-              Pay the mess office via UPI (or in person), then submit the amount
-              and UPI reference here. Mess staff will verify and credit your
-              wallet.
-            </Text>
-
             <View style={styles.quickRow}>
               {QUICK_AMOUNTS.map((a) => (
                 <TouchableOpacity
@@ -127,55 +136,56 @@ export default function MessWalletScreen() {
               placeholderTextColor={colors.textSecondary}
             />
 
-            <TouchableOpacity
-              style={styles.payUpiBtn}
-              onPress={async () => {
-                const amt = parseFloat(amount);
-                if (!amt || amt <= 0) {
-                  Alert.alert(
-                    "Enter an amount",
-                    "Enter how much you want to add before opening your UPI app.",
-                  );
-                  return;
-                }
-                const url = buildUpiRechargeUrl(amt);
-                const canOpen = await Linking.canOpenURL(url);
-                if (canOpen) {
-                  Linking.openURL(url);
-                } else {
-                  Alert.alert(
-                    "No UPI app found",
-                    "Pay the canteen directly using its QR code instead.",
-                  );
-                }
-              }}
-            >
-              <Ionicons name="qr-code-outline" size={16} color={colors.primary} />
-              <Text style={styles.payUpiBtnText}>Pay via UPI app</Text>
+            <TouchableOpacity style={styles.submitBtn} onPress={handleRecharge}>
+              <Ionicons name="card-outline" size={16} color="#fff" />
+              <Text style={styles.submitBtnText}>Recharge Now</Text>
             </TouchableOpacity>
 
-            <Text style={styles.inputLabel}>UPI Transaction ID</Text>
-            <TextInput
-              style={styles.input}
-              value={upiRef}
-              onChangeText={setUpiRef}
-              placeholder="e.g. 402812345678"
-              placeholderTextColor={colors.textSecondary}
-            />
+            <TouchableOpacity onPress={() => setShowManualFallback((v) => !v)} style={{ marginTop: spacing.md }}>
+              <Text style={styles.manualFallbackToggle}>
+                {showManualFallback ? "Hide" : "Paid directly to the canteen instead?"}
+              </Text>
+            </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.submitBtn}
-              onPress={handleSubmit}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.submitBtnText}>
-                  Submit Recharge Request
+            {showManualFallback && (
+              <View style={styles.manualFallbackSection}>
+                <Text style={styles.helperText}>
+                  If you paid the mess office directly (cash or a separate UPI transfer), submit the
+                  amount and UPI reference here — mess staff will verify and credit your wallet manually.
                 </Text>
-              )}
-            </TouchableOpacity>
+
+                <Text style={styles.inputLabel}>Amount (₹)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={manualAmount}
+                  onChangeText={setManualAmount}
+                  keyboardType="numeric"
+                  placeholder="e.g. 200"
+                  placeholderTextColor={colors.textSecondary}
+                />
+
+                <Text style={styles.inputLabel}>UPI Transaction ID</Text>
+                <TextInput
+                  style={styles.input}
+                  value={upiRef}
+                  onChangeText={setUpiRef}
+                  placeholder="e.g. 402812345678"
+                  placeholderTextColor={colors.textSecondary}
+                />
+
+                <TouchableOpacity
+                  style={styles.manualSubmitBtn}
+                  onPress={handleManualSubmit}
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : (
+                    <Text style={styles.manualSubmitBtnText}>Submit for Manual Verification</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
           </ClayCard>
 
           <Text style={styles.sectionTitle}>History</Text>
@@ -316,9 +326,23 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: spacing.sm,
     alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
     marginTop: spacing.md,
   },
   submitBtnText: { ...typography.body, color: "#fff", fontWeight: "700" },
+  manualFallbackToggle: { ...typography.caption, color: colors.textSecondary, textDecorationLine: "underline", textAlign: "center" },
+  manualFallbackSection: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.background },
+  manualSubmitBtn: {
+    backgroundColor: colors.background,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    alignItems: "center",
+    marginTop: spacing.md,
+    ...clayShadowSoft,
+  },
+  manualSubmitBtnText: { ...typography.caption, color: colors.primary, fontWeight: "700" },
   emptyText: { ...typography.body, color: colors.textSecondary },
   txnRow: {
     flexDirection: "row",

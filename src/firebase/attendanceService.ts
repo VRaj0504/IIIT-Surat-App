@@ -1,87 +1,155 @@
 import {
   collection,
-  addDoc,
-  updateDoc,
   doc,
+  setDoc,
+  getDoc,
+  getDocs,
   query,
   where,
-  onSnapshot,
   serverTimestamp,
-  Timestamp,
-} from 'firebase/firestore';
-import { db } from './firestore';
+} from "firebase/firestore";
+import { db } from "./firestore";
+import { getApprovedExcusalRanges, isDateWithinExcusal } from "./eventExcusalService";
 
-export type AttendanceStatus = 'present' | 'absent';
+const COLLECTION = "attendanceSessions";
 
-export type Session = {
-  id: string;
-  subject: string;
-  facultyId: string;
-  facultyName: string;
-  date: string; // ISO date, e.g. "2026-07-08"
-  createdAt: Timestamp | null;
-  finalized: boolean;
-  records: Record<string, AttendanceStatus>; 
+// One document per (class, subject, date) — storing only who was ABSENT,
+// not a per-student doc for everyone present. Matches the actual faculty
+// workflow (mark the few exceptions, not every name), and keeps writes
+// small regardless of class size.
+export type AttendanceSession = {
+  branch: string;
+  admissionYear: number;
+  section: string | null;
+  subjectCode: string;
+  subjectName: string;
+  date: string; // "YYYY-MM-DD"
+  absentEnrollmentNumbers: string[];
+  markedBy: string; // faculty uid
+  markedAt: any;
 };
 
-const SESSIONS_COLLECTION = 'sessions';
-
-// Faculty starts a new session for a subject. Returns the new session's id.
-// Nothing is pre-marked — the professor marks each student present or absent.
-export async function startSession(subject: string, facultyId: string, facultyName: string): Promise<string> {
-  const today = new Date().toISOString().split('T')[0];
-  const docRef = await addDoc(collection(db, SESSIONS_COLLECTION), {
-    subject,
-    facultyId,
-    facultyName,
-    date: today,
-    createdAt: serverTimestamp(),
-    finalized: false,
-    records: {},
-  });
-  return docRef.id;
+function sessionDocId(params: {
+  branch: string;
+  admissionYear: number;
+  section: string | null;
+  subjectCode: string;
+  date: string;
+}): string {
+  return `${params.branch}_${params.admissionYear}_${params.section ?? "NONE"}_${params.subjectCode}_${params.date}`;
 }
 
-// Mark (or change) one student's status within a session, before it's finalized.
-export async function markStudent(sessionId: string, studentUid: string, status: AttendanceStatus): Promise<void> {
-  await updateDoc(doc(db, SESSIONS_COLLECTION, sessionId), {
-    [`records.${studentUid}`]: status,
+// Faculty side — records one class session's attendance. Re-marking the
+// same (class, subject, date) combination overwrites the previous
+// record entirely, same as re-entering a grade overwrites the old one
+// elsewhere in this app — there's one true record per session, not a
+// history of edits.
+export async function markAttendance(params: {
+  branch: string;
+  admissionYear: number;
+  section: string | null;
+  subjectCode: string;
+  subjectName: string;
+  date: string;
+  absentEnrollmentNumbers: string[];
+  markedBy: string;
+}): Promise<void> {
+  const id = sessionDocId(params);
+  await setDoc(doc(db, COLLECTION, id), {
+    branch: params.branch,
+    admissionYear: params.admissionYear,
+    section: params.section,
+    subjectCode: params.subjectCode,
+    subjectName: params.subjectName,
+    date: params.date,
+    absentEnrollmentNumbers: params.absentEnrollmentNumbers,
+    markedBy: params.markedBy,
+    markedAt: serverTimestamp(),
   });
 }
 
-// Lock the session — this is the point at which it becomes each student's official record.
-export async function finalizeSession(sessionId: string): Promise<void> {
-  await updateDoc(doc(db, SESSIONS_COLLECTION, sessionId), {
-    finalized: true,
-  });
+// Loads whatever session already exists for this exact (class, subject,
+// date) — lets the faculty screen pre-fill if they're re-opening a day
+// they already marked, instead of starting blank and risking an
+// accidental double-count.
+export async function getExistingSession(params: {
+  branch: string;
+  admissionYear: number;
+  section: string | null;
+  subjectCode: string;
+  date: string;
+}): Promise<string[] | null> {
+  const id = sessionDocId(params);
+  const snap = await getDoc(doc(db, COLLECTION, id));
+  if (!snap.exists()) return null;
+  return (snap.data() as AttendanceSession).absentEnrollmentNumbers;
 }
 
-// Live subscription to every finalized session that includes this student,
-// used to compute their attendance percentage per subject.
-export function subscribeToStudentSessions(
-  studentUid: string,
-  onUpdate: (sessions: Session[]) => void
-): () => void {
-  const q = query(collection(db, SESSIONS_COLLECTION), where('finalized', '==', true));
-  return onSnapshot(q, (snapshot) => {
-    const sessions: Session[] = [];
-    snapshot.forEach((docSnap) => {
-      const data = docSnap.data() as Omit<Session, 'id'>;
-      if (data.records && studentUid in data.records) {
-        sessions.push({ id: docSnap.id, ...data });
+export type SubjectAttendance = {
+  subjectCode: string;
+  subjectName: string;
+  totalSessions: number;
+  presentCount: number;
+  percentage: number; // 0-100, rounded to 1 decimal
+};
+
+// Student side — computes attendance percentage per subject by fetching
+// every session held for their class+subject and checking whether their
+// enrollment number appears in each session's absentee list. Fine at the
+// scale of a semester's worth of sessions (tens, not thousands); if this
+// were tracking years of history it would need a different approach,
+// but "how many days of THIS subject THIS semester" always stays small.
+export async function getMyAttendance(params: {
+  enrollmentNumber: string;
+  branch: string;
+  admissionYear: number;
+  section: string | null;
+  subjects: { code: string; name: string }[];
+}): Promise<SubjectAttendance[]> {
+  const results: SubjectAttendance[] = [];
+  // Fetched once per student, not once per session — a student is
+  // realistically covered by a handful of approved event excusals across
+  // a whole semester at most, so this is far cheaper than checking per
+  // date, and every subject's loop below reuses the same list.
+  const excusalRanges = await getApprovedExcusalRanges(params.enrollmentNumber);
+
+  for (const subject of params.subjects) {
+    const q = query(
+      collection(db, COLLECTION),
+      where("branch", "==", params.branch),
+      where("admissionYear", "==", params.admissionYear),
+      where("section", "==", params.section),
+      where("subjectCode", "==", subject.code),
+    );
+    const snap = await getDocs(q);
+    const totalSessions = snap.size;
+    if (totalSessions === 0) continue; // no classes held yet — nothing to show
+
+    let absentCount = 0;
+    snap.forEach((docSnap) => {
+      const data = docSnap.data() as AttendanceSession;
+      const wasMarkedAbsent = data.absentEnrollmentNumbers.includes(params.enrollmentNumber);
+      // An absence on a day covered by an APPROVED event excusal (inter-
+      // IIIT events, hackathons, etc.) doesn't count against the
+      // student — this is the whole point of the excusal workflow: the
+      // faculty who marked attendance that day has no way to know in
+      // advance who's representing the college elsewhere, so this
+      // reconciles it after the fact rather than requiring every
+      // faculty to manually re-edit past attendance records.
+      if (wasMarkedAbsent && !isDateWithinExcusal(data.date, excusalRanges)) {
+        absentCount++;
       }
     });
-    onUpdate(sessions);
-  });
-}
 
-// Live subscription to a specific session (used by the faculty screen while marking).
-export function subscribeToSession(sessionId: string, onUpdate: (session: Session | null) => void): () => void {
-  return onSnapshot(doc(db, SESSIONS_COLLECTION, sessionId), (docSnap) => {
-    if (docSnap.exists()) {
-      onUpdate({ id: docSnap.id, ...(docSnap.data() as Omit<Session, 'id'>) });
-    } else {
-      onUpdate(null);
-    }
-  });
+    const presentCount = totalSessions - absentCount;
+    results.push({
+      subjectCode: subject.code,
+      subjectName: subject.name,
+      totalSessions,
+      presentCount,
+      percentage: Math.round((presentCount / totalSessions) * 1000) / 10,
+    });
+  }
+
+  return results;
 }

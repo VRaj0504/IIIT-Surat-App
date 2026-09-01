@@ -108,6 +108,20 @@ export function yearOfStudyLabel(admissionYear: number): string {
   return `${suffix} Year (${admissionYear})`;
 }
 
+// The actual semester number (1-8) a student is in RIGHT NOW, computed
+// the same way as yearOfStudyLabel above — July onward is the odd
+// semester of that year of study, January onward is the even one. Used
+// to avoid querying curriculum/attendance for all 8 semesters when only
+// one or two are ever actually relevant (see MyAttendanceScreen, which
+// used to do exactly that and was measurably slow as a result).
+export function getCurrentSemesterNumber(admissionYear: number): number {
+  const now = new Date();
+  const academicYearStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+  const yearOfStudy = Math.max(1, academicYearStart - admissionYear + 1);
+  const isFirstHalf = now.getMonth() >= 6;
+  return (yearOfStudy - 1) * 2 + (isFirstHalf ? 1 : 2);
+}
+
 export async function getAdmissionYears(): Promise<number[]> {
   const { getDocs } = await import("firebase/firestore");
   const snap = await getDocs(collection(db, "roster"));

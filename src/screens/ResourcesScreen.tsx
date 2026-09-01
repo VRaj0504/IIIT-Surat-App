@@ -6,7 +6,6 @@ import {
   SectionList,
   TouchableOpacity,
   Linking,
-  ActivityIndicator,
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -33,6 +32,7 @@ import {
   CurriculumSubject,
 } from "../firebase/curriculumService";
 import type { RootStackParamList } from "../navigation/types";
+import LoadingSpinner from "../components/LoadingSpinner";
 
 const typeColors: Record<Resource["type"], string> = {
   Notes: colors.primary,
@@ -175,7 +175,7 @@ export default function ResourcesScreen() {
       >
         <SafeAreaView style={styles.container} edges={["top"]}>
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
+            <LoadingSpinner />
           </View>
         </SafeAreaView>
       </LinearGradient>

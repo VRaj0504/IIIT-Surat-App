@@ -62,6 +62,10 @@ export type UserProfile = {
   name: string;
   email: string;
   role: Role;
+  // A profile photo, self-uploaded (see updatePhoto below) — used
+  // wherever an actual photo adds real value over an initials avatar,
+  // e.g. the Thali Pass ID card. Optional everywhere else in the app.
+  photoUrl?: string;
   enrollmentNumber?: string;
   branch?: Branch;
   section?: string;
@@ -111,6 +115,7 @@ type AuthContextValue = {
     phone?: string;
   }) => Promise<void>;
   updatePhone: (phone: string) => Promise<void>;
+  updatePhoto: (photoUrl: string) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
 };
 
@@ -408,6 +413,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile((prev) => (prev ? { ...prev, phone: trimmed } : prev));
   };
 
+  // Just records the already-uploaded photo's download URL — the actual
+  // Storage upload happens in the caller (EditProfileScreen.tsx), same
+  // division of responsibility as every other file upload in this app
+  // (the service/context layer never touches Storage directly).
+  const updatePhoto: AuthContextValue['updatePhoto'] = async (photoUrl) => {
+    if (!user) throw new Error('You must be signed in.');
+    await updateDoc(doc(db, 'users', user.uid), { photoUrl });
+    setProfile((prev) => (prev ? { ...prev, photoUrl } : prev));
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -423,6 +438,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         updateProfileName,
         updateFacultyDetails,
         updatePhone,
+        updatePhoto,
         sendPasswordReset,
       }}
     >

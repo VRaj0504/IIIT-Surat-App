@@ -44,6 +44,52 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // TnP Cell student coordinators — a small, informal roster of
+    // student volunteers, entirely separate from the faculty allowlist
+    // and the official student roster. Seeded/managed the same
+    // write-only-via-Admin-SDK way as both of those
+    // (scripts/seed-tnp-coordinators.js); the app itself never writes
+    // here.
+    match /tnpCoordinators/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Event excusal coordinators — same admin-managed, write-only-via-
+    // Admin-SDK pattern as tnpCoordinators above (scripts/seed-event-
+    // coordinators.js). Read needs to stay broad since any signed-in
+    // student's own client checks their own email against this list to
+    // decide whether to show the Submit Event Excusal screen at all.
+    match /eventCoordinators/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Event excusal requests — a student coordinator submits, the
+    // specific assigned faculty coordinator approves/rejects, and any
+    // student named in an approved request needs to be able to read it
+    // (their own attendance percentage calculation checks this
+    // directly, client-side). Nobody else has any reason to see it.
+    match /eventExcusals/{docId} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.submittedBy == request.auth.uid) ||
+        (request.auth != null && resource.data.facultyCoordinatorUid == request.auth.uid) ||
+        (request.auth != null &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrollmentNumber in resource.data.studentEnrollmentNumbers);
+      allow create: if request.auth != null && request.resource.data.submittedBy == request.auth.uid;
+      // Only the assigned faculty coordinator can respond, and only the
+      // response fields — the original submission (student list, dates,
+      // event name) stays exactly as the coordinator submitted it.
+      allow update: if isAdmin() ||
+        (request.auth != null &&
+          resource.data.facultyCoordinatorUid == request.auth.uid &&
+          request.resource.data.eventName == resource.data.eventName &&
+          request.resource.data.fromDate == resource.data.fromDate &&
+          request.resource.data.toDate == resource.data.toDate &&
+          request.resource.data.studentEnrollmentNumbers == resource.data.studentEnrollmentNumbers);
+      allow delete: if isAdmin();
+    }
+
     // Admin-provisioned student roster (regNo -> name/branch/section/
     // admissionYear), seeded from the registrar's export via
     // scripts/seed-roster.js — same write-only-via-Admin-SDK pattern as
@@ -474,6 +520,64 @@ service cloud.firestore {
         request.resource.data.method in ['email', 'call', 'whatsapp'];
       allow update: if false;
       allow delete: if isAdmin();
+    }
+
+    // Unlimited Thali monthly subscriptions — an entirely separate system
+    // from the wallet/à la carte messOrders above. Payment happens
+    // outside the app (a Gmail payment link, per the college's current
+    // process); this collection just records who paid for which month,
+    // uploaded via the faculty web portal under a signed-in faculty
+    // session (same write pattern as `roster` above — not an Admin SDK
+    // bypass). A student can read their own record to show their QR
+    // pass; faculty/admin can read any record to verify at the door.
+    match /messSubscriptions/{docId} {
+      // Same fix as messMealScans below: checks the document ID
+      // (enrollmentNumber_month) rather than resource.data, since a
+      // student checking a month they were never subscribed for hits a
+      // nonexistent document, and resource.data on that fails the rule
+      // outright rather than gracefully evaluating to "not found".
+      allow read: if isAdmin() || isFaculty() ||
+        (request.auth != null &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrollmentNumber == docId.split('_')[0]);
+      allow write: if isAdmin() || isFaculty();
+    }
+
+    // One immutable scan record per (student, day, meal) — its mere
+    // existence is what blocks a same-meal re-scan (see
+    // verifyAndLogMealScan in messSubscriptionService.ts). Only
+    // faculty/admin can create one (they're the ones holding the scanner),
+    // and never update/delete — an audit log that can be corrected by
+    // deleting bad entries via the console if truly needed, but never by
+    // the app itself.
+    // Class attendance sessions — one doc per (class, subject, date),
+    // storing only who was absent (see attendanceService.ts). Faculty/
+    // admin can read and write anything; a student can read any session
+    // matching their OWN class (not just sessions where they personally
+    // appear), since computing their attendance percentage requires
+    // seeing every session held, not just the ones they were absent for.
+    match /attendanceSessions/{docId} {
+      allow read: if isAdmin() || isFaculty() ||
+        (request.auth != null &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.branch == resource.data.branch &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admissionYear == resource.data.admissionYear &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.section == resource.data.section);
+      allow write: if isAdmin() || isFaculty();
+    }
+
+    match /messMealScans/{docId} {
+      // Checks the document ID itself (enrollmentNumber_dateKey_mealSlot)
+      // rather than resource.data — most of these documents don't exist
+      // yet at any given moment (a student's own scan for a meal that
+      // hasn't happened, or was missed, has no doc at all), and
+      // referencing resource.data on a nonexistent document fails the
+      // rule outright rather than gracefully evaluating to "not found".
+      // The doc ID is always available regardless of whether the
+      // document exists, so this works correctly in both cases.
+      allow read: if isAdmin() || isFaculty() ||
+        (request.auth != null &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrollmentNumber == docId.split('_')[0]);
+      allow create: if (isAdmin() || isFaculty()) && request.resource.data.scannedBy == request.auth.uid;
+      allow update, delete: if false;
     }
 
     match /messFeedback/{feedbackId} {

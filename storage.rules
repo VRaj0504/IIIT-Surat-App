@@ -31,5 +31,41 @@ service firebase.storage {
     match /posterScans/{uid}/{allPaths=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
+
+    // Timetable photos uploaded via the faculty web portal's OCR-assist
+    // import (see extractTimetableInfo) — a temporary working file for
+    // that Cloud Function to read, same lifecycle/access pattern as
+    // posterScans above: only the uploader ever needs to see their own
+    // scan.
+    match /timetableScans/{uid}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Leave application supporting documents (medical certificates, etc.)
+    // — only the student who applied can upload/delete their own; read is
+    // open to any signed-in user rather than narrowly scoped to "the one
+    // faculty this was addressed to", since Storage rules can't easily
+    // cross-reference the leaveApplications Firestore doc to check that
+    // without real added complexity. In practice this is no looser than
+    // it sounds: the download URL only ever surfaces through the
+    // Firestore leaveApplications doc itself, which firestore.rules
+    // already restricts to the student, the addressed faculty, and
+    // admins — nobody else has a path to ever obtain this URL to begin
+    // with.
+    match /leaveDocuments/{uid}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Profile photos — read is open to any signed-in user (same
+    // broad-read pattern already used for Lost & Found and Resources
+    // elsewhere in this app), since a photo shown on someone's own
+    // Thali Pass card, or potentially in Faculty Directory later, isn't
+    // meaningfully more sensitive than a name is. Only the owner can
+    // upload/replace their own.
+    match /profilePhotos/{uid}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
   }
 }

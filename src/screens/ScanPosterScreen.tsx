@@ -9,6 +9,7 @@ import {
   Alert,
   ScrollView,
   Image,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -33,6 +34,8 @@ export default function ScanPosterScreen() {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [extracted, setExtracted] = useState(false);
+  const [rawText, setRawText] = useState("");
+  const [showRawText, setShowRawText] = useState(false);
 
   // Editable fields, pre-filled from OCR but never trusted blindly —
   // this is the confirm/edit step the person asked for explicitly.
@@ -69,6 +72,7 @@ export default function ScanPosterScreen() {
       setTitle(extraction.guessedTitle ?? "");
       setDate(extraction.guessedDate ?? "");
       setTime(extraction.guessedTime ?? "");
+      setRawText(extraction.rawText ?? "");
       setExtracted(true);
     } catch (err: any) {
       Alert.alert("Couldn't scan", err.message ?? "Please try again, or fill the details in manually below.");
@@ -98,11 +102,13 @@ export default function ScanPosterScreen() {
         return;
       }
 
-      // Default calendar differs by platform — iOS has a single writable
-      // default; Android needs picking one from the device's actual list
-      // of calendars (there's no universal "default" concept there).
+      // getDefaultCalendarAsync is genuinely iOS-only at the
+      // implementation level — it exists as an exported function on
+      // Android too, but throws when actually called there, so checking
+      // whether the function reference exists doesn't correctly detect
+      // platform support. Checking Platform.OS directly does.
       let calendarId: string;
-      if (Calendar.getDefaultCalendarAsync) {
+      if (Platform.OS === "ios") {
         const defaultCalendar = await Calendar.getDefaultCalendarAsync();
         calendarId = defaultCalendar.id;
       } else {
@@ -200,6 +206,19 @@ export default function ScanPosterScreen() {
                 placeholderTextColor={colors.textSecondary}
               />
 
+              {rawText ? (
+                <TouchableOpacity onPress={() => setShowRawText((v) => !v)} style={{ marginTop: spacing.md }}>
+                  <Text style={styles.rescanText}>
+                    {showRawText ? "Hide" : "Show"} full scanned text
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              {showRawText && (
+                <View style={styles.rawTextBox}>
+                  <Text style={styles.rawTextContent}>{rawText}</Text>
+                </View>
+              )}
+
               <TouchableOpacity
                 style={[styles.addButton, adding && styles.addButtonDisabled]}
                 onPress={handleAddToCalendar}
@@ -220,6 +239,8 @@ export default function ScanPosterScreen() {
                   setDate("");
                   setTime("");
                   setLocation("");
+                  setRawText("");
+                  setShowRawText(false);
                 }}
                 style={{ marginTop: spacing.md, alignItems: "center" }}
               >
@@ -272,4 +293,11 @@ const styles = StyleSheet.create({
   addButtonDisabled: { opacity: 0.6 },
   addButtonText: { color: colors.surface, fontWeight: "700", fontSize: 16 },
   rescanText: { color: colors.primary, fontWeight: "600" },
+  rawTextBox: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+  },
+  rawTextContent: { ...typography.caption, color: colors.textSecondary, lineHeight: 20 },
 });

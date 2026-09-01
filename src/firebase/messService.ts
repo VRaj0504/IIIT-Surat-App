@@ -343,6 +343,21 @@ export function subscribeToMyTransactions(
   );
 }
 
+const createRechargeOrderCallable = httpsCallable<
+  { amount: number },
+  { orderId: string; amount: number; currency: string; keyId: string }
+>(functions, "createRechargeOrder");
+
+// Creates a real Razorpay order for a wallet top-up — the Checkout screen
+// (RechargeCheckoutScreen.tsx) opens Razorpay's payment UI using what
+// this returns. The wallet itself gets credited later, automatically, by
+// razorpayWebhook once the payment actually completes — nothing here
+// touches the wallet balance directly.
+export async function createRazorpayRechargeOrder(amount: number) {
+  const result = await createRechargeOrderCallable({amount});
+  return result.data;
+}
+
 export async function requestRecharge(
   uid: string,
   studentName: string,

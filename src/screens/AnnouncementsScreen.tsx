@@ -5,6 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
+import LoadingSpinner from "../components/LoadingSpinner";
 import {
   subscribeToAnnouncements,
   deleteAnnouncement,
@@ -252,7 +253,7 @@ export default function AnnouncementsScreen() {
         {!isFaculty && <Text style={styles.subtitle}>Quick class updates from faculty</Text>}
 
         {loading ? (
-          <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: spacing.xl }} />
+          <LoadingSpinner style={{ marginTop: spacing.xl }} />
         ) : (
           <FlatList
             data={announcements}
