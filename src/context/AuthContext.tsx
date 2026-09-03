@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 
 import {
   createUserWithEmailAndPassword,
@@ -11,7 +11,7 @@ import {
   sendPasswordResetEmail,
   User,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { auth } from '../firebase/auth';
 import { db } from '../firebase/firestore';
 import { claimPendingClubLead } from '../firebase/clubsService';
@@ -197,6 +197,39 @@ async function buildGatedProfile(params: {
   };
 }
 
+// Writes the `users/{uid}` doc — for a student, in the SAME transaction as
+// claiming their enrollment number in `enrollmentClaims`, so the two either
+// both succeed or both fail together. This is the piece that actually makes
+// the enrollmentClaims Firestore rule meaningful: without this transaction,
+// a student's profile could still end up carrying an enrollment number
+// nobody actually holds a claim on. If the enrollment number was already
+// claimed by a different account, the transaction fails and throws before
+// either write lands — surfaced to the caller as a normal Error so
+// signUp/completeGoogleProfile's existing catch blocks handle it the same
+// way as any other signup failure (rolling back the just-created auth
+// account, in signUp's case).
+async function createUserProfileAtomically(uid: string, profile: UserProfile): Promise<void> {
+  if (profile.role !== 'student' || !profile.enrollmentNumber) {
+    // Faculty accounts are already uniquely identified by their verified
+    // auth email (checked directly in firestore.rules), so there's no
+    // parallel impersonation risk here needing a claim doc.
+    await setDoc(doc(db, 'users', uid), profile);
+    return;
+  }
+  const enrollmentNumber = profile.enrollmentNumber;
+  await runTransaction(db, async (tx) => {
+    const claimRef = doc(db, 'enrollmentClaims', enrollmentNumber);
+    const claimSnap = await tx.get(claimRef);
+    if (claimSnap.exists()) {
+      throw new Error(
+        'This enrollment number is already associated with another account. Contact an admin if you believe this is a mistake.',
+      );
+    }
+    tx.set(claimRef, { uid, claimedAt: serverTimestamp() });
+    tx.set(doc(db, 'users', uid), profile);
+  });
+}
+
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -215,6 +248,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           try {
             const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
             setProfile(snap.exists() ? (snap.data() as UserProfile) : null);
+          } catch {
+            // Most commonly: offline with no cached copy of this doc
+            // yet (e.g. first launch with no signal). Leaving profile
+            // as whatever it already was rather than clearing it to
+            // null — a stale-but-correct profile from a previous
+            // session is more useful than none at all, and either way
+            // the app must not get stuck here: without this catch, the
+            // error used to skip past setInitializing(false) below
+            // entirely, leaving the splash screen up forever with no
+            // way in.
           } finally {
             setProfileLoading(false);
           }
@@ -234,7 +277,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, []);
 
-  const signUp: AuthContextValue['signUp'] = async ({ name, email, password, role, enrollmentNumber }) => {
+  const signUp: AuthContextValue['signUp'] = useCallback(async ({ name, email, password, role, enrollmentNumber }) => {
     const normalizedEmail = email.trim().toLowerCase();
     const typedRegNo = (enrollmentNumber ?? '').trim().toUpperCase();
 
@@ -266,7 +309,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role,
         enrollmentNumber: typedRegNo,
       });
-      await setDoc(doc(db, 'users', credential.user.uid), newProfile);
+      await createUserProfileAtomically(credential.user.uid, newProfile);
       setProfile(newProfile);
       // Best-effort: if a club was pre-assigned to this email before the person
       // signed up, link them as lead now. Never let this fail the signup itself.
@@ -289,18 +332,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       justSignedUpRef.current = false;
       setProfileLoading(false);
     }
-  };
+  }, []);
 
-  const logIn: AuthContextValue['logIn'] = async (email, password) => {
+  const logIn: AuthContextValue['logIn'] = useCallback(async (email, password) => {
     await signInWithEmailAndPassword(auth, email, password);
-  };
+  }, []);
 
   // Kicks off the native Google account picker, then exchanges the Google
   // idToken for a Firebase credential. Domain gating happens here (same
   // @iiitsurat.ac.in restriction as email signup); role/enrollment gating
   // (allowlist/roster) happens afterwards in completeGoogleProfile, once we
   // know whether this is a brand-new sign-in or a returning user.
-  const signInWithGoogle: AuthContextValue['signInWithGoogle'] = async () => {
+  const signInWithGoogle: AuthContextValue['signInWithGoogle'] = useCallback(async () => {
     if (!googleSignInAvailable) {
       throw new Error(
         'Google Sign-In needs a dev build — it isn\'t available in Expo Go. Use email/password to sign in here, or run a dev client build to test this.'
@@ -331,12 +374,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // pick it up normally. If not, we leave the user signed in with
     // profile === null — the Gate component shows the complete-profile
     // screen, and completeGoogleProfile finishes setup from there.
-  };
+  }, []);
 
   // Called from the complete-profile screen after a first-time Google
   // sign-in, once the person has picked a role (and, for students, entered
   // an enrollment number).
-  const completeGoogleProfile: AuthContextValue['completeGoogleProfile'] = async ({ role, enrollmentNumber }) => {
+  const completeGoogleProfile: AuthContextValue['completeGoogleProfile'] = useCallback(async ({ role, enrollmentNumber }) => {
     if (!user) throw new Error('You must be signed in.');
     const normalizedEmail = (user.email ?? '').trim().toLowerCase();
     const newProfile = await buildGatedProfile({
@@ -346,16 +389,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       role,
       enrollmentNumber,
     });
-    await setDoc(doc(db, 'users', user.uid), newProfile);
+    await createUserProfileAtomically(user.uid, newProfile);
     setProfile(newProfile);
     try {
       await claimPendingClubLead(user.uid, normalizedEmail);
     } catch {
       // ignore — worst case, a faculty member links them later from the club page
     }
-  };
+  }, [user]);
 
-  const logOut = async () => {
+  const logOut = useCallback(async () => {
     // Clear the push token BEFORE signing out — once signed out, we no
     // longer have a uid to write to, and a stale token left behind would
     // mean this device keeps getting this user's pushes if someone else
@@ -370,22 +413,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (googleSignInAvailable) {
       await GoogleSignin.signOut().catch(() => {});
     }
-  };
+  }, [user]);
 
   // Only `name` is editable — role and email are fixed at signup (both by
   // UI convention and by firestore.rules, which reject a `users` update
   // that changes role/email). Everything else on the profile (enrollment
   // number, branch, section, admissionYear) comes from the roster and
   // isn't user-editable either.
-  const updateProfileName: AuthContextValue['updateProfileName'] = async (name) => {
+  const updateProfileName: AuthContextValue['updateProfileName'] = useCallback(async (name) => {
     const trimmed = name.trim();
     if (!trimmed) throw new Error('Name cannot be empty.');
     if (!user) throw new Error('You must be signed in.');
     await updateDoc(doc(db, 'users', user.uid), { name: trimmed });
     setProfile((prev) => (prev ? { ...prev, name: trimmed } : prev));
-  };
+  }, [user]);
 
-  const updateFacultyDetails: AuthContextValue['updateFacultyDetails'] = async (details) => {
+  const updateFacultyDetails: AuthContextValue['updateFacultyDetails'] = useCallback(async (details) => {
     if (!user) throw new Error('You must be signed in.');
     // Trim every field that was actually passed; leave anything not
     // included in `details` untouched on both Firestore and local state.
@@ -396,52 +439,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     await updateDoc(doc(db, 'users', user.uid), patch);
     setProfile((prev) => (prev ? { ...prev, ...patch } : prev));
-  };
+  }, [user]);
 
-  const sendPasswordReset = async (email: string) => {
+  const sendPasswordReset = useCallback(async (email: string) => {
     await sendPasswordResetEmail(auth, email.trim());
-  };
+  }, []);
 
   // Unlike updateFacultyDetails (faculty-only, shows in Faculty
   // Directory), this works for any role — a student's phone is used
   // purely for Lost & Found Call/WhatsApp contact buttons, not shown
   // anywhere else.
-  const updatePhone: AuthContextValue['updatePhone'] = async (phone) => {
+  const updatePhone: AuthContextValue['updatePhone'] = useCallback(async (phone) => {
     if (!user) throw new Error('You must be signed in.');
     const trimmed = phone.trim();
     await updateDoc(doc(db, 'users', user.uid), { phone: trimmed });
     setProfile((prev) => (prev ? { ...prev, phone: trimmed } : prev));
-  };
+  }, [user]);
 
   // Just records the already-uploaded photo's download URL — the actual
   // Storage upload happens in the caller (EditProfileScreen.tsx), same
   // division of responsibility as every other file upload in this app
   // (the service/context layer never touches Storage directly).
-  const updatePhoto: AuthContextValue['updatePhoto'] = async (photoUrl) => {
+  const updatePhoto: AuthContextValue['updatePhoto'] = useCallback(async (photoUrl) => {
     if (!user) throw new Error('You must be signed in.');
     await updateDoc(doc(db, 'users', user.uid), { photoUrl });
     setProfile((prev) => (prev ? { ...prev, photoUrl } : prev));
-  };
+  }, [user]);
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      user,
+      profile,
+      initializing,
+      profileLoading,
+      signUp,
+      logIn,
+      signInWithGoogle,
+      completeGoogleProfile,
+      logOut,
+      updateProfileName,
+      updateFacultyDetails,
+      updatePhone,
+      updatePhoto,
+      sendPasswordReset,
+    }),
+    [
+      user,
+      profile,
+      initializing,
+      profileLoading,
+      signUp,
+      logIn,
+      signInWithGoogle,
+      completeGoogleProfile,
+      logOut,
+      updateProfileName,
+      updateFacultyDetails,
+      updatePhone,
+      updatePhoto,
+      sendPasswordReset,
+    ],
+  );
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        profile,
-        initializing,
-        profileLoading,
-        signUp,
-        logIn,
-        signInWithGoogle,
-        completeGoogleProfile,
-        logOut,
-        updateProfileName,
-        updateFacultyDetails,
-        updatePhone,
-        updatePhoto,
-        sendPasswordReset,
-      }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

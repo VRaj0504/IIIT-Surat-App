@@ -34,7 +34,14 @@ const DAY_PATTERNS: {label: string; pattern: RegExp}[] = [
   {label: "Sunday", pattern: /^su(n(day)?)?$/i},
 ];
 
-const TIME_RANGE_PATTERN = /(\d{1,2}):?(\d{2})?\s*(AM|PM)?\s*-\s*(\d{1,2}):?(\d{2})?\s*(AM|PM)?/i;
+// The dash between start and end time is optional, not just
+// tolerant of different dash glyphs — Vision OCR sometimes drops the
+// separator character entirely for a given column (observed: "09:00
+// 10:00AM" with nothing but a space between them, right alongside
+// other columns on the same page that DO read a dash correctly, e.g.
+// "10:00 - 11:00AM"). Requiring a dash meant most of a real page's
+// time columns silently failed to register at all.
+const TIME_RANGE_PATTERN = /(\d{1,2}):?(\d{2})?\s*(AM|PM)?\s*[-–—]?\s*(\d{1,2}):?(\d{2})?\s*(AM|PM)?/i;
 
 type Word = {text: string; x: number; y: number; width: number; height: number};
 
@@ -103,10 +110,19 @@ export const extractTimetableInfo = onCall<ExtractTimetableRequest, Promise<Extr
       const imageWidth = Math.max(...words.map((w) => w.x)) + 50;
       const imageHeight = Math.max(...words.map((w) => w.y)) + 50;
 
-      // Day labels: short words in the left ~12% of the image, matching a
-      // known day pattern. Their Y-centers define each day-row's position.
-      const dayWords = words.filter(
-        (w) => w.x < imageWidth * 0.12 && DAY_PATTERNS.some((d) => d.pattern.test(w.text)),
+      // Day labels: any word matching a known day pattern, anywhere on
+      // the page. Their Y-centers define each day-row's position. No
+      // position restriction — the day-name patterns are exact,
+      // anchored matches ("Mo", "Tu", ...), specific enough that
+      // nothing else in a timetable (a subject code, room code, faculty
+      // initial) could ever false-positive against them, so there's no
+      // real benefit to also constraining by x-position — only risk,
+      // since the day column's actual width varies (these PDFs often
+      // render day labels in a much larger font than the rest of the
+      // grid, pushing their center further right than a fixed fraction
+      // of page width would assume).
+      const dayWords = words.filter((w) =>
+        DAY_PATTERNS.some((d) => d.pattern.test(w.text)),
       );
       const dayRows = dayWords
         .map((w) => {
@@ -116,35 +132,61 @@ export const extractTimetableInfo = onCall<ExtractTimetableRequest, Promise<Extr
         .filter((r): r is {label: string; y: number} => r !== null);
 
       // Time-range headers: words containing a "H:MM - H:MM"-shaped
-      // pattern in the top ~15% of the image. Their X-centers define
-      // each time-column's position. Vision often splits "09:00" and
-      // "10:00AM" into separate word tokens rather than one, so this
-      // groups nearby words in the header band by proximity first, then
-      // looks for a time-range pattern across the joined text.
-      const headerBandWords = words
-        .filter((w) => w.y < imageHeight * 0.1)
-        .sort((a, b) => a.x - b.x);
-      const timeColumns: {startTime: string; endTime: string; x: number}[] = [];
-      let cluster: Word[] = [];
-      const flushCluster = () => {
-        if (cluster.length === 0) return;
-        const joined = cluster.map((w) => w.text).join(" ");
-        const match = joined.match(TIME_RANGE_PATTERN);
-        if (match) {
-          const startTime = normalizeTime(match[1], match[2], match[3] ?? match[6]);
-          const endTime = normalizeTime(match[4], match[5], match[6]);
-          const avgX = cluster.reduce((sum, w) => sum + w.x, 0) / cluster.length;
-          timeColumns.push({startTime, endTime, x: avgX});
+      // pattern in the top ~25% of the image. Their X-centers define
+      // each time-column's position. 25% (not a tighter band) because
+      // real timetable exports commonly have a letterhead — a logo plus
+      // "Indian Institute of..." plus a "SEMESTER X BRANCH SECTION"
+      // title — sitting above the actual grid header, pushing it down
+      // further than a bare "just below the top of the page" assumption
+      // would expect. Too narrow a band here means timeColumns comes
+      // back empty and the whole page silently returns zero slots even
+      // though Vision read every cell correctly.
+      //
+      // Grouped into y-rows FIRST, then x-clustered within each row —
+      // a wider band pulls in letterhead/title text too, and since that
+      // text can share an x-range with the real header row while
+      // sitting at a different y, clustering by x alone (ignoring y)
+      // risks merging unrelated words together. Splitting into rows
+      // first keeps each cluster's words on roughly the same line; the
+      // title rows just never produce a TIME_RANGE_PATTERN match and
+      // get silently discarded by flushCluster below, same as before.
+      const headerBandWordsRaw = words.filter((w) => w.y < imageHeight * 0.25);
+      const headerRows: Word[][] = [];
+      for (const w of [...headerBandWordsRaw].sort((a, b) => a.y - b.y)) {
+        const lastRow = headerRows[headerRows.length - 1];
+        if (lastRow && w.y - lastRow[lastRow.length - 1].y < imageHeight * 0.02) {
+          lastRow.push(w);
+        } else {
+          headerRows.push([w]);
         }
-        cluster = [];
-      };
-      for (const w of headerBandWords) {
-        if (cluster.length > 0 && w.x - cluster[cluster.length - 1].x > imageWidth * 0.08) {
-          flushCluster();
-        }
-        cluster.push(w);
       }
-      flushCluster();
+
+      const timeColumns: {startTime: string; endTime: string; x: number}[] = [];
+      const headerWordsUsed = new Set<Word>();
+      for (const row of headerRows) {
+        const sortedRow = [...row].sort((a, b) => a.x - b.x);
+        let cluster: Word[] = [];
+        const flushCluster = () => {
+          if (cluster.length === 0) return;
+          const joined = cluster.map((w) => w.text).join(" ");
+          const match = joined.match(TIME_RANGE_PATTERN);
+          if (match) {
+            const startTime = normalizeTime(match[1], match[2], match[3] ?? match[6]);
+            const endTime = normalizeTime(match[4], match[5], match[6]);
+            const avgX = cluster.reduce((sum, w) => sum + w.x, 0) / cluster.length;
+            timeColumns.push({startTime, endTime, x: avgX});
+            cluster.forEach((w) => headerWordsUsed.add(w));
+          }
+          cluster = [];
+        };
+        for (const w of sortedRow) {
+          if (cluster.length > 0 && w.x - cluster[cluster.length - 1].x > imageWidth * 0.08) {
+            flushCluster();
+          }
+          cluster.push(w);
+        }
+        flushCluster();
+      }
 
       // If either axis couldn't be detected at all, bucketing is
       // meaningless — return the raw text only and let the uploader
@@ -162,7 +204,7 @@ export const extractTimetableInfo = onCall<ExtractTimetableRequest, Promise<Extr
       // reviewing every cell against the original photo.
       const buckets = new Map<string, Word[]>();
       const contentWords = words.filter(
-        (w) => !dayWords.includes(w) && !headerBandWords.slice(0, cluster.length).includes(w),
+        (w) => !dayWords.includes(w) && !headerWordsUsed.has(w) && w.y >= imageHeight * 0.25,
       );
       for (const w of contentWords) {
         const nearestDay = dayRows.reduce((best, d) =>
