@@ -7,6 +7,26 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
     
+    // One doc per enrollment number ever claimed by a student account, id
+    // == the enrollment number itself. buildGatedProfile() in AuthContext.tsx
+    // creates this in the SAME transaction as the `users` doc at signup —
+    // once it exists, Firestore itself refuses a second create() at that
+    // path, exactly like walletTxnRefs above. This is what actually
+    // prevents enrollment-number impersonation: without it, `roster` merely
+    // existing was the only check, and roster is readable by any signed-in
+    // user, so anyone could type in a classmate's real enrollment number at
+    // signup and read their grades/attendance/mess data afterward (every
+    // rule that trusts "your own profile's enrollment number" would have
+    // treated the impersonator as that student). Nobody, including admin,
+    // updates or deletes one through the app — that permanence is the
+    // whole point, same as walletTxnRefs.
+    match /enrollmentClaims/{enrollmentNumber} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      allow update: if false;
+      allow delete: if false;
+    }
+
     match /users/{userId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null && request.auth.uid == userId &&
@@ -420,7 +440,8 @@ service cloud.firestore {
     // all — grades come from faculty only.
     match /grades/{gradeId} {
       allow read: if isAdmin() ||
-        (request.auth != null && resource.data.enteredBy == request.auth.uid) ||
+        (request.auth != null &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty') ||
         (request.auth != null &&
           resource.data.studentEnrollmentNumber ==
             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrollmentNumber);
@@ -428,7 +449,7 @@ service cloud.firestore {
         request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty' &&
         request.resource.data.enteredBy == request.auth.uid &&
-        request.resource.data.grade in ['O', 'A+', 'A', 'B+', 'B', 'C', 'P', 'F'] &&
+        request.resource.data.grade in ['AA', 'AB', 'BB', 'BC', 'CC', 'CD', 'DD', 'FF'] &&
         request.resource.data.credits is number &&
         request.resource.data.credits > 0
       );
