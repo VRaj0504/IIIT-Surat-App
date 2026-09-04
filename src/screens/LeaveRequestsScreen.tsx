@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, Linking } from "react-native";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
@@ -73,11 +73,8 @@ export default function LeaveRequestsScreen() {
                   {item.type === "medical" ? "Medical" : "Casual"} · {item.fromDate} to {item.toDate}
                 </Text>
                 <Text style={styles.reason}>{item.reason}</Text>
-                {item.documentUrl && (
-                  <TouchableOpacity onPress={() => Linking.openURL(item.documentUrl!)}>
-                    <Text style={styles.documentLink}>View attached document</Text>
-                  </TouchableOpacity>
-                )}
+                
+                  
 
                 {item.status === "pending" ? (
                   <>

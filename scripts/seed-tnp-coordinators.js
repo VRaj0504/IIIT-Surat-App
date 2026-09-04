@@ -1,12 +1,4 @@
-// One-time / re-run-as-needed seed script for TnP Cell student
-// coordinators — a small, informal list of student volunteers, NOT part
-// of the faculty allowlist or the official student roster. Managed the
-// same way seed-allowlist.js manages faculty: edit this file, re-run,
-// done. Safe to re-run any time the list changes; each run fully
-// replaces the tnpCoordinators collection with exactly what's below.
-//
-// Fill in real names/emails before running — everything below is a
-// placeholder.
+
 
 const { initializeApp } = require("firebase-admin/app");
 const { cert } = require("firebase-admin/app");

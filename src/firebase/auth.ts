@@ -8,11 +8,7 @@ import { getReactNativePersistence } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { firebaseApp } from './config';
 
-// Firebase's web SDK doesn't have (or need) getReactNativePersistence — it
-// manages its own browser-based persistence (IndexedDB) automatically via
-// plain getAuth(). Calling the RN-specific function on web throws "is not
-// a function" immediately, since it resolves to undefined there — this is
-// exactly what broke the web build with a blank page and that error.
+
 export const auth = Platform.OS === 'web'
   ? getAuth(firebaseApp)
   : initializeAuth(firebaseApp, {

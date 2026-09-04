@@ -5,7 +5,6 @@ import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import RootNavigator from './src/navigation/RootNavigator';
 import AuthNavigator from './src/navigation/AuthNavigator';
-import FacultyNavigator from './src/navigation/FacultyNavigator';
 import CompleteProfileScreen from './src/screens/auth/CompleteProfileScreen';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { colors } from './src/theme/theme';
