@@ -28,10 +28,7 @@ const db = getFirestore();
 // (for display, via formatClubLeads in clubsService.ts) and an email
 // (for matching in ingestFacultyEmail.ts).
 const EXTRA_LEADS = {
-  "SARAS": [
-    { name: "Jitesh Singh", email: "ui24cs34@iiitsurat.ac.in" },
-    { name: "Rishit Nagar", email: "ui24ec57@iiitsurat.ac.in" },
-  ],
+  
   "Google Developers Group (GDG) IIIT Surat": [
     { name: "Borra Moneeshwar", email: "ui24ec13@iiitsurat.ac.in" },
   ],
@@ -58,6 +55,7 @@ const EXTRA_LEADS = {
   ],
   "Swarang (Singing Club)": [
     { name: "Sooryansh Verma", email: "ui24ec61@iiitsurat.ac.in" },
+    
   ],
 };
 

@@ -21,8 +21,8 @@ const db = getFirestore();
 
 const coordinators = [
   {
-    name: "PLACEHOLDER — replace with real name",
-    email: "placeholder@iiitsurat.ac.in",
+    name: "Vaibhav",
+    email: "ug25cse114@iiitsurat.ac.in",
   },
 ];
 
