@@ -24,7 +24,25 @@ export type Club = {
   leadEmail: string | null;
   createdAt: Timestamp | null;
   parentClubId: string | null; // set when this club is a sub-club (e.g. Exposure under Saaras)
+  // Set by scripts/set-club-extra-leads.js for clubs genuinely run by more
+  // than one person — additionalLeadEmails is what ingestFacultyEmail.ts
+  // (Cloud Function) actually checks for email-posting access;
+  // additionalLeadNames is the same list of people, for display only, in
+  // the same order. Neither grants in-app edit permissions — that's still
+  // leadUid/leadEmail alone.
+  additionalLeadEmails?: string[];
+  additionalLeadNames?: string[];
 };
+
+// "Lead: X" for a single-lead club, "Leads: X, Y, Z" once there are
+// additional leads — used anywhere a club's lead(s) are displayed, so
+// the two places that show this (the club header and each sub-club row)
+// can't drift out of sync with each other.
+export function formatClubLeads(club: Club): string {
+  const names = [club.leadName, ...(club.additionalLeadNames ?? [])].filter(Boolean);
+  const label = names.length > 1 ? "Leads" : "Lead";
+  return `${label}: ${names.join(", ")}`;
+}
 
 export type ClubEvent = {
   id: string;

@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  ScrollView,
   TouchableOpacity,
   ActivityIndicator,
   Linking,
@@ -32,7 +33,9 @@ import {
   deleteEvent,
   Club,
   ClubEvent,
+  formatClubLeads,
 } from "../firebase/clubsService";
+import { getClubIcon } from "../data/clubIcons";
 import {
   subscribeToNotices,
   deleteNotice,
@@ -193,12 +196,13 @@ export default function ClubDetailScreen() {
       style={{ flex: 1 }}
     >
       <SafeAreaView style={styles.container} edges={["top"]}>
+        <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.title}>{clubName}</Text>
           {club && (
             <>
               <Text style={styles.category}>
-                {club.category} · Lead: {club.leadName}
+                {club.category} · {formatClubLeads(club)}
               </Text>
               <Text style={styles.description}>{club.description}</Text>
             </>
@@ -208,27 +212,30 @@ export default function ClubDetailScreen() {
         {subClubs.length > 0 && (
           <View style={styles.subClubsSection}>
             <Text style={styles.sectionTitle}>Clubs under {clubName}</Text>
-            {subClubs.map((sc) => (
-              <TouchableOpacity
-                key={sc.id}
-                style={styles.subClubCard}
-                onPress={() => openSubClub(sc)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.iconWrap}>
-                  <Ionicons name="people" size={20} color={colors.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.subClubName}>{sc.name}</Text>
-                  <Text style={styles.subClubLead}>Lead: {sc.leadName}</Text>
-                </View>
-                <Ionicons
-                  name="chevron-forward"
-                  size={18}
-                  color={colors.textSecondary}
-                />
-              </TouchableOpacity>
-            ))}
+            {subClubs.map((sc) => {
+              const { icon, color } = getClubIcon(sc.name);
+              return (
+                <TouchableOpacity
+                  key={sc.id}
+                  style={styles.subClubCard}
+                  onPress={() => openSubClub(sc)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.iconWrap, { backgroundColor: color + "22" }]}>
+                    <Ionicons name={icon} size={20} color={color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.subClubName}>{sc.name}</Text>
+                    <Text style={styles.subClubLead}>{formatClubLeads(sc)}</Text>
+                  </View>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={18}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
@@ -346,6 +353,7 @@ export default function ClubDetailScreen() {
         )}
 
         <FlatList
+          scrollEnabled={false}
           data={events}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
@@ -497,6 +505,7 @@ export default function ClubDetailScreen() {
             </View>
           )}
         />
+        </ScrollView>
       </SafeAreaView>
     </LinearGradient>
   );

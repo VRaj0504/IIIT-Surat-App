@@ -1,18 +1,7 @@
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {getFirestore} from "firebase-admin/firestore";
 
-// Fires whenever a new doc lands in `announcements` (see
-// src/firebase/announcementsService.ts on the client — this mirrors that
-// same file's exact matching logic, since the Admin SDK bypasses
-// firestore.rules and reads every student directly). Finds everyone whose
-// profile matches the announcement's target (branch/section/year/
-// specialization, same "unset dimension = matches everyone" rule as the
-// client-side filter) and sends them a real push via Expo's push service.
-//
-// Deliberately best-effort throughout: a student with no expoPushToken
-// (hasn't opened a dev build yet, or is still on Expo Go) is silently
-// skipped, never an error — push is a bonus on top of the in-app feed,
-// which already works for everyone regardless of push setup.
+
 export const sendAnnouncementPush = onDocumentCreated(
   "announcements/{announcementId}",
   async (event) => {
@@ -46,8 +35,10 @@ export const sendAnnouncementPush = onDocumentCreated(
         admissionYear?: number;
         specialization?: string;
         expoPushToken?: string;
+        notificationPreferences?: {announcements?: boolean};
       };
       if (!student.expoPushToken) return;
+      if (student.notificationPreferences?.announcements === false) return;
       if (announcement.targetSection && announcement.targetSection !== student.section) return;
       if (
         announcement.targetAdmissionYear &&

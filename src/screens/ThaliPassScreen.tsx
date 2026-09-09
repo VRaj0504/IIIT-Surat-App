@@ -16,9 +16,8 @@ import {
 } from "../firebase/messSubscriptionService";
 
 const MEAL_LABELS: Record<MealSlot, string> = {
-  breakfast: "Breakfast",
   lunch: "Lunch",
-  dinner: "Dinner",
+ 
 };
 
 const STATUS_STYLE: Record<MealStatus, { icon: keyof typeof Ionicons.glyphMap; color: string; label: string }> = {
@@ -144,7 +143,7 @@ export default function ThaliPassScreen() {
               <Text style={styles.todayHeader}>Today</Text>
               <View style={styles.mealRow}>
                 {mealStatus &&
-                  (["breakfast", "lunch", "dinner"] as MealSlot[]).map((slot) => {
+                  ([ "lunch"] as MealSlot[]).map((slot) => {
                     const status = mealStatus[slot];
                     const style = STATUS_STYLE[status];
                     return (

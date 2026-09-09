@@ -18,7 +18,7 @@ const firebaseConfig = {
 
 const CLUBS = [
   // --- Cultural (mother club: SARAS) ---
-  { name: 'SARAS', category: 'Cultural', description: 'Mother club for all cultural activities at IIIT Surat.', leadName: 'TBD', leadEmail: 'test-saras@iiitsurat.ac.in' },
+  { name: 'SARAS', category: 'Cultural', description: 'Mother club for all cultural activities at IIIT Surat.', leadName: 'Abhinav Prakash', leadEmail: 'test-saras@iiitsurat.ac.in' },
   { name: 'Abstract (Art and Design Club)', category: 'Cultural', description: 'Art and design club under SARAS.', leadName: 'TBD', leadEmail: 'test-abstract@iiitsurat.ac.in' },
   { name: 'Antra (Poetry Club)', category: 'Cultural', description: 'Poetry club under SARAS.', leadName: 'TBD', leadEmail: 'test-antra@iiitsurat.ac.in' },
   { name: 'Swarang (Singing Club)', category: 'Cultural', description: 'Singing club under SARAS.', leadName: 'TBD', leadEmail: 'test-swarang@iiitsurat.ac.in' },
@@ -29,7 +29,7 @@ const CLUBS = [
   { name: 'Management (Cultural Club Core Team)', category: 'Cultural', description: 'Core organizing team for SARAS and its cultural clubs.', leadName: 'TBD', leadEmail: 'test-management@iiitsurat.ac.in' },
 
   // --- Technical ---
-  { name: 'Google Developers Group (GDG) IIIT Surat', category: 'Technical', description: 'Student-led developer community supported by Google; workshops, hackathons, and project-based learning.', leadName: 'Bhupendra Kumar', leadEmail: 'test-gdg@iiitsurat.ac.in' },
+  { name: 'Google Developers Group (GDG) IIIT Surat', category: 'Technical', description: 'Student-led developer community supported by Google; workshops, hackathons, and project-based learning.', leadName: 'Aditya', leadEmail: 'test-gdg@iiitsurat.ac.in' },
   { name: 'Modern Automation and Robotics Club (MARC)', category: 'Technical', description: 'Robotics club of IIIT Surat.', leadName: 'TBD', leadEmail: 'test-marc@iiitsurat.ac.in' },
   { name: 'Learn Code Solve (LCS)', category: 'Technical', description: 'Coding and competitive programming club of IIIT Surat.', leadName: 'TBD', leadEmail: 'test-lcs@iiitsurat.ac.in' },
 

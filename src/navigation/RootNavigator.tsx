@@ -37,6 +37,7 @@ import PostNoticeScreen from "../screens/PostNoticeScreen";
 import PlacementsScreen from "../screens/PlacementsScreen";
 import UploadResourceScreen from "../screens/faculty/UploadResourceScreen";
 import EditProfileScreen from "../screens/EditProfileScreen";
+import NotificationSettingsScreen from "../screens/NotificationSettingsScreen";
 import HelpSupportScreen from "../screens/HelpSupportScreen";
 import AboutScreen from "../screens/AboutScreen";
 
@@ -224,16 +225,9 @@ export default function RootNavigator() {
       />
       <Stack.Screen
         name="NotificationSettings"
+        component={NotificationSettingsScreen}
         options={{ title: "Notification Settings" }}
-      >
-        {() => (
-          <PlaceholderScreen
-            title="Notification Settings"
-            icon="notifications-outline"
-            description="Choose which notices and events you get notified about."
-          />
-        )}
-      </Stack.Screen>
+      />
       <Stack.Screen
         name="HelpSupport"
         component={HelpSupportScreen}

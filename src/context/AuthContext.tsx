@@ -119,6 +119,25 @@ type AuthContextValue = {
   sendPasswordReset: (email: string) => Promise<void>;
 };
 
+// Firestore's own errors are written for developers, not for someone
+// staring at a signup screen — "Failed to get document because the
+// client is offline" tells a real person nothing actionable. This
+// rewrites the network-related ones into plain language; anything else
+// (an actual gating rejection, e.g. "not on the roster") passes through
+// unchanged, since those messages are already written to be read by a
+// person, not a machine.
+function friendlyAuthErrorMessage(err: any): string {
+  const code = err?.code ?? "";
+  const raw = err?.message ?? "";
+  const isOffline =
+    code === "unavailable" ||
+    /offline|network|failed to get document/i.test(raw);
+  if (isOffline) {
+    return "No internet connection right now — check your connection and try again.";
+  }
+  return raw || "Something went wrong. Please try again.";
+}
+
 // Shared by email/password signUp and completeGoogleProfile — both need to
 // check the same admin-seeded allowlist/roster collections before a profile
 // doc can be created. Throws a user-facing Error on any gating failure.
@@ -327,7 +346,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         await signOut(auth).catch(() => {});
       }
-      throw err;
+      throw new Error(friendlyAuthErrorMessage(err));
     } finally {
       justSignedUpRef.current = false;
       setProfileLoading(false);
@@ -382,19 +401,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const completeGoogleProfile: AuthContextValue['completeGoogleProfile'] = useCallback(async ({ role, enrollmentNumber }) => {
     if (!user) throw new Error('You must be signed in.');
     const normalizedEmail = (user.email ?? '').trim().toLowerCase();
-    const newProfile = await buildGatedProfile({
-      uid: user.uid,
-      name: user.displayName ?? 'Unnamed',
-      normalizedEmail,
-      role,
-      enrollmentNumber,
-    });
-    await createUserProfileAtomically(user.uid, newProfile);
-    setProfile(newProfile);
     try {
-      await claimPendingClubLead(user.uid, normalizedEmail);
-    } catch {
-      // ignore — worst case, a faculty member links them later from the club page
+      const newProfile = await buildGatedProfile({
+        uid: user.uid,
+        name: user.displayName ?? 'Unnamed',
+        normalizedEmail,
+        role,
+        enrollmentNumber,
+      });
+      await createUserProfileAtomically(user.uid, newProfile);
+      setProfile(newProfile);
+      try {
+        await claimPendingClubLead(user.uid, normalizedEmail);
+      } catch {
+        // ignore — worst case, a faculty member links them later from the club page
+      }
+    } catch (err) {
+      throw new Error(friendlyAuthErrorMessage(err));
     }
   }, [user]);
 

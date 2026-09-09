@@ -1,41 +1,30 @@
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as admin from "firebase-admin";
 
+// Same reasoning as TimetableScreen.tsx's to12Hour — stored "HH:MM" is
+// right for comparing/matching against the current time, wrong for
+// putting in front of a person, so only the notification text converts.
+function to12Hour(time: string): string {
+  const [hourStr, minute] = time.split(":");
+  const hour = parseInt(hourStr, 10);
+  const period = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${minute} ${period}`;
+}
 
-
+// Mirrors src/data/facultyLegend.ts on the client — timetable slots store
+// faculty as the initials printed on the official PDFs (e.g. "RRP",
+// "DN/PJM" for a two-instructor lab), not full names, so this map is what
+// turns those into something matchable against a `users` doc's `name`.
+// KEEP THIS IN SYNC with src/data/facultyLegend.ts by hand — functions/
+// is a separate TypeScript project with its own build, so it can't import
+// straight from src/. Until real initials are filled in here (same as
+// that file), no faculty member will match a slot, so this function's
+// faculty-side reminders silently send to nobody — the student-side
+// reminders work today regardless, since section/branch/semester are
+// already exact.
 const FACULTY_LEGEND: Record<string, string> = {
   // 'RRP': 'Full Name Here',
-  "K.D.": "Kaustubh Dhondge",
-  "R.K.": "Ritesh Kumar",
-  "RRP": "Reema Patel",
-  "P.S.": "Pradeep Singh",
-  "R.N": "Rachit Nimavat",
-  "D.N": "Nidhi Desai",
-  "PJM": "Prathana Jagat Mehta",
-  "N B" : " Nayan Behra",
-  "A.D" : "Abisek Dahal",
-  "D.R." : "Diksha Rangwani",
-  "T.G." : "Trupti Gondaliya",
-  "K.Y." : "Khamosh Yadav",
-  "SS": "Sudeep Sharma",
-  "SVR" : "Sivavenkateswara Rao V.",
-  "VAP" : "Venkata Annapura Chavali",
-  "H.G." : "Hemant Goklani",
-  "T.D." : "Tanmay Dubey",
-  "S.M." : "Shikha Murya",
-  "L.C." : "Lokendra Chaouhan",
-  "AN" : "Neelima Agarwal",
-  "MR" : "Manish Rai",
-  "DP" :" Dhiraj K. Patel",
-  "RM" : "Rahul D. Mishra",
-  "RK" : "Rahul K Patel",
-  "SR" : " Sejal K Rathod",
-  "AT" :"Anandatheertan Srinivasan",
-  "BP" : " Bikas Patra",
-  "ND" : "Nishad Deshpande",
-  "APS" : "Anand Pratap Singh",
-  "AP" : "Arti Patel",
-  "VP" : "Vijay K Patel"
 };
 
 function expandFacultyInitials(faculty: string): string {
@@ -45,7 +34,8 @@ function expandFacultyInitials(faculty: string): string {
     .join(" / ");
 }
 
-
+// Mirrors src/utils/academicInfo.ts's getCurrentSemester — duplicated for
+// the same cross-project-import reason as the legend above.
 function getCurrentSemester(admissionYear: number, today: Date): number {
   const currentMonth = today.getMonth() + 1;
   const currentYear = today.getFullYear();
@@ -82,6 +72,7 @@ type TimetableSlot = {
   subjectName: string;
   faculty: string;
   room: string;
+  endTime: string;
 };
 
 type Timetable = {
@@ -91,8 +82,41 @@ type Timetable = {
   days: {day: string; slots: TimetableSlot[]}[];
 };
 
+// A multi-hour lab is often stored as several back-to-back rows (e.g. two
+// 1-hour rows for a 2-hour session) rather than one row spanning the
+// whole block — that's how the OCR/Excel timetable import naturally
+// produces it. Without this merge, the reminder would fire once for the
+// real start AND again for every subsequent row, as if a brand-new class
+// were beginning each time a student is already sitting in the same lab.
+// This collapses any run of same-subject, same-room, contiguous rows
+// (one's endTime exactly matches the next's startTime) into a single
+// logical session, so only its true start ever triggers a reminder.
+function mergeContiguousSessions(slots: TimetableSlot[]): TimetableSlot[] {
+  const sorted = [...slots].sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const merged: TimetableSlot[] = [];
+
+  for (const slot of sorted) {
+    const last = merged[merged.length - 1];
+    const continuesLast =
+      last &&
+      last.endTime === slot.startTime &&
+      last.subjectCode === slot.subjectCode &&
+      last.room === slot.room;
+    if (continuesLast) {
+      last.endTime = slot.endTime; // extend the existing session, don't add a new one
+    } else {
+      merged.push({...slot});
+    }
+  }
+
+  return merged;
+}
+
 async function pushToTokens(tokens: string[], title: string, body: string): Promise<void> {
   if (tokens.length === 0) return;
+  // Same 100-per-request chunking as sendAnnouncementPush.ts, same Expo
+  // push endpoint — this reminder is just a different trigger for the
+  // identical delivery mechanism already in production.
   const CHUNK_SIZE = 100;
   const chunks: string[][] = [];
   for (let i = 0; i < tokens.length; i += CHUNK_SIZE) chunks.push(tokens.slice(i, i + CHUNK_SIZE));
@@ -113,6 +137,9 @@ async function pushToTokens(tokens: string[], title: string, body: string): Prom
             body,
             sound: "default",
             priority: "high",
+            // Shows as a heads-up banner on both platforms rather than
+            // silently landing in the notification tray — the whole
+            // point of a 3-minute warning is that it's seen immediately.
             channelId: "class-reminders",
           })),
         ),
@@ -126,8 +153,12 @@ async function pushToTokens(tokens: string[], title: string, body: string): Prom
 
 async function notifyForSlot(db: FirebaseFirestore.Firestore, timetable: Timetable, slot: TimetableSlot): Promise<void> {
   const title = "Class in 3 minutes";
-  const body = `${slot.subjectName} • Room ${slot.room}`;
+  const body = `${slot.subjectName} • Room ${slot.room} • ${to12Hour(slot.startTime)}–${to12Hour(slot.endTime)}`;
 
+  // Students: branch + section are exact filters; semester can't be
+  // queried directly since it's derived from admissionYear, not stored,
+  // so it's checked in-memory below — same reasoning as
+  // sendAnnouncementPush.ts's targetSection/targetAdmissionYear handling.
   const studentsSnap = await db
     .collection("users")
     .where("role", "==", "student")
@@ -138,20 +169,25 @@ async function notifyForSlot(db: FirebaseFirestore.Firestore, timetable: Timetab
   const today = new Date();
   const studentTokens: string[] = [];
   studentsSnap.docs.forEach((doc) => {
-    const student = doc.data() as {admissionYear?: number; expoPushToken?: string};
+    const student = doc.data() as {admissionYear?: number; expoPushToken?: string; notificationPreferences?: {classReminders?: boolean}};
     if (!student.expoPushToken || !student.admissionYear) return;
+    if (student.notificationPreferences?.classReminders === false) return;
     if (getCurrentSemester(student.admissionYear, today) !== timetable.semester) return;
     studentTokens.push(student.expoPushToken);
   });
 
+  // Faculty: matched by expanded name against the slot's initials — see
+  // the FACULTY_LEGEND comment at the top of this file for why this is
+  // currently a no-op until that map is filled in.
   const expandedNames = expandFacultyInitials(slot.faculty)
     .split(" / ")
     .map((n) => n.trim().toLowerCase());
   const facultySnap = await db.collection("users").where("role", "==", "faculty").get();
   const facultyTokens: string[] = [];
   facultySnap.docs.forEach((doc) => {
-    const faculty = doc.data() as {name?: string; expoPushToken?: string};
+    const faculty = doc.data() as {name?: string; expoPushToken?: string; notificationPreferences?: {classReminders?: boolean}};
     if (!faculty.expoPushToken || !faculty.name) return;
+    if (faculty.notificationPreferences?.classReminders === false) return;
     if (!expandedNames.includes(faculty.name.trim().toLowerCase())) return;
     facultyTokens.push(faculty.expoPushToken);
   });
@@ -164,6 +200,10 @@ async function notifyForSlot(db: FirebaseFirestore.Firestore, timetable: Timetab
 
 export const sendClassReminderPush = onSchedule(
   {
+    // Firestore reads here are cheap (one doc per section, once a
+    // minute) and the whole point is a tight 3-minute window, so a
+    // 1-minute cadence is the coarsest interval that still hits it
+    // reliably from a single scheduled run.
     schedule: "every 1 minutes",
     region: "asia-south1",
   },
@@ -178,7 +218,7 @@ export const sendClassReminderPush = onSchedule(
       const timetable = doc.data() as Timetable;
       const todayEntry = timetable.days?.find((d) => d.day === weekday);
       if (!todayEntry) return;
-      todayEntry.slots
+      mergeContiguousSessions(todayEntry.slots)
         .filter((slot) => slot.startTime === reminderTime)
         .forEach((slot) => tasks.push(notifyForSlot(db, timetable, slot)));
     });

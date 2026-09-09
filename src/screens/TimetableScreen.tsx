@@ -26,6 +26,35 @@ import {
 } from "../firebase/timetableService";
 import { expandFaculty } from "../data/facultyLegend";
 
+// Same reasoning as functions/src/sendClassReminderPush.ts's
+// mergeContiguousSessions — a 2-hour lab is stored as two back-to-back
+// 1-hour rows (e.g. 1-2 PM and 2-3 PM) so the reminder logic can treat
+// each hour independently, but that means showing them as-is here would
+// render two duplicate-looking cards for what a student experiences as
+// one continuous class. This collapses any run of same-subject,
+// same-room, contiguous slots into a single card spanning the full
+// range before rendering — display-only, doesn't touch what's stored.
+function mergeContiguousSlots(slots: TimetableSlot[]): TimetableSlot[] {
+  const sorted = [...slots].sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const merged: TimetableSlot[] = [];
+
+  for (const slot of sorted) {
+    const last = merged[merged.length - 1];
+    const continuesLast =
+      last &&
+      last.endTime === slot.startTime &&
+      last.subjectCode === slot.subjectCode &&
+      last.room === slot.room;
+    if (continuesLast) {
+      last.endTime = slot.endTime; // extend, don't add a new card
+    } else {
+      merged.push({ ...slot });
+    }
+  }
+
+  return merged;
+}
+
 const WEEKDAYS = [
   "Monday",
   "Tuesday",
@@ -132,7 +161,7 @@ export default function TimetableScreen() {
               </Text>
             ) : (
               <FlatList
-                data={daySchedule?.slots ?? []}
+                data={mergeContiguousSlots(daySchedule?.slots ?? [])}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={styles.list}
                 ListEmptyComponent={
@@ -148,12 +177,24 @@ export default function TimetableScreen() {
   );
 }
 
+// Stored as 24hr "HH:MM" (e.g. "13:00") — that's the right format for
+// sorting/comparing (mergeContiguousSlots above relies on plain string
+// equality/ordering), but not what anyone wants to actually read on a
+// class card, so this only converts at the point of display.
+function to12Hour(time: string): string {
+  const [hourStr, minute] = time.split(":");
+  const hour = parseInt(hourStr, 10);
+  const period = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${minute} ${period}`;
+}
+
 function ClassCard({ item }: { item: TimetableSlot }) {
   return (
     <View style={styles.classCard}>
       <View style={styles.timeBlock}>
-        <Text style={styles.timeText}>{item.startTime}</Text>
-        <Text style={styles.timeText}>{item.endTime}</Text>
+        <Text style={styles.timeText}>{to12Hour(item.startTime)}</Text>
+        <Text style={styles.timeText}>{to12Hour(item.endTime)}</Text>
       </View>
       <View style={styles.classInfo}>
         <Text style={styles.subject}>

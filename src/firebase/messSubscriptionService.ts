@@ -1,7 +1,7 @@
 import { doc, getDoc, serverTimestamp, runTransaction } from "firebase/firestore";
 import { db } from "./firestore";
 
-export type MealSlot = "breakfast" | "lunch" | "dinner";
+export type MealSlot = "lunch" ;
 
 // Meal windows for the Unlimited Thali plan — distinct from the wallet
 // system's continuous STORE_OPEN/STORE_CLOSE, since a thali subscription
@@ -9,9 +9,9 @@ export type MealSlot = "breakfast" | "lunch" | "dinner";
 // continuous ordering window. Adjust these to match the canteen's actual
 // serving hours.
 const MEAL_WINDOWS: { slot: MealSlot; startMinutes: number; endMinutes: number }[] = [
-  { slot: "breakfast", startMinutes: 7 * 60 + 30, endMinutes: 9 * 60 + 30 },
+
   { slot: "lunch", startMinutes: 12 * 60, endMinutes: 14 * 60 + 30 },
-  { slot: "dinner", startMinutes: 19 * 60, endMinutes: 21 * 60 + 30 },
+  
 ];
 
 function currentMonthKey(now: Date = new Date()): string {

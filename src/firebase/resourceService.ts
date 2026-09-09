@@ -110,6 +110,7 @@ export async function uploadResource(
 export function subscribeToResources(
   onUpdate: (resources: Resource[]) => void,
   scope?: { branch: string; semester: number },
+  onError?: (error: Error) => void,
 ): () => void {
   const q = scope
     ? query(
@@ -123,13 +124,25 @@ export function subscribeToResources(
         orderBy('createdAt', 'desc'),
         fsLimit(FACULTY_VIEW_LIMIT),
       );
-  return onSnapshot(q, (snapshot) => {
-    const resources: Resource[] = snapshot.docs.map((docSnap) => ({
-      id: docSnap.id,
-      ...(docSnap.data() as Omit<Resource, 'id'>),
-    }));
-    onUpdate(resources);
-  });
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const resources: Resource[] = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<Resource, 'id'>),
+      }));
+      onUpdate(resources);
+    },
+    // Previously no error callback at all — a failed query (missing
+    // index, permission edge case, anything) failed completely silently:
+    // no error anywhere, the screen just stayed empty forever with no
+    // way to tell why. This at least surfaces it to whoever's watching
+    // (console now, and the screen's own error state below).
+    (error) => {
+      console.error('subscribeToResources failed:', scope, error);
+      onError?.(error);
+    },
+  );
 }
 
 /// deleting the slides of resources function

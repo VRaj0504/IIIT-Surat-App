@@ -13,3 +13,6 @@ export {createRechargeOrder} from "./createRechargeOrder";
 export {ingestFacultyEmail} from "./ingestFacultyEmail";
 export {sendClassReminderPush} from "./sendClassReminderPush";
 export {sendInboxImportPush} from "./sendInboxImportPush";
+
+export {sendNoticePush} from "./sendNoticePush";
+export {sendResourcePush} from "./sendResourcePush";

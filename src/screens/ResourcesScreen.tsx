@@ -103,6 +103,7 @@ export default function ResourcesScreen() {
   );
   const [curriculumLoading, setCurriculumLoading] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     // Faculty get the unscoped "everything, across all subjects" view (see
@@ -115,10 +116,18 @@ export default function ResourcesScreen() {
         ? { branch: profile.branch, semester: getCurrentSemester(profile.admissionYear) }
         : undefined;
     setLoading(true);
-    const unsubscribe = subscribeToResources((data) => {
-      setResources(data);
-      setLoading(false);
-    }, scope);
+    setLoadError(null);
+    const unsubscribe = subscribeToResources(
+      (data) => {
+        setResources(data);
+        setLoading(false);
+      },
+      scope,
+      (error) => {
+        setLoadError(error.message);
+        setLoading(false);
+      },
+    );
     return () => unsubscribe();
   }, [profile?.role, profile?.branch, profile?.admissionYear]);
 
@@ -282,6 +291,23 @@ export default function ResourcesScreen() {
     ),
   }));
 
+  // A resource whose `subject` text doesn't match any curriculum subject
+  // for this semester — most often something auto-published from the
+  // faculty email pipeline, where the subject line comes from free text
+  // (an email subject, or nothing at all) rather than a curriculum pick —
+  // used to simply vanish here: correctly branch/semester-scoped, but
+  // silently excluded from every section above since none of them claimed
+  // it. Surfacing it under "Other" means a resource is never invisible
+  // just because its subject text doesn't line up with the curriculum.
+  const matchedIds = new Set(studentSections.flatMap((s) => s.data.map((r) => r.id)));
+  const unmatched = resources.filter(
+    (r) => r.branch === branch && r.semester === semester && !matchedIds.has(r.id),
+  );
+  const allSections =
+    unmatched.length > 0
+      ? [...studentSections, { title: "Other", code: "", data: unmatched }]
+      : studentSections;
+
   return (
     <LinearGradient
       colors={[colors.gradientStart, colors.gradientEnd]}
@@ -292,9 +318,12 @@ export default function ResourcesScreen() {
         <Text style={styles.subtitle}>
           {branch} · Semester {semester}
         </Text>
+        {loadError && (
+          <Text style={styles.errorText}>Couldn't load resources: {loadError}</Text>
+        )}
 
         <SectionList
-          sections={studentSections}
+          sections={allSections}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
@@ -346,6 +375,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: "center",
     marginTop: spacing.xl,
+  },
+  errorText: {
+    ...typography.caption,
+    color: colors.danger,
+    marginBottom: spacing.sm,
   },
   emptySubjectText: {
     ...typography.caption,

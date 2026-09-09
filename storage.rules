@@ -65,7 +65,17 @@ service firebase.storage {
       allow read: if request.auth != null &&
         (firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'faculty' ||
          firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin');
-      allow write: if false;
+      // Only the Admin SDK (ingestFacultyEmail.ts) ever writes a NEW file
+      // here — that's the real security boundary, unaffected by this.
+      // Delete is separate: once an email's attachment has been
+      // auto-published or reviewed, a faculty/admin should be able to
+      // delete the underlying file the same way they can delete any
+      // other resource's file, rather than it being permanently stuck
+      // because it happens to still live under this path.
+      allow create, update: if false;
+      allow delete: if request.auth != null &&
+        (firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'faculty' ||
+         firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
 
     // Profile photos — read is open to any signed-in user (same

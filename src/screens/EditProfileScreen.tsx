@@ -6,6 +6,7 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
+  ScrollView,
   Image,
   Alert,
 } from "react-native";
@@ -85,6 +86,10 @@ export default function EditProfileScreen() {
         await updateFacultyDetails({ department, designation, officeLocation, officeHours, phone });
       } else if (profile?.role === "student") {
         await updatePhone(phone);
+      } else {
+        // Any other role (admin today) — same as the student path, just
+        // the plain phone field, not the faculty-directory fields.
+        await updatePhone(phone);
       }
       navigation.goBack();
     } catch (e: any) {
@@ -99,8 +104,12 @@ export default function EditProfileScreen() {
       colors={[colors.gradientStart, colors.gradientEnd]}
       style={{ flex: 1 }}
     >
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <View style={styles.content}>
+            <SafeAreaView style={styles.container} edges={["top"]}>
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.photoSection}>
             <TouchableOpacity onPress={handlePickPhoto} disabled={uploadingPhoto}>
               {uploadingPhoto ? (
@@ -214,6 +223,28 @@ export default function EditProfileScreen() {
             </>
           )}
 
+          {/* Any role other than the two above — admin accounts are the
+            real case today (set directly in Firestore for access to
+            Inbox Imports etc., outside the normal signup flow the Role
+            type covers), but this also protects any future role from
+            silently having no way to set a contact phone at all, the
+            exact gap that left an admin's Lost & Found phone field
+            invisible even though the phone value itself was already
+            saved. */}
+          {profile?.role !== "student" && profile?.role !== "faculty" && (
+            <>
+              <Text style={styles.label}>Phone (optional — used for Lost &amp; Found contact)</Text>
+              <TextInput
+                style={styles.input}
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="Leave blank to keep private"
+                placeholderTextColor={colors.textSecondary}
+                keyboardType="phone-pad"
+              />
+            </>
+          )}
+
           {error && <Text style={styles.error}>{error}</Text>}
 
           <TouchableOpacity
@@ -227,7 +258,7 @@ export default function EditProfileScreen() {
               <Text style={styles.saveBtnText}>Save Changes</Text>
             )}
           </TouchableOpacity>
-        </View>
+         </ScrollView>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -235,7 +266,8 @@ export default function EditProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: spacing.lg },
+  content: { flex : 1},
+  contentContainer: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
   photoSection: { alignItems: "center", marginBottom: spacing.md },
   photoCircle: {
     width: 96,
