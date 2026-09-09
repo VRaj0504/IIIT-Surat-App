@@ -11,17 +11,17 @@
       "bundleIdentifier": "com.vaibhav.iiitsuratapp"
     },
     "android": {
-  "adaptiveIcon": {
-    "backgroundColor": "#E6F4FE",
-    "foregroundImage": "./assets/android-icon-foreground.png",
-    "backgroundImage": "./assets/android-icon-background.png",
-    "monochromeImage": "./assets/android-icon-monochrome.png"
-  },
-  "predictiveBackGestureEnabled": false,
-  "package": "com.vaibhav.iiitsuratapp",
-  "googleServicesFile": "./google-services.json",
-  "softwareKeyboardLayoutMode": "resize"
-},
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.vaibhav.iiitsuratapp",
+      "googleServicesFile": "./google-services.json",
+      "softwareKeyboardLayoutMode": "resize"
+    },
     "web": {
       "favicon": "./assets/favicon.png"
     },
@@ -39,7 +39,8 @@
           "icon": "./assets/android-icon-monochrome.png",
           "color": "#0B3D91"
         }
-      ]
+      ],
+      "expo-status-bar"
     ]
   }
 }
