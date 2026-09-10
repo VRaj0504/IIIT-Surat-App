@@ -113,7 +113,11 @@ export default function ResourcesScreen() {
     // filtering client-side (see subscribeToResources's comment).
     const scope =
       profile?.role !== "faculty" && profile?.branch && profile?.admissionYear
-        ? { branch: profile.branch, semester: getCurrentSemester(profile.admissionYear) }
+        ? {
+            branch: profile.branch,
+            semester: getCurrentSemester(profile.admissionYear),
+            section: profile.section ?? null,
+          }
         : undefined;
     setLoading(true);
     setLoadError(null);
@@ -129,7 +133,7 @@ export default function ResourcesScreen() {
       },
     );
     return () => unsubscribe();
-  }, [profile?.role, profile?.branch, profile?.admissionYear]);
+  }, [profile?.role, profile?.branch, profile?.admissionYear, profile?.section]);
 
   useEffect(() => {
     if (!profile?.branch || !profile?.admissionYear) {

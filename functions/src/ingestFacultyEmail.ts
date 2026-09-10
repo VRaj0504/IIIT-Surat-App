@@ -628,6 +628,13 @@ export const ingestFacultyEmail = onRequest(
                   subject: matchedSubject ?? classification.resourceSubject ?? perFileTitle,
                   branch,
                   semester: scope.semester ?? 1,
+                  // The tag/distribution-list parsers already resolve a
+                  // section into targetScope — it was simply never written
+                  // here, so every "[R-CSE-3-B]" resource silently reached
+                  // all of CSE Sem 3. null stays null and still means "the
+                  // whole semester", which is the right default for a tag
+                  // like [R-CSE-3] that names no section at all.
+                  section: scope.section ?? null,
                   type: classification.resourceType ?? "Notes",
                   fileUrl: attachment.downloadUrl,
                   storagePath: attachment.storagePath,

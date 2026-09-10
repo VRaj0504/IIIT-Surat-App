@@ -13,6 +13,12 @@ export type Resource = {
   subject: string;
   branch: string;      // e.g. 'CSE', 'ECE', 'MnC'
   semester: number;         // e.g. 1 to 8
+  // Canonical form is the bare section letter ('A', 'B', 'C', 'D') —
+  // the same string stored on a student's profile and in the roster.
+  // null/undefined means "the whole semester, every section", which is
+  // also what every resource created before section targeting existed
+  // implicitly is, so those keep reaching everyone exactly as before.
+  section?: string | null;
   type: 'Notes' | 'PYQ' | 'Slides';
   fileUrl: string;      // download URL from Firebase Storage
   storagePath: string;
@@ -109,7 +115,7 @@ export async function uploadResource(
 // just with FACULTY_VIEW_LIMIT as a growth safety net.
 export function subscribeToResources(
   onUpdate: (resources: Resource[]) => void,
-  scope?: { branch: string; semester: number },
+  scope?: { branch: string; semester: number; section?: string | null },
   onError?: (error: Error) => void,
 ): () => void {
   const q = scope
@@ -127,10 +133,20 @@ export function subscribeToResources(
   return onSnapshot(
     q,
     (snapshot) => {
-      const resources: Resource[] = snapshot.docs.map((docSnap) => ({
+      const all: Resource[] = snapshot.docs.map((docSnap) => ({
         id: docSnap.id,
         ...(docSnap.data() as Omit<Resource, 'id'>),
       }));
+      // Section is matched here rather than as a third where() clause on
+      // purpose: a resource with no section is meant for the WHOLE
+      // semester, and Firestore can't express "section == mine OR section
+      // is absent" in one query. Doing it in memory keeps that rule exact,
+      // needs no new composite index, and costs nothing at these sizes
+      // (already narrowed to one branch+semester by the query above).
+      const viewerSection = scope?.section ?? null;
+      const resources = viewerSection
+        ? all.filter((r) => !r.section || r.section === viewerSection)
+        : all;
       onUpdate(resources);
     },
     // Previously no error callback at all — a failed query (missing
