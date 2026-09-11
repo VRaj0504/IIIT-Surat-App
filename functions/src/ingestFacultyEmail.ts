@@ -64,6 +64,28 @@ type ClassificationResult = {
 // the format is followed exactly.
 const STRUCTURED_TAG_PATTERN = /^\[(R|N)-(CSE|ECE|MNC|ALL)(?:-(\d))?(?:-([A-Za-z0-9]+))?\]\s*(.*)$/i;
 
+// The real section values actually stored on student profiles (confirmed
+// against live Firestore roster data, not assumed) are NOT a bare letter
+// or bare digit — they're branch-prefixed, and the prefix rule itself
+// differs by which kind of section a year uses:
+//   - CSE's 2nd-year digit split: "CSE1" / "CSE2" — branch + digit, NO space.
+//   - Every letter-based split (1st-year CSE: B/C/D, 1st-year ECE: A):
+//     "<BRANCH> <LETTER>" — branch + a SPACE + the letter, e.g. "CSE B", "ECE A".
+//   - MNC has no letter-sections of its own — its 2026 students are
+//     physically co-located inside CSE's own "D" section for classes,
+//     so their real roster section is "CSE D", not "MNC D". Any MNC
+//     letter-section input maps through CSE's prefix, not MNC's.
+// Years/branches with no split at all (3rd year onward, currently) have
+// no section value whatsoever — that case is handled by the callers
+// (sectionRaw absent entirely), not by this function.
+function resolveRosterSection(branch: string, rawSection: string): string {
+  if (/^\d+$/.test(rawSection)) {
+    return `${branch.toUpperCase()}${rawSection}`;
+  }
+  const letterBranch = branch.toUpperCase() === "MNC" ? "CSE" : branch.toUpperCase();
+  return `${letterBranch} ${rawSection.toUpperCase()}`;
+}
+
 type StructuredTagResult = {
   contentType: "resource" | "notice";
   targetScope: TargetScope;
@@ -77,7 +99,7 @@ function parseStructuredTag(subject: string): StructuredTagResult | null {
   const [, typeLetter, branchRaw, semRaw, sectionRaw, restOfSubject] = match;
   const branch = branchRaw.toUpperCase();
   const semester = semRaw ? parseInt(semRaw, 10) : null;
-  const section = sectionRaw ? sectionRaw.toUpperCase() : null;
+  const section = sectionRaw ? resolveRosterSection(branch, sectionRaw) : null;
 
   const targetScope: TargetScope =
     branch === "ALL"
@@ -169,7 +191,7 @@ function parseDistributionListTarget(toAndCc: string): TargetScope | null {
         scope: "section",
         branch: branch.toUpperCase() as "CSE" | "ECE" | "MNC",
         semester: getCurrentSemester(admissionYear, new Date()),
-        section: section.toUpperCase(),
+        section: resolveRosterSection(branch, section),
         admissionYear,
         specialization: null,
       });
