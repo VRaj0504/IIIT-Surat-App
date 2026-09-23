@@ -1,4 +1,4 @@
-export type MealType = 'Breakfast' | 'Lunch' | 'Snacks' | 'Dinner';
+export type MealType ='Lunch';
 
 export type DayMenu = {
   day: string;
@@ -9,64 +9,31 @@ export const messMenu: DayMenu[] = [
   {
     day: 'Monday',
     meals: {
-      Breakfast: ['Poha', 'Bread & Jam', 'Boiled Eggs', 'Tea/Coffee'],
-      Lunch: ['Rajma', 'Steamed Rice', 'Roti', 'Salad', 'Curd'],
-      Snacks: ['Samosa', 'Tea'],
-      Dinner: ['Paneer Butter Masala', 'Roti', 'Jeera Rice', 'Gulab Jamun'],
+      Lunch: ['Kadhai Paneer/Butter Paneer Masala', 'Steam Rice','Tuver Dal', 'Chapati', 'Salad & Pickle', 'Chaas'],
     },
   },
   {
     day: 'Tuesday',
     meals: {
-      Breakfast: ['Idli Sambar', 'Coconut Chutney', 'Tea/Coffee'],
-      Lunch: ['Chole', 'Roti', 'Steamed Rice', 'Onion Salad', 'Buttermilk'],
-      Snacks: ['Bread Pakora', 'Tea'],
-      Dinner: ['Mix Veg', 'Dal Fry', 'Roti', 'Rice'],
+      Lunch: ['Bhindi Masala', 'Chana Dal', 'Jeera Rice','Paratha', 'Salad & Pickle', 'Curd'],
     },
   },
   {
     day: 'Wednesday',
     meals: {
-      Breakfast: ['Aloo Paratha', 'Curd', 'Pickle', 'Tea/Coffee'],
-      Lunch: ['Kadhi Pakora', 'Rice', 'Roti', 'Salad'],
-      Snacks: ['Vada Pav', 'Tea'],
-      Dinner: ['Egg Curry / Paneer', 'Roti', 'Rice', 'Fruit Custard'],
+      Lunch: ['Chole(Kabuli Chana)', 'Pulao', 'Poori', 'Salad & Pickle', 'Sweet(Gulab Jamun)'],
     },
   },
   {
     day: 'Thursday',
     meals: {
-      Breakfast: ['Upma', 'Boiled Eggs', 'Tea/Coffee'],
-      Lunch: ['Dal Makhani', 'Jeera Rice', 'Roti', 'Salad', 'Curd'],
-      Snacks: ['Dhokla', 'Tea'],
-      Dinner: ['Bhindi Fry', 'Dal', 'Roti', 'Rice'],
+      Lunch: ['Dum Aloo', 'Jeera Rice', 'Kadhi', 'Salad & Pickle', 'Chapati'],
     },
   },
   {
     day: 'Friday',
     meals: {
-      Breakfast: ['Chole Bhature', 'Tea/Coffee'],
-      Lunch: ['Rajma', 'Rice', 'Roti', 'Salad', 'Buttermilk'],
-      Snacks: ['Sandwich', 'Tea'],
-      Dinner: ['Veg Biryani', 'Raita', 'Papad', 'Ice Cream'],
-    },
-  },
-  {
-    day: 'Saturday',
-    meals: {
-      Breakfast: ['Paratha', 'Curd', 'Tea/Coffee'],
-      Lunch: ['Kadhai Paneer', 'Roti', 'Rice', 'Salad'],
-      Snacks: ['Pav Bhaji', 'Tea'],
-      Dinner: ['Dal Tadka', 'Jeera Rice', 'Roti'],
-    },
-  },
-  {
-    day: 'Sunday',
-    meals: {
-      Breakfast: ['Puri Sabzi', 'Halwa', 'Tea/Coffee'],
-      Lunch: ['Special Thali', 'Sweet', 'Papad'],
-      Snacks: ['Pasta', 'Tea'],
-      Dinner: ['Paneer Tikka Masala', 'Roti', 'Rice', 'Gulab Jamun'],
+      Lunch: ['Mix Vegetable', 'Matar Rice', 'Rajma', 'Chapati', 'Salad & Pickle', 'Chaas'],
     },
   },
 ];

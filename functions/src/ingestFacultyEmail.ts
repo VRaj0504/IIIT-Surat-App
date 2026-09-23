@@ -3,13 +3,13 @@ import * as admin from "firebase-admin";
 import * as crypto from "crypto";
 import {defineSecret} from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
+import {extractRawExamRows, normalizeExtraction} from "./examSheetExtraction";
+import {geminiJson} from "./gemini";
 
 const ingestSecret = defineSecret("INGEST_SHARED_SECRET");
-// Google AI Studio's free tier (aistudio.google.com) — no card required,
-// ample quota for this volume (a handful of emails at a time, not a
-// high-throughput pipeline). Swap back to a paid model later by changing
-// only classifyEmail() below if the free tier's rate limit ever becomes
-// the bottleneck.
+// Google Gemini (see gemini.ts) reads and classifies the emails: a
+// low-volume task — a handful of emails at a time — that suits the fast,
+// inexpensive Flash tier. The key lives in Secret Manager as GEMINI_API_KEY.
 const geminiKey = defineSecret("GEMINI_API_KEY");
 
 // One attachment as the Apps Script bridge (see apps-script/Code.gs) sends
@@ -306,6 +306,25 @@ async function matchCurriculumSubject(
   return abbrevMatches.length === 1 ? abbrevMatches[0].name : null;
 }
 
+// An exam date sheet email: the subject or the attachment's own filename
+// names BOTH an exam word and a schedule word ("Time Table Mid Sem exam
+// Sept 2026.pdf"), and there's a PDF/photo to read. Requiring both keeps
+// this from grabbing a PYQ email ("Mid sem exam paper 2024") that merely
+// mentions an exam — that one is a resource, not a schedule.
+const EXAM_WORDS = /exam|mid.?sem|end.?sem|quiz|internal/i;
+const SCHEDULE_WORDS = /date.?sheet|time.?table|schedule/i;
+const EXAM_SHEET_MIME_TYPES = ["application/pdf", "image/jpeg", "image/png"];
+
+function findExamSheetAttachment(body: IngestBody): IncomingAttachment | null {
+  const attachments = (body.attachments ?? []).filter((a) => EXAM_SHEET_MIME_TYPES.includes(a.mimeType));
+  if (attachments.length === 0) return null;
+  const haystack = `${body.subject ?? ""} ${attachments.map((a) => a.filename).join(" ")}`;
+  if (!EXAM_WORDS.test(haystack) || !SCHEDULE_WORDS.test(haystack)) return null;
+  // A date sheet email carries one sheet; several attachments means
+  // something else (a bundle of papers), so it isn't handled here.
+  return attachments.length === 1 ? attachments[0] : null;
+}
+
 const CLASSIFIER_SYSTEM_PROMPT = `You are sorting incoming faculty emails for a college app (IIIT Surat). Given an email's subject, body, and attachment filenames, decide:
 
 1. contentType — one of:
@@ -352,33 +371,13 @@ async function classifyEmail(
     // an unusually long forwarded thread blowing up the prompt.
   ].join("\n");
 
-  // Gemini's responseMimeType: "application/json" makes it return a bare
-  // JSON object directly (no markdown fences to strip, unlike the
-  // Anthropic prompt-only approach this replaced) — one less thing that
-  // can go wrong parsing the reply.
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        systemInstruction: {parts: [{text: CLASSIFIER_SYSTEM_PROMPT}]},
-        contents: [{role: "user", parts: [{text: userContent}]}],
-        generationConfig: {
-          responseMimeType: "application/json",
-          maxOutputTokens: 500,
-        },
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Gemini API error: ${response.status} ${await response.text()}`);
-  }
-
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  return JSON.parse(text) as ClassificationResult;
+  const result = await geminiJson({
+    apiKey,
+    systemInstruction: CLASSIFIER_SYSTEM_PROMPT,
+    parts: [{text: userContent}],
+    maxOutputTokens: 4096,
+  });
+  return result as ClassificationResult;
 }
 
 export const ingestFacultyEmail = onRequest(
@@ -499,6 +498,76 @@ export const ingestFacultyEmail = onRequest(
       return;
     }
     const facultyName = allowlistSnap.data()?.name ?? fromEmail;
+
+    // Exam date sheet: read the PDF/photo into per-class drafts and file
+    // them for review. Never auto-published — a wrong exam date reaches a
+    // whole semester, so a person confirms it against the PDF first (the
+    // same reason timetable emails are always reviewed). If reading the
+    // file fails for any reason, this falls through to the normal path
+    // below, which still files the email (with its attachment) for a
+    // human — the email is never lost.
+    const examAttachment = findExamSheetAttachment(body);
+    if (examAttachment) {
+      try {
+        const raw = await extractRawExamRows(
+          geminiKey.value(),
+          Buffer.from(examAttachment.dataBase64, "base64"),
+          examAttachment.mimeType,
+        );
+        const extraction = normalizeExtraction(raw);
+        if (extraction.groups.length > 0) {
+          const bucket = admin.storage().bucket();
+          const storagePath = `pendingImports/${body.messageId}/${examAttachment.filename}`;
+          const downloadToken = crypto.randomUUID();
+          await bucket.file(storagePath).save(Buffer.from(examAttachment.dataBase64, "base64"), {
+            contentType: examAttachment.mimeType,
+            metadata: {metadata: {firebaseStorageDownloadTokens: downloadToken}},
+          });
+          const downloadUrl =
+            `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
+            `${encodeURIComponent(storagePath)}?alt=media&token=${downloadToken}`;
+
+          await db.collection("pendingImports").doc(body.messageId).set({
+            fromEmail,
+            fromName: facultyName,
+            subject: body.subject,
+            bodySnippet: (body.bodyText ?? "").slice(0, 500),
+            attachments: [{filename: examAttachment.filename, storagePath, mimeType: examAttachment.mimeType, downloadUrl}],
+            contentType: "examSchedule",
+            // Always "medium": this is a machine reading of a scan, and
+            // the reviewer should treat it that way even with no warnings.
+            confidence: "medium",
+            title: body.subject,
+            targetScope: {scope: "all", branch: null, semester: null, section: null, admissionYear: null, specialization: null},
+            resourceType: null,
+            resourceSubject: null,
+            noticeCategory: null,
+            noticeDescription: null,
+            reasoning:
+              `Read ${extraction.rowCount} exams into ${extraction.groups.length} class sheet(s) from the attached file` +
+              (extraction.warnings.length ? ` — ${extraction.warnings.length} warning(s), see the review panel.` : ".") +
+              " Check it against the PDF before publishing.",
+            examGroups: extraction.groups,
+            examWarnings: extraction.warnings,
+            status: "pending",
+            receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+            reviewedBy: null,
+            reviewedAt: null,
+            rejectionReason: null,
+          });
+          logger.info("ingestFacultyEmail: filed exam date sheet for review", {
+            messageId: body.messageId,
+            groups: extraction.groups.length,
+            rows: extraction.rowCount,
+          });
+          res.status(200).send("ok");
+          return;
+        }
+        logger.warn("ingestFacultyEmail: exam sheet read but no usable rows, falling back", {messageId: body.messageId});
+      } catch (err: any) {
+        logger.error("ingestFacultyEmail: exam sheet extraction failed, falling back", {messageId: body.messageId, error: err.message});
+      }
+    }
 
     const structuredTag = parseStructuredTag(body.subject);
     // Only meaningful when there's no explicit tag — the tag is more

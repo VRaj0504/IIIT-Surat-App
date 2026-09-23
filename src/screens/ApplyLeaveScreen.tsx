@@ -8,6 +8,8 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Modal,
+  FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -28,11 +30,25 @@ const statusColors: Record<LeaveApplication["status"], string> = {
   rejected: colors.danger,
 };
 
+const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseStrictDate(value: string): Date | null {
+  if (!DATE_FORMAT.test(value)) return null;
+  const [y, m, d] = value.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) {
+    return null;
+  }
+ return date;
+}
+
+
 export default function ApplyLeaveScreen() {
   const { profile } = useAuth();
   const [faculty, setFaculty] = useState<FacultyMember[]>([]);
   const [facultySearch, setFacultySearch] = useState("");
   const [selectedFaculty, setSelectedFaculty] = useState<FacultyMember | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [type, setType] = useState<LeaveType>("casual");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -72,6 +88,28 @@ export default function ApplyLeaveScreen() {
       Alert.alert("Missing details", "Fill in the dates and a reason.");
       return;
     }
+
+    const from = parseStrictDate(fromDate.trim());
+   const to = parseStrictDate(toDate.trim());
+    if (!from || !to) {
+      Alert.alert("Invalid dates", 'Enter both dates as YYYY-MM-DD, e.g. "2026-09-15".');
+      return;
+    }
+    if (to < from) {
+      Alert.alert("Invalid date range", 'The "To" date can\'t be before the "From" date.');
+      return;
+    }
+    const reasonTrimmed = reason.trim();
+    const wordCount = reasonTrimmed.split(/\s+/).filter(Boolean).length;
+    if (reasonTrimmed.length < 10 || wordCount < 3) {
+      Alert.alert(
+        "Add a real reason",
+        "Briefly explain why you need this leave, in a few actual words — not a placeholder.",
+      );
+      return;
+    }
+
+
     setSubmitting(true);
     try {
       await applyForLeave({
@@ -84,7 +122,8 @@ export default function ApplyLeaveScreen() {
         type,
         fromDate: fromDate.trim(),
         toDate: toDate.trim(),
-        reason,
+         reason: reasonTrimmed,
+
       });
       setSelectedFaculty(null);
       setFromDate("");
@@ -121,46 +160,73 @@ export default function ApplyLeaveScreen() {
           </View>
 
           <Text style={styles.label}>Addressed to</Text>
-          {selectedFaculty ? (
-            <View style={styles.selectedFacultyRow}>
-              <Text style={styles.selectedFacultyText}>{selectedFaculty.name}</Text>
-              <TouchableOpacity onPress={() => setSelectedFaculty(null)}>
-                <Ionicons name="close-circle" size={20} color={colors.danger} />
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <>
-              <TextInput
-                style={styles.input}
-                value={facultySearch}
-                onChangeText={setFacultySearch}
-                placeholder="Search faculty by name"
-                placeholderTextColor={colors.textSecondary}
-              />
-              <View style={styles.facultyList}>
-                {filteredFaculty.slice(0, 6).map((f) => (
-                  <TouchableOpacity
-                    key={f.uid ?? f.email}
-                    style={styles.facultyOption}
-                    onPress={() => {
-                      setSelectedFaculty(f);
-                      setFacultySearch("");
-                    }}
-                  >
-                    <Text style={styles.facultyOptionText}>{f.name}</Text>
+          <TouchableOpacity
+            style={styles.dropdownField}
+            onPress={() => setPickerOpen(true)}
+          >
+            <Text
+              style={selectedFaculty ? styles.dropdownValue : styles.dropdownPlaceholder}
+            >
+              {selectedFaculty ? selectedFaculty.name : "Select a faculty member"}
+            </Text>
+            <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+
+          <Modal
+            visible={pickerOpen}
+            animationType="slide"
+            transparent
+            onRequestClose={() => setPickerOpen(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalSheet}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Select faculty</Text>
+                  <TouchableOpacity onPress={() => setPickerOpen(false)} hitSlop={8}>
+                    <Ionicons name="close" size={22} color={colors.textPrimary} />
                   </TouchableOpacity>
-                ))}
+                </View>
+                <TextInput
+                  style={styles.input}
+                  value={facultySearch}
+                  onChangeText={setFacultySearch}
+                  placeholder="Search faculty by name"
+                  placeholderTextColor={colors.textSecondary}
+                  autoFocus
+                />
+                <FlatList
+                  data={filteredFaculty}
+                  keyExtractor={(f) => f.uid ?? f.email}
+                  style={styles.modalList}
+                  keyboardShouldPersistTaps="handled"
+                  ListEmptyComponent={
+                    <Text style={styles.emptyNote}>No faculty match that name.</Text>
+                  }
+                  renderItem={({ item: f }) => (
+                    <TouchableOpacity
+                      style={styles.facultyOption}
+                      onPress={() => {
+                        setSelectedFaculty(f);
+                        setFacultySearch("");
+                        setPickerOpen(false);
+                      }}
+                    >
+                      <Text style={styles.facultyOptionText}>{f.name}</Text>
+                    </TouchableOpacity>
+                  )}
+                />
               </View>
-            </>
-          )}
+            </View>
+          </Modal>
 
           <Text style={styles.label}>From</Text>
           <TextInput
             style={styles.input}
             value={fromDate}
             onChangeText={setFromDate}
-            placeholder="YYYY-MM-DD"
+            placeholder="2026-09-15"
             placeholderTextColor={colors.textSecondary}
+            keyboardType="numbers-and-punctuation"
           />
 
           <Text style={styles.label}>To</Text>
@@ -168,8 +234,9 @@ export default function ApplyLeaveScreen() {
             style={styles.input}
             value={toDate}
             onChangeText={setToDate}
-            placeholder="YYYY-MM-DD"
+            placeholder="2026-09-17"
             placeholderTextColor={colors.textSecondary}
+            keyboardType="numbers-and-punctuation"
           />
 
           <Text style={styles.label}>Reason</Text>
@@ -239,18 +306,49 @@ const styles = StyleSheet.create({
   toggleButtonActive: { backgroundColor: colors.primary },
   toggleText: { ...typography.body, color: colors.textSecondary, fontWeight: "600" },
   toggleTextActive: { color: colors.surface },
-  selectedFacultyRow: {
+  dropdownField: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     backgroundColor: colors.surface,
     borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
   },
-  selectedFacultyText: { ...typography.body, color: colors.textPrimary, fontWeight: "600" },
-  facultyList: { marginTop: spacing.xs, gap: 2 },
-  facultyOption: { backgroundColor: colors.surface, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.sm },
+  dropdownValue: { ...typography.body, color: colors.textPrimary, fontWeight: "600" },
+  dropdownPlaceholder: { ...typography.body, color: colors.textSecondary },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: spacing.lg,
+    maxHeight: "75%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  modalTitle: { ...typography.h3, color: colors.textPrimary },
+  modalList: { marginTop: spacing.sm },
+  emptyNote: { ...typography.caption, color: colors.textSecondary, marginVertical: spacing.md, textAlign: "center" },
+  facultyOption: {
+    backgroundColor: colors.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.xs,
+  },
   facultyOptionText: { ...typography.body, color: colors.textPrimary },
   submitButton: {
     backgroundColor: colors.primary,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback, memo } from "react";
 import {
   View,
   Text,
@@ -19,6 +19,48 @@ import { getClassRoster, getExistingGrades, setGrade, GRADES, RosterStudent, Gra
 import LoadingSpinner from "../components/LoadingSpinner";
 
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+
+// Receives only the two primitive values this specific row actually
+// needs (its own current grade, its own saving flag) rather than the
+// whole draftGrades/saving maps — a roster can be 50-70+ students, and
+// without this, tapping a grade chip for ONE student re-rendered every
+// single row in the list, since draftGrades/saving are new object
+// references on every tap regardless of which student changed.
+const StudentGradeRow = memo(function StudentGradeRow({
+  item,
+  currentGrade,
+  isSaving,
+  onSetGrade,
+}: {
+  item: RosterStudent;
+  currentGrade: string | undefined;
+  isSaving: boolean;
+  onSetGrade: (student: RosterStudent, grade: string) => void;
+}) {
+  return (
+    <View style={styles.studentRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.studentName}>{item.name}</Text>
+        <Text style={styles.studentReg}>{item.enrollmentNumber}</Text>
+      </View>
+      {isSaving ? (
+        <ActivityIndicator color={colors.primary} />
+      ) : (
+        <View style={styles.gradeChipRow}>
+          {GRADES.map((g) => (
+            <TouchableOpacity
+              key={g}
+              style={[styles.gradeChip, currentGrade === g && styles.gradeChipActive]}
+              onPress={() => onSetGrade(item, g)}
+            >
+              <Text style={[styles.gradeChipText, currentGrade === g && styles.gradeChipTextActive]}>{g}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+});
 
 export default function GradeEntryScreen() {
   const { profile } = useAuth();
@@ -106,36 +148,44 @@ export default function GradeEntryScreen() {
     return typed > 0 ? typed : null;
   }, [selectedSubject, creditsOverride]);
 
-  const handleSetGrade = async (student: RosterStudent, grade: string) => {
-    if (!profile || !selectedClass || selectedYear === null || !selectedSubject || !semester) return;
-    if (!resolvedCredits) {
-      Alert.alert("Credits needed", "This subject has no credits on file yet — type them in above first.");
-      return;
-    }
-    setDraftGrades((prev) => ({ ...prev, [student.enrollmentNumber]: grade }));
-    setSaving((prev) => ({ ...prev, [student.enrollmentNumber]: true }));
-    try {
-      await setGrade({
-        studentEnrollmentNumber: student.enrollmentNumber,
-        studentName: student.name,
-        studentUid: student.uid ?? null,
-        branch: selectedClass.branch,
-        section: selectedClass.section,
-        admissionYear: selectedYear,
-        subjectCode: selectedSubject.code,
-        subjectName: selectedSubject.name,
-        subjectSemester: semester,
-        credits: resolvedCredits,
-        grade,
-        enteredBy: profile.uid,
-        enteredByName: profile.name,
-      });
-    } catch (err: any) {
-      Alert.alert("Couldn't save", err.message ?? "Please try again.");
-    } finally {
-      setSaving((prev) => ({ ...prev, [student.enrollmentNumber]: false }));
-    }
-  };
+  // Wrapped in useCallback (not just a plain function) because a stable
+  // function reference is what actually lets StudentGradeRow's memo()
+  // below do its job — an inline/recreated-every-render function would
+  // make every row's props look "different" every time regardless of
+  // memo, defeating the whole point of memoizing the row.
+  const handleSetGrade = useCallback(
+    async (student: RosterStudent, grade: string) => {
+      if (!profile || !selectedClass || selectedYear === null || !selectedSubject || !semester) return;
+      if (!resolvedCredits) {
+        Alert.alert("Credits needed", "This subject has no credits on file yet — type them in above first.");
+        return;
+      }
+      setDraftGrades((prev) => ({ ...prev, [student.enrollmentNumber]: grade }));
+      setSaving((prev) => ({ ...prev, [student.enrollmentNumber]: true }));
+      try {
+        await setGrade({
+          studentEnrollmentNumber: student.enrollmentNumber,
+          studentName: student.name,
+          studentUid: student.uid ?? null,
+          branch: selectedClass.branch,
+          section: selectedClass.section,
+          admissionYear: selectedYear,
+          subjectCode: selectedSubject.code,
+          subjectName: selectedSubject.name,
+          subjectSemester: semester,
+          credits: resolvedCredits,
+          grade,
+          enteredBy: profile.uid,
+          enteredByName: profile.name,
+        });
+      } catch (err: any) {
+        Alert.alert("Couldn't save", err.message ?? "Please try again.");
+      } finally {
+        setSaving((prev) => ({ ...prev, [student.enrollmentNumber]: false }));
+      }
+    },
+    [profile, selectedClass, selectedYear, selectedSubject, semester, resolvedCredits],
+  );
 
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
@@ -282,37 +332,12 @@ export default function GradeEntryScreen() {
                 keyExtractor={(item) => item.enrollmentNumber}
                 contentContainerStyle={styles.listContent}
                 renderItem={({ item }) => (
-                  <View style={styles.studentRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.studentName}>{item.name}</Text>
-                      <Text style={styles.studentReg}>{item.enrollmentNumber}</Text>
-                    </View>
-                    {saving[item.enrollmentNumber] ? (
-                      <ActivityIndicator color={colors.primary} />
-                    ) : (
-                      <View style={styles.gradeChipRow}>
-                        {GRADES.map((g) => (
-                          <TouchableOpacity
-                            key={g}
-                            style={[
-                              styles.gradeChip,
-                              draftGrades[item.enrollmentNumber] === g && styles.gradeChipActive,
-                            ]}
-                            onPress={() => handleSetGrade(item, g)}
-                          >
-                            <Text
-                              style={[
-                                styles.gradeChipText,
-                                draftGrades[item.enrollmentNumber] === g && styles.gradeChipTextActive,
-                              ]}
-                            >
-                              {g}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
-                  </View>
+                  <StudentGradeRow
+                    item={item}
+                    currentGrade={draftGrades[item.enrollmentNumber]}
+                    isSaving={!!saving[item.enrollmentNumber]}
+                    onSetGrade={handleSetGrade}
+                  />
                 )}
               />
             )}

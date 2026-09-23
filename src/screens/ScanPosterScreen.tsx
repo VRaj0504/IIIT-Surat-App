@@ -113,7 +113,9 @@ export default function ScanPosterScreen() {
         calendarId = defaultCalendar.id;
       } else {
         const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
-        const writable = calendars.find((c: Calendar.Calendar) => c.allowsModifications);
+const writable = calendars.find(
+  (c: Awaited<ReturnType<typeof Calendar.getCalendarsAsync>>[number]) => c.allowsModifications,
+);
         if (!writable) throw new Error("No writable calendar found on this device.");
         calendarId = writable.id;
       }

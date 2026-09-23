@@ -20,6 +20,7 @@ export type Resource = {
   // implicitly is, so those keep reaching everyone exactly as before.
   section?: string | null;
   type: 'Notes' | 'PYQ' | 'Slides';
+  examYear?: number | null;
   fileUrl: string;      // download URL from Firebase Storage
   storagePath: string;
   uploadedBy: string;

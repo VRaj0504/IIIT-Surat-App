@@ -12,6 +12,7 @@ import { subscribeToClubs, subscribeToAllUpcomingEvents, Club, ClubEvent } from 
 import GlassCard from '../components/GlassCard';
 import ClubIconTile from '../components/ClubIconTile';
 import { getClubIcon } from '../data/clubIcons';
+import ScreenHeader from '../components/ScreenHeader';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -63,15 +64,28 @@ export default function ClubsScreen() {
   // moves to FlatList below since it's genuinely unbounded (no `limit()` on
   // the query) and this comes for free; the events list stays as a plain
   // header since a numColumns grid and a card list can't share one FlatList.
+  // Just a taste here — three soonest, no search/filter/grouping — with a
+  // "See all" link through to the full browsable list (EventsScreen). A
+  // long flat list of every upcoming event across every club was crowding
+  // out the actual point of this screen, browsing clubs.
+  const PREVIEW_COUNT = 3;
+
   const EventsSection = (
     <>
-      <Text style={styles.sectionTitle}>Upcoming Events</Text>
+      <View style={styles.sectionHeaderRow}>
+        <Text style={styles.sectionTitle}>Upcoming Events</Text>
+        {events.length > 0 && (
+          <TouchableOpacity onPress={() => navigation.navigate('Events')}>
+            <Text style={styles.seeAllLink}>See all</Text>
+          </TouchableOpacity>
+        )}
+      </View>
       {loadingEvents ? (
         <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.md }} />
       ) : events.length === 0 ? (
         <Text style={styles.emptyText}>No upcoming events yet.</Text>
       ) : (
-        events.map((event) => {
+        events.slice(0, PREVIEW_COUNT).map((event) => {
           const { icon, color } = getClubIcon(event.clubName);
           return (
             <GlassCard key={event.id} style={styles.eventCard}>
@@ -102,14 +116,11 @@ export default function ClubsScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.headerRow}>
-          <Text style={styles.title}>Clubs & Events</Text>
-          {profile?.role === 'faculty' && (
-            <TouchableOpacity style={styles.addBtn} onPress={() => navigation.navigate('CreateClub')}>
-              <Ionicons name="add" size={22} color="#fff" />
-            </TouchableOpacity>
-          )}
-        </View>
+        <ScreenHeader
+          title="Clubs & Events"
+          actionIcon={profile?.role === 'faculty' ? 'add' : undefined}
+          onAction={profile?.role === 'faculty' ? () => navigation.navigate('CreateClub') : undefined}
+        />
 
         <FlatList
           data={loadingClubs ? [] : clubs}
@@ -130,14 +141,10 @@ export default function ClubsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: spacing.md },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
-  title: { ...typography.h1, color: colors.textPrimary },
-  addBtn: {
-    width: 36, height: 36, borderRadius: radius.full,
-    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
-  },
   scrollContent: { paddingBottom: spacing.xl },
-  sectionTitle: { ...typography.h3, color: colors.textPrimary, marginBottom: spacing.sm },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  sectionTitle: { ...typography.h3, color: colors.textPrimary },
+  seeAllLink: { ...typography.caption, color: colors.primary, fontWeight: '600' },
   emptyText: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.md },
   eventCard: { marginBottom: spacing.sm },
   eventCardInner: { flexDirection: 'row', padding: spacing.md },

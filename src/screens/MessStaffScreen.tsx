@@ -1169,9 +1169,9 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     ...typography.body,
     color: colors.textPrimary,
+    ...clayShadowSoft,
     borderWidth: 1,
     borderColor: "rgba(11,61,145,0.12)",
-    ...clayShadowSoft,
   },
   lookupBtn: {
     backgroundColor: colors.primary,

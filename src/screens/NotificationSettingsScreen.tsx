@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Switch, ActivityIndicator, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Switch, ActivityIndicator, ScrollView, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,7 +12,7 @@ import {
 } from "../firebase/notificationPreferences";
 
 type Row = {
-  key: keyof NotificationPreferences;
+  key: Exclude<keyof NotificationPreferences, "classReminderMinutes">;
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   description: string;
@@ -23,7 +23,7 @@ const ROWS: Row[] = [
     key: "classReminders",
     icon: "time-outline",
     title: "Class Reminders",
-    description: "A push 3 minutes before each class, with the subject and room number",
+    description: "A push before each class starts, with the subject and room number",
   },
   {
     key: "notices",
@@ -49,6 +49,14 @@ const ROWS: Row[] = [
     title: "Timetable Updates",
     description: "When your section's timetable is created or corrected",
   },
+
+  {
+  key: "examsAndGrades",
+  icon: "reader-outline",
+  title: "Exams & Grades",
+  description: "When an exam date sheet is published for your semester, or a grade is posted",
+},
+
   {
     key: "clubEvents",
     icon: "flag-outline",
@@ -56,6 +64,11 @@ const ROWS: Row[] = [
     description: "New events posted by any club",
   },
 ];
+
+// Same fixed preset as functions/src/sendClassReminderPush.ts's
+// REMINDER_OFFSETS — the server only ever checks these exact values, so
+// offering anything else here would silently never fire.
+const REMINDER_MINUTES_OPTIONS = [3, 5, 7, 10, 15] as const;
 
 export default function NotificationSettingsScreen() {
   const { user } = useAuth();
@@ -83,6 +96,19 @@ export default function NotificationSettingsScreen() {
     }
   };
 
+  const handleMinutesChange = async (minutes: number) => {
+    if (!user?.uid || !prefs) return;
+    setPrefs({ ...prefs, classReminderMinutes: minutes });
+    setSavingKey("classReminderMinutes");
+    try {
+      await updateNotificationPreference(user.uid, "classReminderMinutes", minutes);
+    } catch (err) {
+      setPrefs((current) => (current ? { ...current, classReminderMinutes: prefs.classReminderMinutes } : current));
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
@@ -96,25 +122,49 @@ export default function NotificationSettingsScreen() {
             <ActivityIndicator style={{ marginTop: spacing.lg }} color={colors.primary} />
           ) : (
             ROWS.map((row) => (
-              <View key={row.key} style={[styles.row, clayShadowSoft]}>
-                <View style={styles.iconWrap}>
-                  <Ionicons name={row.icon} size={22} color={colors.primary} />
+              <React.Fragment key={row.key}>
+                <View style={[styles.row, clayShadowSoft]}>
+                  <View style={styles.iconWrap}>
+                    <Ionicons name={row.icon} size={22} color={colors.primary} />
+                  </View>
+                  <View style={styles.rowText}>
+                    <Text style={styles.rowTitle}>{row.title}</Text>
+                    <Text style={styles.rowDescription}>{row.description}</Text>
+                  </View>
+                  {savingKey === row.key ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : (
+                    <Switch
+                      value={prefs[row.key]}
+                      onValueChange={(value) => handleToggle(row.key, value)}
+                      trackColor={{ false: colors.border, true: colors.primary }}
+                      thumbColor="#fff"
+                    />
+                  )}
                 </View>
-                <View style={styles.rowText}>
-                  <Text style={styles.rowTitle}>{row.title}</Text>
-                  <Text style={styles.rowDescription}>{row.description}</Text>
-                </View>
-                {savingKey === row.key ? (
-                  <ActivityIndicator color={colors.primary} />
-                ) : (
-                  <Switch
-                    value={prefs[row.key]}
-                    onValueChange={(value) => handleToggle(row.key, value)}
-                    trackColor={{ false: colors.border, true: colors.primary }}
-                    thumbColor="#fff"
-                  />
+                {row.key === "classReminders" && prefs.classReminders && (
+                  <View style={styles.minutesRow}>
+                    <Text style={styles.minutesLabel}>Remind me</Text>
+                    <View style={styles.minutesChips}>
+                      {REMINDER_MINUTES_OPTIONS.map((minutes) => {
+                        const selected = prefs.classReminderMinutes === minutes;
+                        return (
+                          <TouchableOpacity
+                            key={minutes}
+                            style={[styles.chip, selected && styles.chipSelected]}
+                            onPress={() => handleMinutesChange(minutes)}
+                            disabled={savingKey === "classReminderMinutes"}
+                          >
+                            <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                              {minutes} min
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
                 )}
-              </View>
+              </React.Fragment>
             ))
           )}
         </ScrollView>
@@ -151,4 +201,22 @@ const styles = StyleSheet.create({
   rowText: { flex: 1, marginRight: spacing.sm },
   rowTitle: { ...typography.h3, color: colors.textPrimary, marginBottom: 2 },
   rowDescription: { ...typography.caption, color: colors.textSecondary },
+  minutesRow: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginTop: -spacing.sm + 2,
+    marginBottom: spacing.md,
+  },
+  minutesLabel: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.xs },
+  minutesChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
+  chip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.full,
+    backgroundColor: "#EAF0FB",
+  },
+  chipSelected: { backgroundColor: colors.primary },
+  chipText: { ...typography.caption, color: colors.textPrimary, fontWeight: "600" },
+  chipTextSelected: { color: "#fff" },
 });

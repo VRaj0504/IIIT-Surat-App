@@ -3,9 +3,10 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Activity
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
+import { colors, spacing, radius, typography } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import LoadingSpinner from "../components/LoadingSpinner";
+import ScreenHeader from "../components/ScreenHeader";
 import {
   subscribeToAnnouncements,
   deleteAnnouncement,
@@ -249,8 +250,12 @@ export default function AnnouncementsScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <Text style={styles.headerTitle}>Announcements</Text>
-        {!isFaculty && <Text style={styles.subtitle}>Quick class updates from faculty</Text>}
+        <View style={styles.headerWrap}>
+          <ScreenHeader
+            title="Announcements"
+            subtitle={!isFaculty ? "Quick class updates from faculty" : undefined}
+          />
+        </View>
 
         {loading ? (
           <LoadingSpinner style={{ marginTop: spacing.xl }} />
@@ -294,12 +299,11 @@ export default function AnnouncementsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  headerTitle: { ...typography.h2, color: colors.textPrimary, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  subtitle: { ...typography.caption, color: colors.textSecondary, paddingHorizontal: spacing.lg, marginTop: 2 },
+  headerWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   emptyContainer: { alignItems: "center", gap: spacing.sm, paddingVertical: spacing.xl },
   emptyText: { ...typography.body, color: colors.textSecondary },
   listContent: { padding: spacing.lg, gap: spacing.md },
-  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md, ...clayShadowSoft },
+  card: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.xs },
   targetPill: { backgroundColor: colors.primary + "20", paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.full },
   targetPillText: { fontSize: 11, fontWeight: "700", color: colors.primary },
@@ -309,7 +313,7 @@ const styles = StyleSheet.create({
   author: { fontSize: 12, color: colors.textSecondary, fontStyle: "italic" },
 
   // Compose form (faculty only)
-  composeCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.lg, ...clayShadowSoft },
+  composeCard: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg },
   composeHeader: { ...typography.h3, color: colors.textPrimary },
   helper: { ...typography.caption, color: colors.textSecondary, marginTop: 4, marginBottom: spacing.sm },
   label: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.md, marginBottom: 4, fontWeight: "600" },
@@ -334,7 +338,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     alignItems: "center",
     marginTop: spacing.lg,
-    ...clayShadowSoft,
   },
   postButtonDisabled: { opacity: 0.6 },
   postButtonText: { color: colors.surface, fontWeight: "700", fontSize: 16 },

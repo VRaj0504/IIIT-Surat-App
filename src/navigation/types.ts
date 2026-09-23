@@ -24,13 +24,16 @@ export type RootStackParamList = {
   MessStaff: undefined;
   ThaliPass: undefined;
   ScanThaliPass: undefined;
-  CGPACalculator: undefined;
+  
   LostFound: undefined;
   PostLostFound: { type?: "lost" | "found" } | undefined;
   ApplyLeave: undefined;
   LeaveRequests: undefined;
+  SubmitComplaint: undefined;
+Complaints: undefined;
   Announcements: undefined;
   Transcript: undefined;
+  ExamSchedule: undefined;
   GradeEntry: undefined;
   ScanPoster: undefined;
   RechargeCheckout: { amount: number };
@@ -44,6 +47,9 @@ export type RootStackParamList = {
   Placement: undefined;
   AcademicCalendar: undefined;
   ClubDetail: { clubId: string; clubName: string };
+  Events: undefined;
+  Counselling: undefined;
+  CounsellingQueue: undefined;
   CreateClub: undefined;
   PostEvent: { clubId: string; clubName: string; editingEvent?: ClubEvent };
   PostNotice:
@@ -51,5 +57,8 @@ export type RootStackParamList = {
   EditProfile: undefined;
   NotificationSettings: undefined;
   HelpSupport: undefined;
+  ImportantContacts: undefined;
+  MyDownloads: undefined;
+  FileViewer: { uri: string; name: string };
   About: undefined;
 };

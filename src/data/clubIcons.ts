@@ -31,6 +31,26 @@ const CLUB_ICON_MAP: Record<string, ClubIconEntry> = {
   'astra astronomy and astrophysics club': { icon: 'planet', color: '#6366F1' },
 
   'indominous club': { icon: 'football', color: '#22A559' },
+
+  inspire: { icon: 'bulb', color: '#F5A623' },
+
+  // Indominous sub-clubs — normalize() strips punctuation, so "Kho-Kho"
+  // becomes "kho kho" (matches the key below).
+  cricket: { icon: 'baseball', color: '#22A559' },
+  volleyball: { icon: 'basketball', color: '#0EA5E9' },
+  kabaddi: { icon: 'body', color: '#E5484D' },
+  football: { icon: 'football', color: '#22A559' },
+  esports: { icon: 'game-controller', color: '#8B5CF6' },
+  'indoor games': { icon: 'trophy', color: '#F97316' },
+  'kho kho': { icon: 'walk', color: '#E5484D' },
+  basketball: { icon: 'basketball', color: '#F5A623' },
+  athletics: { icon: 'medal', color: '#22A559' },
+  badminton: { icon: 'tennisball', color: '#0EA5E9' },
+  pr: { icon: 'megaphone', color: '#8B5CF6' },
+  design: { icon: 'color-palette', color: '#F97316' },
+  content: { icon: 'create', color: '#0EA5E9' },
+  media: { icon: 'videocam', color: '#6366F1' },
+  'girls coordination': { icon: 'people-circle', color: '#EC4899' },
 };
 
 function normalize(name: string): string {

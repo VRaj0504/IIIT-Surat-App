@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Linking,
+  LayoutAnimation,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -15,33 +16,42 @@ import {
   spacing,
   radius,
   typography,
-  clayShadowSoft,
 } from "../theme/theme";
+import ScreenHeader from "../components/ScreenHeader";
 
 const SUPPORT_EMAIL = "rajvaibhav068@gmail.com";
 
 const faqs: { question: string; answer: string }[] = [
-  {
-    question: "I can't log in / it says incorrect email or password.",
-    answer:
-      "Double-check your email is typed exactly as you signed up with, and that Caps Lock isn't on for your password. If you're sure it's right, use \"Forgot password\" on the login screen, or reach out below.",
-  },
-  {
-    question: "Sign up says my enrollment number wasn't found on the roster.",
-    answer:
-      "Your enrollment number needs to already be on the official student roster before you can sign up. If you just joined or think this is a mistake, contact an admin or email support below with your enrollment number.",
-  },
-  {
-    question: "Sign up says my email isn't on the approved faculty list.",
-    answer:
-      "Faculty accounts are gated the same way — your email needs to be pre-approved by an admin. Email support below to get added.",
-  },
-  {
-    question: "I uploaded a resource/notice and it disappeared or failed.",
-    answer:
-      "This usually means a permissions issue on our end, not something you did wrong. Screenshot the error if you can and send it over — it helps us fix it faster.",
-  },
+  
 ];
+
+// Was a flat list of question+answer pairs, all expanded all the time —
+// four answers' worth of text always on screen whether or not anyone
+// wanted to read them. An accordion (tap a question, only that one
+// answer expands) is the standard, expected shape for an FAQ section:
+// scan the questions first, open only the one that's actually relevant.
+function FaqItem({ item }: { item: { question: string; answer: string } }) {
+  const [open, setOpen] = useState(false);
+
+  const toggle = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setOpen((v) => !v);
+  };
+
+  return (
+    <TouchableOpacity style={styles.faqCard} onPress={toggle} activeOpacity={0.7}>
+      <View style={styles.faqQuestionRow}>
+        <Text style={styles.faqQuestion}>{item.question}</Text>
+        <Ionicons
+          name={open ? "chevron-up" : "chevron-down"}
+          size={18}
+          color={colors.textSecondary}
+        />
+      </View>
+      {open && <Text style={styles.faqAnswer}>{item.answer}</Text>}
+    </TouchableOpacity>
+  );
+}
 
 export default function HelpSupportScreen() {
   const openMail = (subject: string) => {
@@ -57,10 +67,10 @@ export default function HelpSupportScreen() {
     >
       <SafeAreaView style={styles.container} edges={["top"]}>
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.title}>Help & Support</Text>
-          <Text style={styles.subtitle}>
-            Stuck on something, or found a bug? Reach out directly.
-          </Text>
+          <ScreenHeader
+            title="Help & Support"
+            subtitle="Stuck on something, or found a bug? Reach out directly."
+          />
 
           <TouchableOpacity
             style={styles.primaryBtn}
@@ -80,10 +90,7 @@ export default function HelpSupportScreen() {
 
           <Text style={styles.sectionTitle}>Frequently Asked</Text>
           {faqs.map((item, i) => (
-            <View key={i} style={styles.faqCard}>
-              <Text style={styles.faqQuestion}>{item.question}</Text>
-              <Text style={styles.faqAnswer}>{item.answer}</Text>
-            </View>
+            <FaqItem key={i} item={item} />
           ))}
         </ScrollView>
       </SafeAreaView>
@@ -94,13 +101,6 @@ export default function HelpSupportScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: spacing.lg, paddingBottom: spacing.xl },
-  title: { ...typography.h1, color: colors.textPrimary },
-  subtitle: {
-    ...typography.body,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-    marginBottom: spacing.lg,
-  },
   primaryBtn: {
     flexDirection: "row",
     gap: spacing.sm,
@@ -132,19 +132,27 @@ const styles = StyleSheet.create({
   faqCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     padding: spacing.md,
     marginBottom: spacing.sm,
-    ...clayShadowSoft,
+  },
+  faqQuestionRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: spacing.sm,
   },
   faqQuestion: {
     ...typography.body,
     color: colors.textPrimary,
     fontWeight: "600",
-    marginBottom: spacing.xs,
+    flex: 1,
   },
   faqAnswer: {
     ...typography.caption,
     color: colors.textSecondary,
     lineHeight: 18,
+    marginTop: spacing.sm,
   },
 });

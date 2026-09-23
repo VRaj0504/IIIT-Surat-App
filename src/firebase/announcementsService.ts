@@ -4,6 +4,7 @@ import {
   doc,
   deleteDoc,
   query,
+  where,
   orderBy,
   onSnapshot,
   serverTimestamp,
@@ -169,14 +170,24 @@ export function subscribeToAnnouncements(
   onUpdate: (items: Announcement[]) => void,
   viewer: { branch?: string; section?: string; admissionYear?: number; specialization?: string } | null,
 ): () => void {
-  const q = query(collection(db, COLLECTION), orderBy("createdAt", "desc"));
+  // Enforced here, not just in the .filter() below — without this, the
+  // query synced (and kept live-updating) EVERY announcement ever
+  // created, for every connected student, forever; the client-side age
+  // filter only decided what got shown afterward, not what got
+  // downloaded. A quick class announcement is only ever relevant for a
+  // few days, so there's no reason this collection's whole multi-year
+  // history should ride along on every phone's connection.
+  const cutoffTimestamp = Timestamp.fromMillis(Date.now() - MAX_AGE_MS);
+  const q = query(
+    collection(db, COLLECTION),
+    where("createdAt", ">=", cutoffTimestamp),
+    orderBy("createdAt", "desc"),
+  );
   return onSnapshot(
     q,
     (snapshot) => {
-      const cutoff = Date.now() - MAX_AGE_MS;
       const items: Announcement[] = snapshot.docs
         .map((d) => ({ id: d.id, ...(d.data() as Omit<Announcement, "id">) }))
-        .filter((a) => !a.createdAt || a.createdAt.toMillis() >= cutoff)
         .filter((a) => {
           if (viewer === null) return true; // faculty/admin see all
           if (a.targetBranch && a.targetBranch !== viewer.branch) return false;

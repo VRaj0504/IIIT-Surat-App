@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, memo } from "react";
+import React, { useState, useEffect, useCallback, useRef, memo } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   Image,
   Linking,
   Alert,
+  AppState,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -38,24 +40,45 @@ const categoryColors: Record<string, string> = {
   Other: colors.textSecondary,
 };
 
+// Relative rather than absolute ("2h ago" instead of a full timestamp) —
+// what someone actually wants to know at a glance is roughly how stale a
+// posting is, not the exact minute it went up.
+function timeAgo(timestamp: { toMillis: () => number } | null): string {
+  if (!timestamp) return "";
+  const diffMs = Date.now() - timestamp.toMillis();
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  return `${weeks}w ago`;
+}
+
 const ItemCard = memo(function ItemCard({
   item,
   isOwner,
   onContact,
   onResolve,
   onDelete,
+  onViewPhoto,
 }: {
   item: LostFoundItem;
   isOwner: boolean;
   onContact: (item: LostFoundItem, method: "email" | "call" | "whatsapp") => void;
   onResolve: (item: LostFoundItem) => void;
   onDelete: (item: LostFoundItem) => void;
+  onViewPhoto: (url: string) => void;
 }) {
   const tint = categoryColors[item.category] ?? colors.textSecondary;
   return (
     <View style={[styles.card, item.status === "resolved" && styles.cardResolved]}>
       {item.photoUrl ? (
-        <Image source={{ uri: item.photoUrl }} style={styles.photo} />
+        <TouchableOpacity onPress={() => onViewPhoto(item.photoUrl!)}>
+          <Image source={{ uri: item.photoUrl }} style={styles.photo} />
+        </TouchableOpacity>
       ) : (
         <View style={[styles.photo, styles.photoPlaceholder]}>
           <Ionicons name="image-outline" size={22} color={colors.textSecondary} />
@@ -76,7 +99,10 @@ const ItemCard = memo(function ItemCard({
         {item.description ? (
           <Text style={styles.description} numberOfLines={2}>{item.description}</Text>
         ) : null}
-        <Text style={styles.poster}>Posted by {item.postedByName}</Text>
+        <View style={styles.posterRow}>
+          <Text style={styles.poster}>Posted by {item.postedByName}</Text>
+          {item.createdAt && <Text style={styles.postedTime}>· {timeAgo(item.createdAt)}</Text>}
+        </View>
 
         {item.status === "open" && (
           <View style={styles.actionRow}>
@@ -130,13 +156,11 @@ export default function LostFoundScreen() {
   const [type, setType] = useState<LostFoundType>("lost");
   const [items, setItems] = useState<LostFoundItem[]>([]);
   const [loading, setLoading] = useState(true);
-  // Resolved items are hidden from the default feed — an item marked
-  // resolved is done, and leaving it in the main list just adds clutter
-  // for something nobody needs to act on anymore. This toggle is an
-  // escape hatch for a poster wanting to confirm they did mark
-  // something resolved, not the default browsing experience.
-  const [showResolved, setShowResolved] = useState(false);
-  const visibleItems = items.filter((item) => showResolved || item.status !== "resolved");
+  // Resolved items are excluded at the query level (subscribeToLostFoundItems
+  // only fetches status "open") — nobody, including the original poster, can
+  // browse a history of resolved posts anymore.
+  const visibleItems = items;
+  const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -152,6 +176,47 @@ export default function LostFoundScreen() {
   // this specific college app, so that's the one assumption made here.
   // A number already starting with a country code (11+ digits, or
   // already has a + typed) is left as-is.
+  // mailto:/wa.me links only HAND OFF to the Mail/WhatsApp app — there's no
+  // signal back to a React Native app for "the user actually pressed Send"
+  // versus "they backed out without sending" (that decision happens fully
+  // inside the other app). The nearest real proxy is: wait until they
+  // return to this app, then ask. This deliberately does NOT cover "call",
+  // since a phone call has no equivalent "did you actually send it" step.
+  const pendingContactRef = useRef<{
+    itemId: string;
+    itemTitle: string;
+    posterUid: string;
+    contactedByUid: string;
+    contactedByName: string;
+    method: "email" | "whatsapp";
+  } | null>(null);
+  const appStateRef = useRef(AppState.currentState);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      const cameToForeground =
+        appStateRef.current.match(/inactive|background/) && nextState === "active";
+      appStateRef.current = nextState;
+      if (!cameToForeground) return;
+
+      const pending = pendingContactRef.current;
+      if (!pending) return;
+      pendingContactRef.current = null;
+
+      const label = pending.method === "email" ? "email" : "WhatsApp message";
+      Alert.alert(`Did you send that ${label}?`, "We'll only notify them once you've actually sent it.", [
+        { text: "No, I didn't send it", style: "cancel" },
+        {
+          text: "Yes, sent it",
+          onPress: () => {
+            notifyLostFoundContact(pending).catch(() => {});
+          },
+        },
+      ]);
+    });
+    return () => subscription.remove();
+  }, []);
+
   const toWhatsAppNumber = (phone: string): string => {
     const digits = phone.replace(/[^\d]/g, "");
     return digits.length === 10 ? `91${digits}` : digits;
@@ -174,10 +239,11 @@ export default function LostFoundScreen() {
         });
       }
 
-      // Fire-and-forget — never blocks the actual contact action above,
-      // and a failure here (e.g. offline) is silently swallowed since the
-      // person already got what they came for (email/call/WhatsApp opened).
-      if (profile) {
+      if (!profile) return;
+
+      if (method === "call") {
+        // Dialing already happened by the time openURL resolves — same
+        // fire-and-forget notify as before, no "did you send it" step.
         notifyLostFoundContact({
           itemId: item.id,
           itemTitle: item.title,
@@ -186,7 +252,20 @@ export default function LostFoundScreen() {
           contactedByName: profile.name,
           method,
         }).catch(() => {});
+        return;
       }
+
+      // email / whatsapp: hold off notifying until they're back in this
+      // app and have confirmed they actually sent it (see the AppState
+      // listener above).
+      pendingContactRef.current = {
+        itemId: item.id,
+        itemTitle: item.title,
+        posterUid: item.postedBy,
+        contactedByUid: profile.uid,
+        contactedByName: profile.name,
+        method,
+      };
     },
     [profile],
   );
@@ -257,18 +336,6 @@ export default function LostFoundScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          onPress={() => setShowResolved((v) => !v)}
-          style={styles.showResolvedRow}
-        >
-          <Ionicons
-            name={showResolved ? "checkbox-outline" : "square-outline"}
-            size={16}
-            color={colors.textSecondary}
-          />
-          <Text style={styles.showResolvedText}>Show resolved items</Text>
-        </TouchableOpacity>
-
         {loading ? (
           <View style={styles.loadingContainer}>
             <LoadingSpinner />
@@ -292,10 +359,39 @@ export default function LostFoundScreen() {
                 onContact={handleContact}
                 onResolve={handleResolve}
                 onDelete={handleDelete}
+                onViewPhoto={setViewingPhoto}
               />
             )}
           />
         )}
+
+        <Modal
+          visible={!!viewingPhoto}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setViewingPhoto(null)}
+        >
+          <TouchableOpacity
+            style={styles.photoViewerOverlay}
+            activeOpacity={1}
+            onPress={() => setViewingPhoto(null)}
+          >
+            {viewingPhoto && (
+              <Image
+                source={{ uri: viewingPhoto }}
+                style={styles.photoViewerImage}
+                resizeMode="contain"
+              />
+            )}
+            <TouchableOpacity
+              style={styles.photoViewerClose}
+              onPress={() => setViewingPhoto(null)}
+              hitSlop={12}
+            >
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -369,7 +465,22 @@ const styles = StyleSheet.create({
   resolvedPillText: { fontSize: 11, fontWeight: "600", color: colors.success },
   category: { fontSize: 12, fontWeight: "600" },
   description: { ...typography.caption, color: colors.textSecondary },
-  poster: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  posterRow: { flexDirection: "row", alignItems: "baseline", gap: 4, marginTop: 2 },
+  poster: { fontSize: 11, color: colors.textSecondary },
+  postedTime: { fontSize: 11, color: colors.textSecondary },
+  photoViewerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.9)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  photoViewerImage: { width: "100%", height: "80%" },
+  photoViewerClose: {
+    position: "absolute",
+    top: 48,
+    right: 20,
+    padding: spacing.sm,
+  },
   actionRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.xs },
   contactIconButton: {
     width: 30,

@@ -2,9 +2,29 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Checks the {role} custom claim first (free — it's already on the
+    // request, no extra document read) before falling back to the
+    // original get()-based check. The claim is kept in step going
+    // forward by syncRoleClaim (a Cloud Function trigger on every
+    // users/{uid} write) and, for accounts that existed before that
+    // function was deployed, by the one-time backfillRoleClaims
+    // callable — but any account whose token hasn't picked up the
+    // claim yet (issued before a claim was set, or before the backfill
+    // ran; a token only refreshes on a fresh sign-in or its normal
+    // ~1 hour expiry) still passes correctly via the fallback below,
+    // so this can never lock anyone out mid-rollout. Once every
+    // account has a fresh token, the fallback simply never runs —
+    // safe to remove later, never required to.
     function isAdmin() {
       return request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        (request.auth.token.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+
+    function isFaculty() {
+      return request.auth != null &&
+        (request.auth.token.role == 'faculty' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
     }
     
     // One doc per enrollment number ever claimed by a student account, id
@@ -80,6 +100,45 @@ service cloud.firestore {
     // coordinators.js). Read needs to stay broad since any signed-in
     // student's own client checks their own email against this list to
     // decide whether to show the Submit Event Excusal screen at all.
+    // Counsellor allowlist — keyed by lowercased email AS THE DOC ID
+    // ITSELF (unlike eventCoordinators/tnpCoordinators above, which use
+    // a random ID), specifically so isCounsellor() below can check
+    // membership with one exists() call instead of a query. Same
+    // admin-managed, write-only-via-Admin-SDK pattern as those two
+    // (scripts/seed-counsellors.js). Read is broad because the client
+    // needs it to decide whether to show the counselling queue screen
+    // at all, and a counsellor's name/email isn't sensitive on its own
+    // — it's the REQUESTS below that need real protection.
+    match /counsellors/{email} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // Private counselling/wellness requests. Deliberately NOT visible
+    // to isFaculty() the way complaints/doubts are — only the specific
+    // counsellor allowlist above, the student who wrote it, and admin.
+    // A student can create and read their own; nobody but a counsellor
+    // or admin can update one (no self-edit after submission — if
+    // something changes, they send a new message). Never deletable by
+    // anyone but admin, so a closed request stays as a record.
+    function isCounsellor() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/counsellors/$(request.auth.token.email.lower()));
+    }
+
+    match /counsellingRequests/{requestId} {
+      allow read: if isAdmin() || isCounsellor() ||
+        (request.auth != null && resource.data.studentUid == request.auth.uid);
+      allow create: if request.auth != null &&
+        request.resource.data.studentUid == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.urgent is bool &&
+        request.resource.data.message is string &&
+        request.resource.data.message.size() > 0;
+      allow update: if isAdmin() || isCounsellor();
+      allow delete: if isAdmin();
+    }
+
     match /eventCoordinators/{docId} {
       allow read: if request.auth != null;
       allow write: if false;
@@ -262,9 +321,21 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    function isFaculty() {
-      return request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty';
+    // One doc per branch+semester+exam type (docId e.g. "CSE-3-midsem"),
+    // written by the faculty web portal's Exam Schedule tab and read by
+    // the student app's ExamScheduleScreen. Faculty can also delete one
+    // (a date sheet published under the wrong semester has to be
+    // removable without an admin).
+    match /examSchedules/{docId} {
+      allow read: if request.auth != null;
+      allow create, update: if (isAdmin() || isFaculty()) &&
+        request.resource.data.branch is string &&
+        request.resource.data.semester is number &&
+        request.resource.data.examType is string &&
+        request.resource.data.entries is list &&
+        request.resource.data.entries.size() > 0 &&
+        request.resource.data.entries.size() <= 60;
+      allow delete: if isAdmin() || isFaculty();
     }
 
     // Mess counter menu (thali/snacks/beverages + price). Faculty stand in
@@ -520,7 +591,51 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Per-item, per-order star rating + optional comment, submitted by the
+    // Unlike leaveApplications, a complaint isn't addressed to one
+    // specific person — it's a general channel to admin/faculty as a
+    // whole (facilities, harassment, academic issues, ...), so read/
+    // resolve access is any faculty or admin, not matched against a
+    // single facultyEmail field.
+    match /complaints/{complaintId} {
+      // Three ways in: it's yours, you're admin, or it's addressed to you
+      // by name (facultyEmail matches your own sign-in email) — OR it has
+      // no addressee at all (the original "general channel", still true
+      // for every complaint/doubt filed before targeting existed, via the
+      // .get() default below) and you're any faculty member. A complaint
+      // aimed at one specific faculty member is NOT visible to every
+      // other faculty account — that's the whole point of picking someone.
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.studentUid == request.auth.uid) ||
+        (isFaculty() && resource.data.get('facultyEmail', null) == null) ||
+        (request.auth != null && resource.data.get('facultyEmail', null) == request.auth.token.email.lower());
+      allow create: if request.auth != null &&
+        request.resource.data.studentUid == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.type in ['complaint', 'doubt'] &&
+        request.resource.data.category in
+          ['Facilities', 'Harassment', 'Academic', 'Other', 'Coursework', 'Exam'] &&
+        (request.resource.data.facultyEmail is string || request.resource.data.facultyEmail == null) &&
+        request.resource.data.subject is string &&
+        request.resource.data.subject.size() > 0 &&
+        request.resource.data.description is string &&
+        request.resource.data.description.size() > 0;
+      allow update: if isAdmin() || (
+        request.auth != null &&
+        resource.data.status == 'pending' &&
+        (
+          (isFaculty() && resource.data.get('facultyEmail', null) == null) ||
+          resource.data.get('facultyEmail', null) == request.auth.token.email.lower()
+        ) &&
+        request.resource.data.status in ['resolved', 'rejected'] &&
+        request.resource.data.studentUid == resource.data.studentUid &&
+        request.resource.data.get('type', 'complaint') == resource.data.get('type', 'complaint') &&
+        request.resource.data.category == resource.data.category &&
+        request.resource.data.subject == resource.data.subject &&
+        request.resource.data.description == resource.data.description &&
+        request.resource.data.resolvedBy == request.auth.uid
+      );
+      allow delete: if isAdmin();
+    }
     // student once their order is served. Doc id is deterministic
     // (`${orderId}_${itemId}`) so a resubmission overwrites their own
     // rating rather than spamming duplicates — enforced here by requiring

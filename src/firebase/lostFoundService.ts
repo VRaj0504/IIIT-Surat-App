@@ -35,16 +35,9 @@ export type LostFoundItem = {
   storagePath: string | null;
   postedBy: string;
   postedByName: string;
-  // Contact is the poster's own institute email, not a manually-typed phone
-  // number — it's already verified (signup is gated to @iiitsurat.ac.in,
-  // see AuthContext.ts) and doesn't add a new place to store personal phone
-  // numbers just for this one feature.
+  
   postedByEmail: string;
-  // Denormalized from the poster's profile.phone at post time — null if
-  // they never set one. Powers the Call/WhatsApp buttons alongside Email;
-  // a poster who adds a phone number later won't retroactively show it on
-  // already-posted items, same tradeoff every other denormalized "posted
-  // by" field here already accepts.
+  
   postedByPhone: string | null;
   status: "open" | "resolved";
   createdAt: Timestamp | null;
@@ -71,14 +64,7 @@ export async function postLostFoundItem(params: {
   let storagePath: string | null = null;
 
   if (params.localPhotoUri) {
-    // fetch(uri).blob() directly, NOT .arrayBuffer() — Firebase's SDK
-    // internally tries to wrap an ArrayBuffer into a Blob before
-    // uploading, and React Native's Blob implementation can't construct
-    // one from a raw ArrayBuffer (throws exactly the "Creating blobs
-    // from 'ArrayBuffer'... not supported" error). Getting a real Blob
-    // straight from the fetch response sidesteps that internal step
-    // entirely — this works fine on RN even though the ArrayBuffer path
-    // would look identical and work fine on web.
+    
     const fileResponse = await fetch(params.localPhotoUri);
     const fileBlob = await fileResponse.blob();
     storagePath = `lostFound/${params.postedBy}/${Date.now()}.jpg`;
@@ -117,6 +103,7 @@ export function subscribeToLostFoundItems(
   const q = query(
     collection(db, COLLECTION),
     where("type", "==", type),
+    where("status", "==", "open"),
     orderBy("createdAt", "desc"),
   );
   return onSnapshot(
@@ -157,13 +144,7 @@ export async function deleteLostFoundItem(item: LostFoundItem): Promise<void> {
   await deleteDoc(doc(db, COLLECTION, item.id));
 }
 
-// Fired whenever someone taps Email/Call/WhatsApp on a post — writes a
-// small record that a Cloud Function (sendLostFoundContactPush) picks up
-// to push-notify the poster immediately, instead of them having to
-// notice a new email. Also doubles as a light audit trail of who
-// contacted whom, which costs nothing extra since it's already being
-// written. Fire-and-forget from the caller's perspective — a failure
-// here should never block the actual mailto/tel/wa.me action opening.
+
 export async function notifyLostFoundContact(params: {
   itemId: string;
   itemTitle: string;

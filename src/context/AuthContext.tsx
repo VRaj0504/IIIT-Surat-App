@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import { Platform } from 'react-native';
 
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithCredential,
+  signInWithPopup,
   GoogleAuthProvider,
   signOut,
   deleteUser,
@@ -83,6 +85,10 @@ export type UserProfile = {
   officeLocation?: string;
   officeHours?: string;
   phone?: string;
+  // Also faculty-only, self-filled, shown in FacultyDirectoryScreen as a
+  // brief "what and how many" summary — never a full publication list.
+  researchAreas?: string;
+  publicationsCount?: number | null;
   // Set only via the allowlist at signup (see scripts/seed-allowlist.js),
   // never self-edited — a role-based address like hod.cse@iiitsurat.ac.in
   // that stays valid across whoever currently holds that position.
@@ -107,16 +113,31 @@ type AuthContextValue = {
   updateProfileName: (name: string) => Promise<void>;
   // Faculty-only fields (see UserProfile) — a partial update, so callers
   // only send what changed rather than the whole profile every time.
+  // researchAreas/publicationsCount show up in Faculty Directory as a
+  // brief "what and how many" summary, not a full publication list —
+  // faculty type it in themselves here, same self-service way as their
+  // office hours/location, rather than needing an admin to seed it.
   updateFacultyDetails: (details: {
     department?: string;
     designation?: string;
     officeLocation?: string;
     officeHours?: string;
     phone?: string;
+    researchAreas?: string;
+    publicationsCount?: number | null;
   }) => Promise<void>;
   updatePhone: (phone: string) => Promise<void>;
   updatePhoto: (photoUrl: string) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
+  // Dev-only convenience — lets ONE specific account preview the
+  // other role's screens without actually changing anything in
+  // Firestore (so security rules, data ownership, everything else
+  // stays exactly correct for the account's real role). Deliberately
+  // NOT a real feature: setPreviewRole silently no-ops for anyone
+  // whose email doesn't match DEV_PREVIEW_EMAIL below, so this can't
+  // be used to grant faculty-view access to a real student account.
+  previewRole: Role | null;
+  setPreviewRole: (role: Role | null) => void;
 };
 
 // Firestore's own errors are written for developers, not for someone
@@ -251,12 +272,25 @@ async function createUserProfileAtomically(uid: string, profile: UserProfile): P
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+// See previewRole's comment on AuthContextValue above — this is the one
+// account allowed to use it.
+const DEV_PREVIEW_EMAIL = 'ug25cse114@iiitsurat.ac.in';
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [previewRole, setPreviewRoleState] = useState<Role | null>(null);
   const justSignedUpRef = React.useRef(false);
+
+  const setPreviewRole = useCallback(
+    (role: Role | null) => {
+      if (profile?.email !== DEV_PREVIEW_EMAIL) return; // silently ignored for everyone else
+      setPreviewRoleState(role);
+    },
+    [profile?.email],
+  );
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -357,12 +391,68 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await signInWithEmailAndPassword(auth, email, password);
   }, []);
 
+  // Shared by both the native and web sign-in paths below — the actual
+  // security-relevant check (institute domain only) has to be identical
+  // either way, so it isn't duplicated per-platform where the two copies
+  // could quietly drift apart.
+  //
+  // Deleting the Firebase Auth user alone isn't enough here. Both Google's
+  // native SDK and a browser's Google session cache "the last account this
+  // app/site used" and can silently reuse it on the NEXT sign-in attempt —
+  // either skipping the account picker entirely, or re-showing it with the
+  // same wrong account pre-selected. A student who accidentally signs in
+  // with a personal Gmail, gets rejected, then tries again meaning to pick
+  // their college account, can end up hitting the exact same wrong account
+  // again without realizing it — which looks exactly like "I can't sign in
+  // with my college email at all". Explicitly clearing that cached session
+  // here (not just on a normal logOut) is what actually fixes it: the next
+  // attempt is guaranteed to show a real account chooser.
+  const enforceAllowedDomainOrCleanUp = useCallback(async (user: User) => {
+    const normalizedEmail = (user.email ?? '').trim().toLowerCase();
+    if (!isAllowedEmailDomain(normalizedEmail)) {
+      // Wrong-domain Google account — this Firebase Auth user is brand new
+      // and useless without a profile, so remove it rather than leaving an
+      // orphaned account behind.
+      await deleteUser(user).catch(() => signOut(auth).catch(() => {}));
+      if (Platform.OS !== 'web' && googleSignInAvailable) {
+        await GoogleSignin.signOut().catch(() => {});
+      }
+      throw new Error(`Please sign in with your institute Google account (${ALLOWED_EMAIL_DOMAIN}).`);
+    }
+  }, []);
+
+  // Forces Google's account chooser to actually appear every time, rather
+  // than silently reusing whatever Google account the browser/device last
+  // used for this app — without this, picking a different account (e.g.
+  // after accidentally choosing a personal Gmail) isn't guaranteed to even
+  // show a picker at all, native or web.
+  function newGoogleProviderForcingAccountChooser(): GoogleAuthProvider {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    return provider;
+  }
+
   // Kicks off the native Google account picker, then exchanges the Google
   // idToken for a Firebase credential. Domain gating happens here (same
   // @iiitsurat.ac.in restriction as email signup); role/enrollment gating
   // (allowlist/roster) happens afterwards in completeGoogleProfile, once we
   // know whether this is a brand-new sign-in or a returning user.
+  //
+  // Web is a genuinely different flow, not a variant of the native one:
+  // @react-native-google-signin/google-signin's own web implementation is
+  // a paywalled stub ("Web support is only available to sponsors") that
+  // throws on every method — googleSignInAvailable is misleadingly true on
+  // web (require() doesn't throw there, since the module resolves to that
+  // stub instead of a missing native binding), so without this branch a
+  // web user would tap the button and hit that raw library error. Firebase
+  // Auth's own signInWithPopup needs no extra library at all and reaches
+  // the exact same institute Google accounts.
   const signInWithGoogle: AuthContextValue['signInWithGoogle'] = useCallback(async () => {
+    if (Platform.OS === 'web') {
+      const userCredential = await signInWithPopup(auth, newGoogleProviderForcingAccountChooser());
+      await enforceAllowedDomainOrCleanUp(userCredential.user);
+      return;
+    }
     if (!googleSignInAvailable) {
       throw new Error(
         'Google Sign-In needs a dev build — it isn\'t available in Expo Go. Use email/password to sign in here, or run a dev client build to test this.'
@@ -380,20 +470,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const credential = GoogleAuthProvider.credential(idToken);
     const userCredential = await signInWithCredential(auth, credential);
-    const normalizedEmail = (userCredential.user.email ?? '').trim().toLowerCase();
-
-    if (!isAllowedEmailDomain(normalizedEmail)) {
-      // Wrong-domain Google account — this Firebase Auth user is brand new
-      // and useless without a profile, so remove it rather than leaving an
-      // orphaned account behind.
-      await deleteUser(userCredential.user).catch(() => signOut(auth).catch(() => {}));
-      throw new Error(`Please sign in with your institute Google account (${ALLOWED_EMAIL_DOMAIN}).`);
-    }
+    await enforceAllowedDomainOrCleanUp(userCredential.user);
     // If a profile doc already exists, onAuthStateChanged's listener will
     // pick it up normally. If not, we leave the user signed in with
     // profile === null — the Gate component shows the complete-profile
     // screen, and completeGoogleProfile finishes setup from there.
-  }, []);
+  }, [enforceAllowedDomainOrCleanUp]);
 
   // Called from the complete-profile screen after a first-time Google
   // sign-in, once the person has picked a role (and, for students, entered
@@ -430,10 +512,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await clearPushToken(user.uid);
     }
     await signOut(auth);
+    setPreviewRoleState(null);
     // Best-effort — clears Google's local session so the next sign-in shows
     // the account picker again instead of silently reusing the last account.
     // Harmless no-op for users who never signed in with Google.
-    if (googleSignInAvailable) {
+    if (Platform.OS !== 'web' && googleSignInAvailable) {
       await GoogleSignin.signOut().catch(() => {});
     }
   }, [user]);
@@ -453,12 +536,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updateFacultyDetails: AuthContextValue['updateFacultyDetails'] = useCallback(async (details) => {
     if (!user) throw new Error('You must be signed in.');
-    // Trim every field that was actually passed; leave anything not
-    // included in `details` untouched on both Firestore and local state.
-    const patch: Record<string, string> = {};
+    // Trim every string field that was actually passed; leave anything
+    // not included in `details` untouched on both Firestore and local
+    // state. publicationsCount is numeric, not a string, so it's
+    // written as-is (or null to clear it) rather than trimmed.
+    const patch: Record<string, string | number | null> = {};
     (Object.keys(details) as (keyof typeof details)[]).forEach((key) => {
       const value = details[key];
-      if (value !== undefined) patch[key] = value.trim();
+      if (value === undefined) return;
+      patch[key] = key === 'publicationsCount' ? (value as number | null) : (value as string).trim();
     });
     await updateDoc(doc(db, 'users', user.uid), patch);
     setProfile((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -505,6 +591,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updatePhone,
       updatePhoto,
       sendPasswordReset,
+      previewRole,
+      setPreviewRole,
     }),
     [
       user,
@@ -521,6 +609,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updatePhone,
       updatePhoto,
       sendPasswordReset,
+      previewRole,
+      setPreviewRole,
     ],
   );
 

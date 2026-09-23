@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Switch } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -37,6 +37,11 @@ const menuItems: {
     icon: "help-circle-outline",
     route: "HelpSupport",
   },
+  {
+    label: "Important Contacts",
+    icon: "call-outline",
+    route: "ImportantContacts",
+  },
   { label: "About", icon: "information-circle-outline", route: "About" },
 ];
 
@@ -51,7 +56,7 @@ function initialsOf(name: string): string {
 }
 
 export default function ProfileScreen() {
-  const { profile, logOut } = useAuth();
+  const { profile, logOut, previewRole, setPreviewRole } = useAuth();
   const navigation = useNavigation<NavProp>();
 
   const handleLogout = () => {
@@ -78,7 +83,8 @@ export default function ProfileScreen() {
             {profile?.role === "faculty"
               ? "Faculty"
               : (profile?.enrollmentNumber ?? "")}
-            {profile?.role === "student" ? " · CSE" : ""}
+            
+            {profile?.role === "student" && profile?.branch ? ` · ${profile.branch}` : ""}
           </Text>
         </View>
 
@@ -106,12 +112,30 @@ export default function ProfileScreen() {
           ))}
         </View>
 
+        {/* Dev-only convenience for previewing the faculty screens
+            without actually changing your real role in Firestore —
+            setPreviewRole silently no-ops for any other account, so
+            this row is harmless even if it somehow rendered for
+            someone else. Your real role stays "student" the whole
+            time; this only changes which UI branch screens render. */}
+        {profile?.email === 'ug25cse114@iiitsurat.ac.in' && (
+          <View style={[styles.menuItem, styles.devToggleRow]}>
+            <Ionicons name="flask-outline" size={20} color={colors.primary} style={styles.menuIcon} />
+            <Text style={styles.menuLabel}>Preview as Faculty</Text>
+            <Switch
+              value={previewRole === 'faculty'}
+              onValueChange={(value) => setPreviewRole(value ? 'faculty' : null)}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor="#fff"
+            />
+          </View>
+        )}
+
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={20} color={colors.danger} />
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
 
-        <Text style={styles.credit}>Made with 🛠️ by Vaibhav Raj</Text>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -152,6 +176,13 @@ const styles = StyleSheet.create({
   },
   menuIcon: { marginRight: spacing.md },
   menuLabel: { flex: 1, ...typography.body, color: colors.textPrimary },
+  devToggleRow: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderBottomWidth: 0,
+    marginTop: spacing.md,
+    ...clayShadowSoft,
+  },
   logoutBtn: {
     flexDirection: "row",
     alignItems: "center",

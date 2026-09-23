@@ -20,42 +20,42 @@ const coordinators = [
 name: "Ankit Kumar",
 role: "Placement Coordinator",
 branch: "ECE",
-yearLabel: "3rd Year",
+yearLabel: "4th Year",
 email: "ankitkumar@iiitsurat.ac.in",
 },
 {
 name: "Darshan Dixit",
 role: "Placement Coordinator",
 branch: "CSE",
-yearLabel: "3rd Year",
+yearLabel: "4th Year",
 email: "darshandixit@iiitsurat.ac.in",
 },
 {
 name: "Meet Parmar",
 role: "Placement Coordinator",
 branch: "CSE",
-yearLabel: "3rd Year",
+yearLabel: "4th Year",
 email: "meetparmar@iiitsurat.ac.in",
 },
 {
 name: "Sakhee Mate",
 role: "Placement Coordinator",
 branch: "CSE",
-yearLabel: "3rd Year",
+yearLabel: "4th Year",
 email: "sakheemate@iiitsurat.ac.in",
 },
 {
 name: "Sparsh Saxena",
 role: "Placement Coordinator",
 branch: "ECE",
-yearLabel: "3rd Year",
+yearLabel: "4th Year",
 email: "sparshsaxena@iiitsurat.ac.in",
 },
 {
 name: "Tanmay Jain",
 role: "Placement Coordinator",
 branch: "ECE",
-yearLabel: "3rd Year",
+yearLabel: "4th Year",
 email: "tanmayjain@iiitsurat.ac.in",
 },
 
@@ -63,6 +63,29 @@ email: "tanmayjain@iiitsurat.ac.in",
   name : " Akshhita Shukla",
   role : "Junior Coordinator",
   branch : "CSE",
+  yearLabel : "3rd Year",
+ 
+},
+
+{
+  name : " Kinnari Dodiya",
+  role : "Junior Coordinator",
+  branch : "ECE",
+  yearLabel : "3rd Year",
+ 
+},
+{
+  name : " Purva Gala",
+  role : "Junior Coordinator",
+  branch : "CSE",
+  yearLabel : "3rd Year",
+ 
+},
+
+{
+  name : " Vibhor Jain",
+  role : "Junior Coordinator",
+  branch : "ECE",
   yearLabel : "3rd Year",
  
 }

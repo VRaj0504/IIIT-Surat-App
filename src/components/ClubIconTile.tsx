@@ -34,6 +34,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.xs,
     alignItems: 'center',
+    // columnWrapperStyle's `gap` (ClubsScreen.tsx) only spaces items
+    // WITHIN one row horizontally — FlatList renders each row of 3 as a
+    // separate sibling View, so there was no vertical gap between rows
+    // at all, and cards from adjacent rows were touching directly. This
+    // margin is what actually separates row from row.
+    marginBottom: spacing.sm,
   },
   iconCircle: {
     width: 48,
@@ -47,5 +53,13 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textPrimary,
     textAlign: 'center',
+    // Reserves space for a full 2 lines regardless of whether this
+    // particular name actually wraps — without it, a 1-line name like
+    // "SARAS" made a visibly shorter card than a 2-line name like
+    // "ASTRA (Astronomy an...)" in the very same row, which is the
+    // jagged/uneven look. lineHeight × 2 rather than a guessed px value,
+    // so it still tracks if the caption size ever changes.
+    lineHeight: typography.caption.fontSize * 1.3,
+    minHeight: typography.caption.fontSize * 1.3 * 2,
   },
 });

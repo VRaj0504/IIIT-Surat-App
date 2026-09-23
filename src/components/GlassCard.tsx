@@ -1,23 +1,24 @@
 import React from 'react';
-import { StyleSheet, ViewStyle, StyleProp, Platform, View } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { StyleSheet, ViewStyle, StyleProp, View } from 'react-native';
 import { colors, radius } from '../theme/theme';
 
 type GlassCardProps = {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
-  intensity?: number;
+  intensity?: number; // kept for API compatibility with existing call sites — no longer used, see below
 };
 
-export default function GlassCard({ children, style, intensity = 40 }: GlassCardProps) {
+// Was a glassmorphism card (BlurView + a translucent white tint layered
+// on top) — dropped for the soft-campus flat direction, for two
+// reasons: it doesn't fit a flat design language to begin with, and it
+// was the exact source of an earlier real bug (the tint was layered
+// TWICE — once as the Android fallback background, once again as a
+// separate overlay on every platform — which read as a dull, hazy card
+// instead of crisp glass). A flat card sidesteps both: no blur, no
+// layered translucency, nothing left to double up.
+export default function GlassCard({ children, style }: GlassCardProps) {
   return (
     <View style={[styles.wrap, style]}>
-      <BlurView
-        intensity={intensity}
-        tint="light"
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={styles.tintOverlay} pointerEvents="none" />
       <View style={styles.content}>{children}</View>
     </View>
   );
@@ -27,14 +28,7 @@ const styles = StyleSheet.create({
   wrap: {
     borderRadius: radius.lg,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.glassBorder,
-    // Android BlurView support is weaker, so we lean on the tint overlay there
-    backgroundColor: Platform.OS === 'android' ? colors.glassTint : 'transparent',
-  },
-  tintOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.glassTint,
+    backgroundColor: colors.surface,
   },
   content: { padding: 0 },
 });

@@ -1,14 +1,14 @@
 import React from 'react';
 import { View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import TapCard from './TapCard';
-import { colors, radius, clayShadow, clayShadowSoft } from '../theme/theme';
+import { colors, radius } from '../theme/theme';
 
 type ClayCardProps = {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   onPress?: () => void;
-  soft?: boolean; // smaller shadow for dense grids
-  flat?: boolean; // no shadow at all
+  soft?: boolean; // kept for API compatibility with existing call sites — no longer changes anything, see below
+  flat?: boolean; // same as above
 };
 
 // Style keys that decide how big a *slot* this card takes up in its parent
@@ -43,32 +43,36 @@ function splitLayoutStyle(style: StyleProp<ViewStyle>): [ViewStyle, ViewStyle] {
   return [layout as ViewStyle, rest as ViewStyle];
 }
 
-export default function ClayCard({ children, style, onPress, soft, flat }: ClayCardProps) {
-  const shadowStyle = flat ? undefined : (soft ? clayShadowSoft : clayShadow);
+// Was a raised claymorphism card (shadow + a top highlight sliver to read
+// as "molded plastic"). Redesigned flat for the soft-campus direction: no
+// shadow/elevation at all — which also means Android can no longer render
+// an unwanted dark shadow here, structurally, not just a tuned-down one.
+// Does keep a thin border, though (added after the first flat pass):
+// with zero shadow AND a small/zero gap between cards in some grids
+// (e.g. ClubsScreen's numColumns grid had no row gap at all), plain white
+// cards on the warm background had nothing to visually separate one from
+// the next — they read as merging into each other rather than as
+// individual cards. A hairline border is enough definition without
+// bringing back any elevation dependency. `soft`/`flat` props still exist
+// so none of this component's call sites need to change, they just no
+// longer affect anything since there's no shadow left to vary.
+export default function ClayCard({ children, style, onPress }: ClayCardProps) {
   const Wrapper = onPress ? TapCard : View;
   const [layoutStyle, contentStyle] = splitLayoutStyle(style);
 
   return (
-    <Wrapper style={[styles.shadowWrap, shadowStyle, layoutStyle]} onPress={onPress}>
-      <View style={[styles.inner, contentStyle]}>
-        {/* top highlight sliver = the "molded plastic" cue */}
-        <View style={styles.highlight} pointerEvents="none" />
-        {children}
-      </View>
+    <Wrapper style={[styles.wrap, layoutStyle]} onPress={onPress}>
+      <View style={[styles.inner, contentStyle]}>{children}</View>
     </Wrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  shadowWrap: {
+  wrap: {
     borderRadius: radius.lg,
-    // Must be opaque, not transparent: Android's `elevation` shadow (see
-    // clayShadow/clayShadowSoft in theme.ts) only renders as a soft blur
-    // against an opaque background — on a transparent one it paints as a
-    // flat grey box instead. `inner` sits exactly on top with the same
-    // shape and the same color, so this has no visual effect beyond
-    // fixing that Android artifact.
-    backgroundColor: colors.claySurface,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   inner: {
     // Always fills whatever box the Wrapper resolves to — sizing itself
@@ -76,18 +80,7 @@ const styles = StyleSheet.create({
     // layoutStyle, so this View never needs its own percentage width.
     width: '100%',
     borderRadius: radius.lg,
-    backgroundColor: colors.claySurface,
+    backgroundColor: colors.surface,
     overflow: 'hidden',
-    position: 'relative',
-  },
-  highlight: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 14,
-    backgroundColor: 'rgba(255,255,255,0.55)',
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
   },
 });

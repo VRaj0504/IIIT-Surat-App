@@ -19,10 +19,9 @@ import {
 import { messMenu, getTodayIndex, MealType } from "../data/messMenu";
 
 const mealIcons: Record<MealType, keyof typeof Ionicons.glyphMap> = {
-  Breakfast: "sunny-outline",
+  
   Lunch: "restaurant-outline",
-  Snacks: "cafe-outline",
-  Dinner: "moon-outline",
+  
 };
 
 export default function MessMenuScreen() {

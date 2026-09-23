@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, memo } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -21,6 +22,41 @@ import { markAttendance, getExistingSession } from "../firebase/attendanceServic
 import LoadingSpinner from "../components/LoadingSpinner";
 
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+
+// The college is moving attendance-marking to NTProxy (QR shown by
+// faculty, scanned by students) — this link is the bridge until this
+// screen either syncs with that data or is retired in its favor.
+const NTPROXY_URL = "https://ntproxy.onrender.com";
+
+// Receives only this row's own isAbsent boolean, not the whole
+// absentSet — same reasoning as GradeEntryScreen.tsx's StudentGradeRow:
+// a 50-70 student roster shouldn't re-render in full every time ONE
+// student gets toggled present/absent.
+const AttendanceRow = memo(function AttendanceRow({
+  item,
+  isAbsent,
+  onToggle,
+}: {
+  item: RosterStudent;
+  isAbsent: boolean;
+  onToggle: (enrollmentNumber: string) => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.studentRow, isAbsent && styles.studentRowAbsent]}
+      onPress={() => onToggle(item.enrollmentNumber)}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={styles.studentName}>{item.name}</Text>
+        <Text style={styles.studentReg}>{item.enrollmentNumber}</Text>
+      </View>
+      <View style={[styles.statusPill, isAbsent ? styles.statusPillAbsent : styles.statusPillPresent]}>
+        <Ionicons name={isAbsent ? "close-circle" : "checkmark-circle"} size={14} color={colors.surface} />
+        <Text style={styles.statusPillText}>{isAbsent ? "Absent" : "Present"}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+});
 
 function todayDateString(): string {
   const now = new Date();
@@ -104,14 +140,19 @@ export default function MarkAttendanceScreen() {
       .finally(() => setRosterLoading(false));
   }, [selectedClass, selectedYear, selectedSubject, selectedSpecialization, date]);
 
-  const toggleAbsent = (enrollmentNumber: string) => {
+  // useCallback with an empty dep array is safe here — the updater form
+  // of setAbsentSet means this never actually closes over absentSet
+  // itself, so the reference genuinely never needs to change. That
+  // stability is what lets AttendanceRow's memo() below skip
+  // re-rendering the other 50-70 rows every time one student is toggled.
+  const toggleAbsent = useCallback((enrollmentNumber: string) => {
     setAbsentSet((prev) => {
       const next = new Set(prev);
       if (next.has(enrollmentNumber)) next.delete(enrollmentNumber);
       else next.add(enrollmentNumber);
       return next;
     });
-  };
+  }, []);
 
   const handleSave = async () => {
     if (!profile || !selectedClass || selectedYear === null || !selectedSubject || !date.trim()) return;
@@ -138,6 +179,19 @@ export default function MarkAttendanceScreen() {
   const ListHeader = (
     <View>
       <Text style={styles.header}>Mark Attendance</Text>
+
+      <TouchableOpacity
+        style={styles.ntproxyBanner}
+        onPress={() =>
+          Linking.openURL(NTPROXY_URL).catch(() =>
+            Alert.alert("Couldn't open NTProxy", "Try again in a moment."),
+          )
+        }
+      >
+        <Ionicons name="qr-code-outline" size={18} color={colors.primary} />
+        <Text style={styles.ntproxyBannerText}>Generate a QR code on NTProxy instead</Text>
+        <Ionicons name="open-outline" size={16} color={colors.primary} />
+      </TouchableOpacity>
 
       <View style={styles.pickersArea}>
         <Text style={styles.label}>Year (batch)</Text>
@@ -300,28 +354,13 @@ export default function MarkAttendanceScreen() {
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={ListHeader}
           ListFooterComponent={ListFooter}
-          renderItem={({ item }) => {
-            const isAbsent = absentSet.has(item.enrollmentNumber);
-            return (
-              <TouchableOpacity
-                style={[styles.studentRow, isAbsent && styles.studentRowAbsent]}
-                onPress={() => toggleAbsent(item.enrollmentNumber)}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.studentName}>{item.name}</Text>
-                  <Text style={styles.studentReg}>{item.enrollmentNumber}</Text>
-                </View>
-                <View style={[styles.statusPill, isAbsent ? styles.statusPillAbsent : styles.statusPillPresent]}>
-                  <Ionicons
-                    name={isAbsent ? "close-circle" : "checkmark-circle"}
-                    size={14}
-                    color={colors.surface}
-                  />
-                  <Text style={styles.statusPillText}>{isAbsent ? "Absent" : "Present"}</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          }}
+          renderItem={({ item }) => (
+            <AttendanceRow
+              item={item}
+              isAbsent={absentSet.has(item.enrollmentNumber)}
+              onToggle={toggleAbsent}
+            />
+          )}
         />
       </SafeAreaView>
     </LinearGradient>
@@ -330,6 +369,19 @@ export default function MarkAttendanceScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  ntproxyBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  ntproxyBannerText: { ...typography.caption, color: colors.textPrimary, flex: 1, fontWeight: "600" },
   header: { ...typography.h2, color: colors.textPrimary, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   pickersArea: { paddingHorizontal: spacing.lg },
   label: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.md, marginBottom: 4, fontWeight: "600" },

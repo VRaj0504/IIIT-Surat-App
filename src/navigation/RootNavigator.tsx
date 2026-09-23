@@ -4,7 +4,7 @@ import { colors } from "../theme/theme";
 import type { RootStackParamList } from "./types";
 
 import TabNavigator from "./TabNavigator";
-import CGPACalculatorScreen from "../screens/CGPACalculatorScreen";
+
 import AcademicCalendarScreen from "../screens/AcademicCalendarScreen";
 import MessMenuScreen from "../screens/MessMenuScreen";
 import MessOrderScreen from "../screens/MessOrderScreen";
@@ -22,6 +22,7 @@ import ApplyLeaveScreen from "../screens/ApplyLeaveScreen";
 import LeaveRequestsScreen from "../screens/LeaveRequestsScreen";
 import AnnouncementsScreen from "../screens/AnnouncementsScreen";
 import TranscriptScreen from "../screens/TranscriptScreen";
+import ExamScheduleScreen from "../screens/ExamScheduleScreen";
 import GradeEntryScreen from "../screens/GradeEntryScreen";
 import ScanPosterScreen from "../screens/ScanPosterScreen";
 import RechargeCheckoutScreen from "../screens/RechargeCheckoutScreen";
@@ -31,6 +32,9 @@ import SubmitEventExcusalScreen from "../screens/SubmitEventExcusalScreen";
 import EventExcusalRequestsScreen from "../screens/EventExcusalRequestsScreen";
 import PlaceholderScreen from "../screens/PlaceholderScreen";
 import ClubDetailScreen from "../screens/ClubDetailScreen";
+import EventsScreen from "../screens/EventsScreen";
+import CounsellingScreen from "../screens/CounsellingScreen";
+import CounsellingQueueScreen from "../screens/CounsellingQueueScreen";
 import CreateClubScreen from "../screens/CreateClubScreen";
 import PostEventScreen from "../screens/PostEventScreen";
 import PostNoticeScreen from "../screens/PostNoticeScreen";
@@ -39,7 +43,13 @@ import UploadResourceScreen from "../screens/faculty/UploadResourceScreen";
 import EditProfileScreen from "../screens/EditProfileScreen";
 import NotificationSettingsScreen from "../screens/NotificationSettingsScreen";
 import HelpSupportScreen from "../screens/HelpSupportScreen";
+import ImportantContactsScreen from "../screens/ImportantContactsScreen";
+import MyDownloadsScreen from "../screens/MyDownloadsScreen";
+import FileViewerScreen from "../screens/FileViewerScreen";
 import AboutScreen from "../screens/AboutScreen";
+
+import SubmitComplaintScreen from "../screens/SubmitComplaintScreen";
+import ComplaintsScreen from "../screens/ComplaintsScreen";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -63,11 +73,7 @@ export default function RootNavigator() {
         component={TabNavigator}
         options={{ headerShown: false }}
       />
-      <Stack.Screen
-        name="CGPACalculator"
-        component={CGPACalculatorScreen}
-        options={{ title: "CGPA Calculator" }}
-      />
+      
       <Stack.Screen
         name="AcademicCalendar"
         component={AcademicCalendarScreen}
@@ -148,6 +154,18 @@ export default function RootNavigator() {
         component={LeaveRequestsScreen}
         options={{ title: "Leave Requests" }}
       />
+
+      <Stack.Screen
+  name="SubmitComplaint"
+  component={SubmitComplaintScreen}
+  options={{ title: "Complaints & Doubts" }}
+/>
+<Stack.Screen
+  name="Complaints"
+  component={ComplaintsScreen}
+  options={{ title: "Complaints & Doubts" }}
+/>
+
       <Stack.Screen
         name="Announcements"
         component={AnnouncementsScreen}
@@ -158,6 +176,12 @@ export default function RootNavigator() {
         component={TranscriptScreen}
         options={{ title: "Official Transcript" }}
       />
+
+      <Stack.Screen
+  name="ExamSchedule"
+  component={ExamScheduleScreen}
+  options={{ title: "Exam Schedule" }}
+/>
       <Stack.Screen
         name="GradeEntry"
         component={GradeEntryScreen}
@@ -204,6 +228,21 @@ export default function RootNavigator() {
         options={{ title: "" }}
       />
       <Stack.Screen
+        name="Events"
+        component={EventsScreen}
+        options={{ title: "Events" }}
+      />
+      <Stack.Screen
+        name="Counselling"
+        component={CounsellingScreen}
+        options={{ title: "Counselling & Wellness" }}
+      />
+      <Stack.Screen
+        name="CounsellingQueue"
+        component={CounsellingQueueScreen}
+        options={{ title: "Counselling Requests" }}
+      />
+      <Stack.Screen
         name="CreateClub"
         component={CreateClubScreen}
         options={{ title: "New Club" }}
@@ -232,6 +271,21 @@ export default function RootNavigator() {
         name="HelpSupport"
         component={HelpSupportScreen}
         options={{ title: "Help & Support" }}
+      />
+      <Stack.Screen
+        name="ImportantContacts"
+        component={ImportantContactsScreen}
+        options={{ title: "Important Contacts" }}
+      />
+      <Stack.Screen
+        name="MyDownloads"
+        component={MyDownloadsScreen}
+        options={{ title: "My Downloads" }}
+      />
+      <Stack.Screen
+        name="FileViewer"
+        component={FileViewerScreen}
+        options={{ title: "" }}
       />
       <Stack.Screen
         name="About"

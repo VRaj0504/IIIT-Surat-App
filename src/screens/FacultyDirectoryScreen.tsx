@@ -57,6 +57,16 @@ function folderFor(department?: string): FolderId {
   return "OTHER";
 }
 
+// A faculty member's home department decides their PRIMARY folder, but
+// additionalDepartments lets them also show under other folders on top
+// of that — e.g. someone whose home department is CSE but who's also
+// involved with MCS.
+function isInFolder(member: FacultyMember, folder: FolderId): boolean {
+  if (folderFor(member.department) === folder) return true;
+  if (member.additionalDepartments?.includes(folder)) return true;
+  return false;
+}
+
 // HOD/Head first, then regular (non-contractual) faculty, then
 // contractual positions, then anything with no designation set yet
 // (allowlist-only entries that haven't been assigned one). Alphabetical
@@ -106,6 +116,11 @@ const FacultyCard = memo(function FacultyCard({ member }: { member: FacultyMembe
               </Text>
             </View>
           )}
+          {member.tnpInCharge && (
+            <View style={styles.tnpBadge}>
+              <Text style={styles.tnpBadgeText}>TNP INCHARGE</Text>
+            </View>
+          )}
         </View>
         {member.shortForm && <Text style={styles.shortForm}>{member.shortForm}</Text>}
         {(member.designation || member.department) && (
@@ -123,6 +138,21 @@ const FacultyCard = memo(function FacultyCard({ member }: { member: FacultyMembe
           <View style={styles.metaRow}>
             <Ionicons name="time-outline" size={13} color={colors.textSecondary} />
             <Text style={styles.metaText}>{member.officeHours}</Text>
+          </View>
+        )}
+        {(member.researchAreas || member.publicationsCount) && (
+          <View style={styles.metaRow}>
+            <Ionicons name="document-text-outline" size={13} color={colors.textSecondary} />
+            <Text style={styles.metaText} numberOfLines={2}>
+              {[
+                member.publicationsCount
+                  ? `${member.publicationsCount} publication${member.publicationsCount === 1 ? "" : "s"}`
+                  : null,
+                member.researchAreas || null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </Text>
           </View>
         )}
         <View style={styles.actionRow}>
@@ -221,16 +251,10 @@ export default function FacultyDirectoryScreen() {
     return () => unsubscribe();
   }, []);
 
-  const folderCounts = useMemo(() => {
-    const counts: Record<FolderId, number> = { UGCSE: 0, UGECE: 0, UGMCS: 0, TNP: 0, OTHER: 0 };
-    for (const f of faculty) counts[folderFor(f.department)]++;
-    return counts;
-  }, [faculty]);
-
   const inFolder = useMemo(
     () =>
       selectedFolder
-        ? faculty.filter((f) => folderFor(f.department) === selectedFolder).sort(compareFacultyForDisplay)
+        ? faculty.filter((f) => isInFolder(f, selectedFolder)).sort(compareFacultyForDisplay)
         : [],
     [faculty, selectedFolder],
   );
@@ -295,9 +319,6 @@ export default function FacultyDirectoryScreen() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.folderLabel}>{folder.label}</Text>
-                    <Text style={styles.folderCount}>
-                      {folderCounts[folder.id]} {folderCounts[folder.id] === 1 ? "member" : "members"}
-                    </Text>
                   </View>
                   <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                 </TouchableOpacity>
@@ -409,6 +430,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   leadershipBadgeText: { fontSize: 10, fontWeight: "800", color: colors.surface, letterSpacing: 0.5 },
+  tnpBadge: {
+    backgroundColor: colors.badge.purple.fg,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+  },
+  tnpBadgeText: { fontSize: 10, fontWeight: "800", color: colors.surface, letterSpacing: 0.5 },
   studentAvatar: { backgroundColor: colors.success + "30" },
   studentBadge: {
     backgroundColor: colors.success,

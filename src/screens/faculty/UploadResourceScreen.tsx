@@ -41,6 +41,7 @@ export default function UploadResourceScreen() {
   const [semester, setSemester] = useState<(typeof SEMESTERS)[number]>(1);
   const [subject, setSubject] = useState("");
   const [type, setType] = useState<(typeof TYPES)[number]>("Notes");
+  const [section, setSection] = useState("");
   const [uploading, setUploading] = useState(false);
 
   // Depends on branch + semester, so declared after both are already set up.
@@ -89,6 +90,7 @@ export default function UploadResourceScreen() {
         subject,
         branch,
         semester,
+        section: section.trim() || null,
         type,
         uploadedBy: profile.uid,
         uploadedByName: profile.name,
@@ -96,6 +98,7 @@ export default function UploadResourceScreen() {
       Alert.alert("Success", "Resource uploaded.");
       setPickedFile(null);
       setTitle("");
+      setSection("");
     } catch (err: any) {
       Alert.alert("Upload failed", err.message ?? "Something went wrong.");
     } finally {
@@ -175,6 +178,17 @@ export default function UploadResourceScreen() {
               </TouchableOpacity>
             ))}
           </View>
+
+
+          <Text style={styles.label}>Section (optional)</Text>
+          <TextInput
+           style={styles.input}
+            value={section}
+            onChangeText={setSection}
+            placeholder="e.g. B or CSE2 — leave blank for all sections"
+            placeholderTextColor={colors.textSecondary}
+            autoCapitalize="characters"
+          />
 
           {/* --- Subject chips — auto-populated from curriculum.ts based on Branch + Semester above --- */}
           <Text style={styles.label}>Subject</Text>

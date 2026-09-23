@@ -7,7 +7,11 @@ import {
   TouchableOpacity,
   Linking,
   Alert,
+  ActivityIndicator,
+  Platform,
 } from "react-native";
+import { File, Paths } from "expo-file-system";
+import { addToWebDownloadHistory } from "../utils/webDownloadHistory";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -33,6 +37,7 @@ import {
 } from "../firebase/curriculumService";
 import type { RootStackParamList } from "../navigation/types";
 import LoadingSpinner from "../components/LoadingSpinner";
+import ScreenHeader from "../components/ScreenHeader";
 
 const typeColors: Record<Resource["type"], string> = {
   Notes: colors.primary,
@@ -42,7 +47,7 @@ const typeColors: Record<Resource["type"], string> = {
 
 const typeIcons: Record<Resource["type"], keyof typeof Ionicons.glyphMap> = {
   Notes: "document-text-outline",
-  PYQ: "help-circle-outline",
+  PYQ: "clipboard-outline",
   Slides: "easel-outline",
 };
 
@@ -51,12 +56,16 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 const ResourceRow = memo(function ResourceRow({
   item,
   canDelete,
+  downloading,
   onOpen,
+  onDownload,
   onDelete,
 }: {
   item: Resource;
   canDelete: boolean;
+  downloading: boolean;
   onOpen: (url: string) => void;
+  onDownload: (item: Resource) => void;
   onDelete: (item: Resource) => void;
 }) {
   return (
@@ -79,22 +88,35 @@ const ResourceRow = memo(function ResourceRow({
       <View style={styles.itemInfo}>
         <Text style={styles.itemTitle}>{item.title}</Text>
         <Text style={[styles.itemType, { color: typeColors[item.type] }]}>
-          {item.type} · {item.branch} · Sem {item.semester}
+          {item.type === "PYQ" && item.examYear ? `PYQ ${item.examYear}` : item.type} · {item.branch} · Sem {item.semester}
         </Text>
       </View>
-      {canDelete ? (
+      {/* Downloads the actual file to the device instead of just opening
+          it — the previous tap-to-open behavior needs a live connection
+          every single time, even to re-view something already seen
+          once, which is the whole complaint on patchy campus wifi. This
+          is a separate action from the row's own tap-to-open, not a
+          replacement for it — opening is still the quick "view it now"
+          path when you do have signal. */}
+      <TouchableOpacity onPress={() => onDownload(item)} hitSlop={8} disabled={downloading}>
+        {downloading ? (
+          <ActivityIndicator size="small" color={colors.primary} />
+        ) : (
+          <Ionicons name="download-outline" size={18} color={colors.primary} />
+        )}
+      </TouchableOpacity>
+      {canDelete && (
         <TouchableOpacity onPress={() => onDelete(item)} hitSlop={8}>
           <Ionicons name="trash-outline" size={18} color={colors.danger} />
         </TouchableOpacity>
-      ) : (
-        <Ionicons name="open-outline" size={18} color={colors.textSecondary} />
       )}
     </TouchableOpacity>
   );
 });
 
 export default function ResourcesScreen() {
-  const { profile } = useAuth();
+  const { profile, previewRole } = useAuth();
+  const effectiveRole = previewRole ?? profile?.role;
   const navigation = useNavigation<NavigationProp>();
 
   const [resources, setResources] = useState<Resource[]>([]);
@@ -112,7 +134,7 @@ export default function ResourcesScreen() {
     // whole college's resource library to every student's phone and
     // filtering client-side (see subscribeToResources's comment).
     const scope =
-      profile?.role !== "faculty" && profile?.branch && profile?.admissionYear
+      effectiveRole !== "faculty" && profile?.branch && profile?.admissionYear
         ? {
             branch: profile.branch,
             semester: getCurrentSemester(profile.admissionYear),
@@ -133,7 +155,7 @@ export default function ResourcesScreen() {
       },
     );
     return () => unsubscribe();
-  }, [profile?.role, profile?.branch, profile?.admissionYear, profile?.section]);
+  }, [effectiveRole, profile?.branch, profile?.admissionYear, profile?.section]);
 
   useEffect(() => {
     if (!profile?.branch || !profile?.admissionYear) {
@@ -154,6 +176,52 @@ export default function ResourcesScreen() {
 
   const openLink = useCallback((url: string) => {
     Linking.openURL(url).catch(() => {});
+  }, []);
+
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
+
+  // item.fileUrl is a direct Firebase Storage download link (see
+  // resourceService.ts), not an HTML viewer page — so this fetches the
+  // actual file bytes, not just a link to them. Saved into the app's own
+  // document directory, which persists across app restarts and needs no
+  // internet to re-open later. Opening the saved file (share sheet for
+  // PDFs, in-app viewer for images) happens from MyDownloadsScreen.
+  const handleDownload = useCallback(async (item: Resource) => {
+    setDownloadingIds((prev) => new Set(prev).add(item.id));
+    try {
+      if (Platform.OS === "web") {
+        // No real filesystem to save into on web — opening the URL directly
+        // is the actual "download" (the browser handles it: PDFs render
+        // in-tab via the browser's own native viewer, other types save via
+        // the browser's normal download flow). window.open avoids
+        // navigating the app itself away from the current screen.
+        window.open(item.fileUrl, "_blank");
+        await addToWebDownloadHistory({ name: item.title, url: item.fileUrl });
+        return;
+      }
+      const extMatch = item.fileUrl.match(/\.([a-zA-Z0-9]{2,5})(?:\?|$)/);
+      const ext = extMatch ? `.${extMatch[1]}` : "";
+      const safeName = item.title.replace(/[^a-zA-Z0-9 _-]/g, "").trim() || "resource";
+      const destination = new File(Paths.document, `${safeName}${ext}`);
+      const downloaded = await File.downloadFileAsync(item.fileUrl, destination, {
+        idempotent: true, // overwrite rather than fail if downloaded before
+      });
+      Alert.alert(
+        "Downloaded",
+        `Saved. Find "${item.title}" any time in Resources → the download icon at the top → My Downloads, even without a connection.`,
+      );
+    } catch (err: any) {
+      Alert.alert(
+        "Couldn't download",
+        err.message ?? "Check your connection and try again.",
+      );
+    } finally {
+      setDownloadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+    }
   }, []);
 
   const handleDelete = useCallback((item: Resource) => {
@@ -199,7 +267,7 @@ export default function ResourcesScreen() {
   // subject names appear in the data — same as before. This is the one
   // truly unbounded list on this screen (whole college's resource library,
   // forever), so it's the one worth virtualizing.
-  if (profile?.role === "faculty") {
+  if (effectiveRole === "faculty") {
     const groupedBySubject = resources.reduce<Record<string, Resource[]>>(
       (acc, item) => {
         if (!acc[item.subject]) acc[item.subject] = [];
@@ -218,10 +286,12 @@ export default function ResourcesScreen() {
         style={{ flex: 1 }}
       >
         <SafeAreaView style={styles.container} edges={["top"]}>
-          <Text style={styles.title}>Resources</Text>
-          <Text style={styles.subtitle}>
-            Everything posted, across all subjects
-          </Text>
+          <ScreenHeader
+            title="Resources"
+            subtitle="Everything posted, across all subjects"
+            actionIcon="download-outline"
+            onAction={() => navigation.navigate("MyDownloads")}
+          />
           <SectionList
             sections={sections}
             keyExtractor={(item) => item.id}
@@ -240,7 +310,9 @@ export default function ResourcesScreen() {
               <ResourceRow
                 item={item}
                 canDelete={profile?.uid === item.uploadedBy}
+                downloading={downloadingIds.has(item.id)}
                 onOpen={openLink}
+                onDownload={handleDownload}
                 onDelete={handleDelete}
               />
             )}
@@ -282,18 +354,41 @@ export default function ResourcesScreen() {
   // realistically small number of files per subject, so this list was never
   // at real risk of lag — converted anyway for consistency with the faculty
   // view above and because SectionList costs nothing extra here.
-  const studentSections = semesterSubjects.map((subject) => ({
-    title: subject.name,
-    code: subject.code,
+  //
+  // Each subject becomes up to TWO sections rather than one flat list:
+  // Notes/Slides (newest first, same as before), and — only when at least
+  // one PYQ exists for this subject — a separate "Previous Year Papers"
+  // section sorted by examYear descending. Mixing every type into one
+  // undated pile was the actual complaint: a student hunting for "the
+  // 2023 DBMS paper" had to scan past every Notes/Slides upload plus every
+  // other year's PYQ in whatever order they happened to be created in.
+  const studentSections = semesterSubjects.flatMap((subject) => {
     // Matching by name, case-insensitive, since faculty type the subject as
     // free text when uploading — not by code.
-    data: resources.filter(
+    const subjectResources = resources.filter(
       (r) =>
         r.branch === branch &&
         r.semester === semester &&
         r.subject.trim().toLowerCase() === subject.name.trim().toLowerCase(),
-    ),
-  }));
+    );
+    const materials = subjectResources.filter((r) => r.type !== "PYQ");
+    const pyqs = [...subjectResources.filter((r) => r.type === "PYQ")].sort(
+      (a, b) => (b.examYear ?? 0) - (a.examYear ?? 0),
+    );
+
+    const sections = [
+      { title: subject.name, code: subject.code, data: materials, isPyqSection: false },
+    ];
+    if (pyqs.length > 0) {
+      sections.push({
+        title: subject.name,
+        code: "Previous Year Papers",
+        data: pyqs,
+        isPyqSection: true,
+      });
+    }
+    return sections;
+  });
 
   // A resource whose `subject` text doesn't match any curriculum subject
   // for this semester — most often something auto-published from the
@@ -309,7 +404,7 @@ export default function ResourcesScreen() {
   );
   const allSections =
     unmatched.length > 0
-      ? [...studentSections, { title: "Other", code: "", data: unmatched }]
+      ? [...studentSections, { title: "Other", code: "", data: unmatched, isPyqSection: false }]
       : studentSections;
 
   return (
@@ -318,10 +413,16 @@ export default function ResourcesScreen() {
       style={{ flex: 1 }}
     >
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <Text style={styles.title}>Resources</Text>
-        <Text style={styles.subtitle}>
-          {branch} · Semester {semester}
-        </Text>
+        <ScreenHeader
+          title="Resources"
+          subtitle={
+            profile?.section
+              ? `${branch} · Semester ${semester} · Section ${profile.section}`
+              : `${branch} · Semester ${semester}`
+          }
+          actionIcon="download-outline"
+          onAction={() => navigation.navigate("MyDownloads")}
+        />
         {loadError && (
           <Text style={styles.errorText}>Couldn't load resources: {loadError}</Text>
         )}
@@ -339,8 +440,12 @@ export default function ResourcesScreen() {
           }
           renderSectionHeader={({ section }) => (
             <View>
-              <Text style={styles.subjectName}>{section.title}</Text>
-              <Text style={styles.subjectCode}>{section.code}</Text>
+              {!section.isPyqSection && (
+                <Text style={styles.subjectName}>{section.title}</Text>
+              )}
+              <Text style={section.isPyqSection ? styles.pyqSectionLabel : styles.subjectCode}>
+                {section.code}
+              </Text>
             </View>
           )}
           renderSectionFooter={({ section }) =>
@@ -354,7 +459,9 @@ export default function ResourcesScreen() {
             <ResourceRow
               item={item}
               canDelete={profile?.uid === item.uploadedBy}
+              downloading={downloadingIds.has(item.id)}
               onOpen={openLink}
+              onDownload={handleDownload}
               onDelete={handleDelete}
             />
           )}
@@ -395,6 +502,13 @@ const styles = StyleSheet.create({
   subjectCode: {
     ...typography.caption,
     color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  pyqSectionLabel: {
+    ...typography.caption,
+    color: colors.danger,
+    fontWeight: "700",
+    marginTop: spacing.sm,
     marginBottom: spacing.sm,
   },
   itemCard: {

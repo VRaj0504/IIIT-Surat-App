@@ -38,7 +38,7 @@ export default function AboutScreen() {
           <View style={styles.creditCard}>
             <Text style={styles.creditLabel}>Made by</Text>
             <Text style={styles.creditName}>Vaibhav Raj</Text>
-            <Text style={styles.creditMeta}>2nd Year, CSE · UG25CSE114</Text>
+            <Text style={styles.creditMeta}>CSE, Batch of 2029</Text>
           </View>
 
           <Text style={styles.footer}>

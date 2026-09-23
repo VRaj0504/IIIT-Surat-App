@@ -77,6 +77,8 @@ async function main() {
       ...(allowData.designation ? { designation: allowData.designation } : {}),
       ...(allowData.roleEmail ? { roleEmail: allowData.roleEmail } : {}),
       ...(allowData.shortForm ? { shortForm: allowData.shortForm } : {}),
+      ...(allowData.additionalDepartments ? { additionalDepartments: allowData.additionalDepartments } : {}),
+      ...(allowData.tnpInCharge ? { tnpInCharge: allowData.tnpInCharge } : {}),
     };
 
     await db.collection("users").doc(authUser.uid).set(patch, { merge: true });
