@@ -28,6 +28,7 @@ import {
 } from "../firebase/lostFoundService";
 import type { RootStackParamList } from "../navigation/types";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { REPORT_REASONS, reportContent, getBlockedUids, blockUser, unblockAll, ReportReason } from "../firebase/reportService";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -64,8 +65,10 @@ const ItemCard = memo(function ItemCard({
   onResolve,
   onDelete,
   onViewPhoto,
+  onReport,
 }: {
   item: LostFoundItem;
+  onReport: (item: LostFoundItem) => void;
   isOwner: boolean;
   onContact: (item: LostFoundItem, method: "email" | "call" | "whatsapp") => void;
   onResolve: (item: LostFoundItem) => void;
@@ -102,6 +105,11 @@ const ItemCard = memo(function ItemCard({
         <View style={styles.posterRow}>
           <Text style={styles.poster}>Posted by {item.postedByName}</Text>
           {item.createdAt && <Text style={styles.postedTime}>· {timeAgo(item.createdAt)}</Text>}
+          {!isOwner && (
+            <TouchableOpacity onPress={() => onReport(item)} hitSlop={10} style={{ marginLeft: "auto" }} accessibilityLabel="Report or block">
+              <Ionicons name="flag-outline" size={15} color={colors.textSecondary} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {item.status === "open" && (
@@ -159,7 +167,53 @@ export default function LostFoundScreen() {
   // Resolved items are excluded at the query level (subscribeToLostFoundItems
   // only fetches status "open") — nobody, including the original poster, can
   // browse a history of resolved posts anymore.
-  const visibleItems = items;
+  const [blocked, setBlocked] = useState<string[]>([]);
+  const visibleItems = items.filter((i) => !blocked.includes(i.postedBy));
+  const [reportItem, setReportItem] = useState<LostFoundItem | null>(null);
+  const [reporting, setReporting] = useState(false);
+
+  useEffect(() => {
+    if (profile?.uid) getBlockedUids(profile.uid).then(setBlocked);
+  }, [profile?.uid]);
+
+  const submitReport = async (reason: ReportReason) => {
+    if (!reportItem || !profile) return;
+    setReporting(true);
+    try {
+      await reportContent({
+        kind: "lostFound",
+        itemId: reportItem.id,
+        itemTitle: reportItem.title,
+        postedBy: reportItem.postedBy,
+        postedByName: reportItem.postedByName,
+        reason,
+        reporterUid: profile.uid,
+        reporterName: profile.name,
+      });
+      setReportItem(null);
+      Alert.alert("Report sent", "Thanks — faculty will review this post.");
+    } catch (e: any) {
+      Alert.alert("Couldn't send the report", e?.message ?? "Please try again.");
+    } finally {
+      setReporting(false);
+    }
+  };
+
+  const doBlock = () => {
+    if (!reportItem || !profile) return;
+    const target = reportItem;
+    Alert.alert(`Block ${target.postedByName}?`, "You won't see their posts any more on this phone.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Block",
+        style: "destructive",
+        onPress: async () => {
+          setBlocked(await blockUser(profile.uid, target.postedBy));
+          setReportItem(null);
+        },
+      },
+    ]);
+  };
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
 
   useEffect(() => {
@@ -230,7 +284,7 @@ export default function LostFoundScreen() {
           Alert.alert("Couldn't open mail app", `Email them directly at ${item.postedByEmail}`);
         });
       } else if (method === "call" && item.postedByPhone) {
-        Linking.openURL(`tel:${item.postedByPhone}`).catch(() => {});
+        Linking.openURL(`tel:${item.postedByPhone.replace(/[^\d+]/g, "")}`).catch(() => {});
       } else if (method === "whatsapp" && item.postedByPhone) {
         const number = toWhatsAppNumber(item.postedByPhone);
         const message = `Hi, I'm reaching out about your ${item.type} item: "${item.title}"`;
@@ -360,10 +414,45 @@ export default function LostFoundScreen() {
                 onResolve={handleResolve}
                 onDelete={handleDelete}
                 onViewPhoto={setViewingPhoto}
+                onReport={setReportItem}
               />
             )}
           />
         )}
+
+        {blocked.length > 0 && (
+          <TouchableOpacity
+            style={{ alignItems: "center", paddingVertical: 10 }}
+            onPress={async () => {
+              if (profile) await unblockAll(profile.uid);
+              setBlocked([]);
+            }}
+          >
+            <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: "600" }}>
+              {blocked.length} blocked — tap to unblock all
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        <Modal visible={!!reportItem} transparent animationType="slide" onRequestClose={() => setReportItem(null)}>
+          <TouchableOpacity style={styles.sheetOverlay} activeOpacity={1} onPress={() => setReportItem(null)}>
+            <View style={styles.sheet}>
+              <Text style={styles.sheetTitle}>Report this post</Text>
+              <Text style={styles.sheetSub} numberOfLines={1}>{reportItem?.title}</Text>
+              {REPORT_REASONS.map((r) => (
+                <TouchableOpacity key={r} style={styles.sheetRow} disabled={reporting} onPress={() => submitReport(r)}>
+                  <Text style={styles.sheetRowText}>{r}</Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity style={styles.sheetRow} onPress={doBlock}>
+                <Text style={[styles.sheetRowText, { color: colors.danger }]}>Block this person</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.sheetRow} onPress={() => setReportItem(null)}>
+                <Text style={[styles.sheetRowText, { color: colors.textSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
 
         <Modal
           visible={!!viewingPhoto}
@@ -398,6 +487,12 @@ export default function LostFoundScreen() {
 }
 
 const styles = StyleSheet.create({
+  sheetOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 18, paddingBottom: 30 },
+  sheetTitle: { fontSize: 17, fontWeight: "800", color: colors.textPrimary },
+  sheetSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2, marginBottom: 8 },
+  sheetRow: { paddingVertical: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.surfaceAlt },
+  sheetRowText: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
   container: { flex: 1 },
   headerRow: {
     flexDirection: "row",

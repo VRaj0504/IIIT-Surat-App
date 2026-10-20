@@ -33,28 +33,30 @@ export type ExamSchedule = {
 // course; they sit right after the regular sheet of the same exam.
 const EXAM_TYPE_ORDER = ["quiz", "midsem", "midsem-repeaters", "endsem", "endsem-repeaters", "supplementary"];
 
-// Same rule as timetableService.resolveTimetableBranch — MNC students read
-// the CSE sheet, so faculty never have to publish the same date sheet twice.
-function resolveBranch(branch: string): string {
-  return branch.toUpperCase() === "MNC" ? "CSE" : branch;
-}
+// MNC has its own date sheets now. An MNC student reads the MNC sheet for an
+// exam when one is published, and falls back to the CSE sheet for the exams
+// faculty published once for both branches.
+const isMnc = (branch: string) => branch.toUpperCase() === "MNC";
 
 export function subscribeToExamSchedules(
   branch: string,
   semester: number,
   onUpdate: (schedules: ExamSchedule[]) => void,
 ): () => void {
-  // Two equality filters need no composite index.
+  // One equality filter plus an `in` on branch needs no composite index.
   const q = query(
     collection(db, "examSchedules"),
-    where("branch", "==", resolveBranch(branch)),
+    where("branch", "in", isMnc(branch) ? ["MNC", "CSE"] : [branch]),
     where("semester", "==", semester),
   );
   return onSnapshot(
     q,
     (snap) => {
-      const schedules = snap.docs
-        .map((d) => ({ id: d.id, ...(d.data() as Omit<ExamSchedule, "id">) }))
+      const all = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ExamSchedule, "id">) }));
+      // MNC's own sheet wins over the CSE one for the same exam.
+      const ownTypes = new Set(all.filter((s) => s.branch === "MNC").map((s) => s.examType));
+      const schedules = all
+        .filter((s) => !isMnc(branch) || s.branch === "MNC" || !ownTypes.has(s.examType))
         .sort((a, b) => {
           const ai = EXAM_TYPE_ORDER.indexOf(a.examType);
           const bi = EXAM_TYPE_ORDER.indexOf(b.examType);

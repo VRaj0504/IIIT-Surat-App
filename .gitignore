@@ -50,3 +50,4 @@ build.log
 scripts/serviceAccountKey.json.env
 .env
 .firebase/
+sample-templates/marks-*.xlsx

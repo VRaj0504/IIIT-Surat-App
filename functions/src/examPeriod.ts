@@ -37,19 +37,38 @@ export function to12Hour(time: string): string {
 
 // Same rule as src/utils/academicInfo.ts's getCurrentSemester (odd
 // semesters start in July, even in January), evaluated on IST time.
-export function currentSemester(admissionYear: number, now: Date = new Date()): number {
+// Same odd/even semester math as src/utils/academicInfo.ts, evaluated
+// in IST so a student isn't moved to the next semester up to 5.5 hours
+// early/late around the 1 July / 1 January boundary. `program` caps
+// the result at 4 (PG/M.Tech, 2 years) instead of 8 (UG, 4 years) --
+// this file's own copy went un-updated when that fix was made to the
+// main app and web portal; kept in sync now. Keep all three by hand.
+export function currentSemester(
+  admissionYear: number,
+  now: Date = new Date(),
+  program: 'UG' | 'PG' = 'UG',
+): number {
   const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
   const month = ist.getUTCMonth() + 1;
   const year = ist.getUTCFullYear();
   const isOdd = month >= 7;
   const academicYearIndex = isOdd ? year - admissionYear : year - admissionYear - 1;
-  return academicYearIndex * 2 + 1 + (isOdd ? 0 : 1);
+  const semester = academicYearIndex * 2 + 1 + (isOdd ? 0 : 1);
+  const totalSemesters = program === 'PG' ? 4 : 8;
+  return Math.min(Math.max(semester, 1), totalSemesters);
 }
 
 // The sheet is keyed by CSE/ECE; an MNC student reads the CSE one (same
 // rule as the timetable and the exam schedule screen).
 export function sheetBranch(branch: string): string {
   return branch.toUpperCase() === "MNC" ? "CSE" : branch;
+}
+
+// MNC has its own date sheets; use them for a semester once one exists,
+// otherwise the student keeps following the CSE sheet.
+export function sheetBranchFor(docs: ExamDoc[], branch: string, semester: number): string {
+  if (branch.toUpperCase() !== "MNC") return branch;
+  return docs.some((d) => d.branch === "MNC" && d.semester === semester) ? "MNC" : "CSE";
 }
 
 function windowOf(doc: ExamDoc): {start: string; end: string} | null {
@@ -74,7 +93,14 @@ export function isInExamPeriod(docs: ExamDoc[], branch: string, semester: number
 }
 
 // What to tell a class on a day inside its exam period, or null when the
-// day isn't in one.
+// day isn't in one. Two genuinely different situations, worded so
+// they can't be confused for each other at a glance: an actual exam
+// today leads with the real subject name right in the title (that's
+// the one thing worth seeing without even opening the notification),
+// and a gap day — inside the exam period, but nothing scheduled for
+// this class today — says "No exam today" plainly, not something that
+// still has the word "exam" sitting where it could be misread as "you
+// have one today."
 export function examDayMessage(
   docs: ExamDoc[],
   branch: string,
@@ -90,10 +116,17 @@ export function examDayMessage(
   const label = sheet.examTypeLabel ?? "Exam";
 
   if (today.length === 0) {
-    return {title: `${label} exams — no classes today`, body: "No exam for your class today, and no regular classes during the exam period."};
+    return {
+      title: "No exam today",
+      body: `You're in the ${label.toLowerCase()} period, but nothing's scheduled for you today. No regular classes either.`,
+    };
   }
+  const subjectNames = today.map((e) => e.subjectName || e.subjectCode).join(", ");
   const list = today.map((e) => `${e.subjectName || e.subjectCode} at ${to12Hour(e.startTime)}`).join("; ");
-  return {title: `${label} exam today`, body: `${list}. No regular classes today.`};
+  return {
+    title: `Exam today: ${subjectNames}`,
+    body: `${list}. No regular classes today.`,
+  };
 }
 
 // The exam collection is a handful of documents, but the class reminder

@@ -78,7 +78,7 @@ export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={styles.brand}>IIIT Surat</Text>
+            <Text style={styles.brand}>CollegeGo</Text>
             <Text style={styles.title}>Reset your password</Text>
             <Text style={styles.subtitle}>
               Enter your account email and we'll send a reset link.
@@ -109,7 +109,7 @@ export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.onPrimary} />
               ) : (
                 <Text style={styles.primaryBtnText}>Send reset link</Text>
               )}
@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
   },
   error: {
     color: colors.danger,
-    backgroundColor: "#FCEAEB",
+    backgroundColor: colors.dangerBg,
     padding: spacing.sm,
     borderRadius: radius.sm,
     marginBottom: spacing.md,
@@ -156,7 +156,7 @@ const styles = StyleSheet.create({
   },
   success: {
     color: colors.success,
-    backgroundColor: "#E8F7EE",
+    backgroundColor: colors.successBg,
     padding: spacing.sm,
     borderRadius: radius.sm,
     marginBottom: spacing.md,
@@ -172,7 +172,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     ...clayShadowSoft,
     borderWidth: 1,
-    borderColor: "rgba(11,61,145,0.12)",
+    borderColor: colors.border,
     borderRadius: radius.sm,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -186,7 +186,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: spacing.lg,
   },
-  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  primaryBtnText: { color: colors.onPrimary, fontWeight: "700", fontSize: 16 },
   linkBtn: { marginTop: spacing.lg, alignItems: "center" },
   linkText: { ...typography.body, color: colors.textSecondary },
   linkTextBold: { color: colors.primary, fontWeight: "700" },

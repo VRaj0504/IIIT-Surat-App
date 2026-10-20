@@ -208,15 +208,15 @@ const styles = StyleSheet.create({
   content: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
   header: { ...typography.h2, color: colors.textPrimary, marginBottom: spacing.md },
   crisisCard: {
-    backgroundColor: "#fff5f5",
+    backgroundColor: colors.dangerBg,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: "#f8b4b4",
+    borderColor: colors.danger + "55",
     padding: spacing.lg,
     marginBottom: spacing.lg,
   },
-  crisisTitle: { ...typography.h3, color: "#9b1c1c" },
-  crisisSubtitle: { ...typography.caption, color: "#9b1c1c", marginTop: spacing.xs, marginBottom: spacing.md },
+  crisisTitle: { ...typography.h3, color: colors.danger },
+  crisisSubtitle: { ...typography.caption, color: colors.danger, marginTop: spacing.xs, marginBottom: spacing.md },
   helplineRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
   },
   helplineName: { ...typography.body, fontWeight: "700", color: colors.textPrimary },
   helplineDesc: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
-  helplinePhone: { ...typography.caption, fontWeight: "700", color: "#c0392b" },
+  helplinePhone: { ...typography.caption, fontWeight: "700", color: colors.danger },
   linkRow: {
     flexDirection: "row",
     alignItems: "center",

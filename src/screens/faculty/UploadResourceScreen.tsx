@@ -22,6 +22,7 @@ import {
 } from "../../theme/theme";
 import { useAuth } from "../../context/AuthContext";
 import { uploadResource } from "../../firebase/resourceService";
+import { batchChoices, currentAcademicYear, examYearOptions } from "../../utils/academicYear";
 import {
   subscribeToCurriculum,
   CurriculumSubject,
@@ -29,7 +30,12 @@ import {
 
 const BRANCHES = ["CSE", "ECE", "MNC"] as const;
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
-const TYPES = ["Notes", "PYQ", "Slides"] as const;
+// Same order as the folders students see.
+const TYPES = ["Notes", "Slides", "Assignment", "PYQ"] as const;
+const EXAM_YEARS = examYearOptions();
+// Newest first, so the common case (this year) is the leftmost chip and
+// already selected by default.
+const BATCH_CHOICES = batchChoices();
 
 export default function UploadResourceScreen() {
   const { profile } = useAuth();
@@ -42,6 +48,11 @@ export default function UploadResourceScreen() {
   const [subject, setSubject] = useState("");
   const [type, setType] = useState<(typeof TYPES)[number]>("Notes");
   const [section, setSection] = useState("");
+  const [academicYear, setAcademicYear] = useState<string>(currentAcademicYear());
+  // Only for PYQs, and deliberately NOT defaulted: a silent default would
+  // quietly file a paper under the wrong year, so the faculty member has
+  // to pick it.
+  const [examYear, setExamYear] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
 
   // Depends on branch + semester, so declared after both are already set up.
@@ -82,6 +93,10 @@ export default function UploadResourceScreen() {
       Alert.alert("Missing info", "Please pick a file and fill in all fields.");
       return;
     }
+    if (type === "PYQ" && examYear === null) {
+      Alert.alert("Pick the exam year", "Papers are filed by the year the exam was held.");
+      return;
+    }
 
     setUploading(true);
     try {
@@ -92,6 +107,8 @@ export default function UploadResourceScreen() {
         semester,
         section: section.trim() || null,
         type,
+        academicYear,
+        examYear: type === "PYQ" ? examYear : null,
         uploadedBy: profile.uid,
         uploadedByName: profile.name,
       });
@@ -235,6 +252,52 @@ export default function UploadResourceScreen() {
             ))}
           </View>
 
+          {/* PYQs are filed by the year the exam was held; everything else
+              is filed by which batch it was written for. */}
+          {type === "PYQ" ? (
+            <>
+              <Text style={styles.label}>Exam year</Text>
+              <View style={styles.chipRow}>
+                {EXAM_YEARS.map((y) => (
+                  <TouchableOpacity
+                    key={y}
+                    style={[styles.chip, examYear === y && styles.chipActive]}
+                    onPress={() => setExamYear(y)}
+                  >
+                    <Text style={[styles.chipText, examYear === y && styles.chipTextActive]}>
+                      {y}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.hint}>
+                Papers stay visible to every future batch, filed under this year.
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.label}>Visible in</Text>
+              <View style={styles.chipRow}>
+                {BATCH_CHOICES.map((c) => (
+                  <TouchableOpacity
+                    key={c.value}
+                    style={[styles.chip, academicYear === c.value && styles.chipActive]}
+                    onPress={() => setAcademicYear(c.value)}
+                  >
+                    <Text style={[styles.chipText, academicYear === c.value && styles.chipTextActive]}>
+                      {c.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.hint}>
+                {type === "Assignment"
+                  ? "Assignments are for subjects that have a lab. Students see them only during the year you choose."
+                  : "Students see this only during the year you choose \u2014 later batches won't. (Papers are the exception: they're kept for everyone.)"}
+              </Text>
+            </>
+          )}
+
           {/* --- Upload button --- */}
           <TouchableOpacity
             style={[
@@ -276,11 +339,17 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     marginBottom: spacing.xs,
   },
+  hint: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+    fontStyle: "italic",
+  },
   input: {
     backgroundColor: colors.surface,
     ...clayShadowSoft,
     borderWidth: 1,
-    borderColor: "rgba(11,61,145,0.12)",
+    borderColor: colors.border,
     borderRadius: radius.md,
     padding: spacing.md,
     ...typography.body,

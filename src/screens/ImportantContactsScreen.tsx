@@ -23,6 +23,7 @@ type Contact = {
   name: string;
   email?: string;
   phone?: string;
+  address?: string;
 };
 
 // Source: Hostel Warden Information page, iiitsurat.ac.in (Hostel
@@ -36,16 +37,34 @@ const HOSTEL_CONTACTS: Contact[] = [
   { role: "Faculty Warden (Girls Hostel)", name: "Dr. Shikha Maurya", email: "shikha.maurya@iiitsurat.ac.in" },
 ];
 
-// No confirmed medical-authority contact yet — placeholder so the
-// section isn't silently missing. Replace once the real name/number is
-// available (institute medical officer / health centre).
-const MEDICAL_CONTACTS: Contact[] = [];
+// Source: Health Issue Escalation & Management page, iiitsurat.ac.in,
+// captured 2026-09-24. Only entries with an actual phone/email are
+// included — the page also lists several Faculty In-Charge and Student
+// Coordinator names with no contact info given, which would just be
+// dead cards here (see the Faculty Directory instead for those names).
+const MEDICAL_CONTACTS: Contact[] = [
+  { role: "Medical Officer", name: "Dr. Paresh Chhotala", phone: "+919824270476" },
+  { role: "Medical Emergency (Ambulance)", name: "Dial 108", phone: "108" },
+  {
+    role: "Empanelled Hospital",
+    name: "Dinbandhu Charitable Hospital",
+    phone: "+917575081024",
+    address: "Dadabhai Nagar, N.H. No. 48, B/H Tapti River, Kholwad, Kamrej, Surat – 394190, Gujarat",
+  },
+  {
+    role: "Empanelled Hospital",
+    name: "Shri B. D. Mehta Mahavir Heart Institute",
+    phone: "+918980021041",
+    address: "Athwagate, Nanpura, Surat – 395001, Gujarat",
+  },
+];
 
 function ContactCard({ contact }: { contact: Contact }) {
   return (
     <View style={styles.card}>
       <Text style={styles.role}>{contact.role}</Text>
       <Text style={styles.name}>{contact.name}</Text>
+      {contact.address && <Text style={styles.address}>{contact.address}</Text>}
       <View style={styles.actions}>
         {contact.phone && (
           <TouchableOpacity
@@ -129,6 +148,11 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: "700",
     marginTop: 2,
+    marginBottom: spacing.xs,
+  },
+  address: {
+    ...typography.caption,
+    color: colors.textSecondary,
     marginBottom: spacing.xs,
   },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },

@@ -10,18 +10,28 @@ import {
   Alert,
   Modal,
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import * as DocumentPicker from "expo-document-picker";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { storage } from "../firebase/storage";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { subscribeToFacultyDirectory, FacultyMember } from "../firebase/facultyService";
 import {
   applyForLeave,
+  applyForMedicalLeave,
+  getMedicalLeaveConfig,
   subscribeToMyLeaveApplications,
   LeaveApplication,
   LeaveType,
+  MedicalLeaveConfig,
+  MedicalStage,
 } from "../firebase/leaveService";
 
 const statusColors: Record<LeaveApplication["status"], string> = {
@@ -42,6 +52,94 @@ function parseStrictDate(value: string): Date | null {
  return date;
 }
 
+// Strips anything that isn't a digit on every keystroke, then inserts
+// the two dashes automatically as they type ("20260915" -> "2026-09-15")
+// — this is what actually stops a letter from ever landing in the
+// field, not the keyboardType hint the inputs had before (that's just
+// a suggestion to the OS's own keyboard layout, and some keyboards
+// ignore it entirely, letting someone type real letters into a date).
+function maskDateInput(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
+}
+
+// Medical leave goes doctor -> HOD -> teachers. Who the doctor and the
+// HOD are comes from config/medicalLeave (set by an admin with
+// scripts/seed-medical-leave.js), never from the student.
+const MEDICAL_STEPS: { stage: MedicalStage; label: string }[] = [
+  { stage: "doctor", label: "Doctor" },
+  { stage: "hod", label: "HOD" },
+  { stage: "teachers", label: "Teachers" },
+  { stage: "done", label: "Done" },
+];
+
+function MedicalProgress({ app }: { app: LeaveApplication }) {
+  const stage = app.stage ?? "doctor";
+  const rejectedAt: MedicalStage | null =
+    stage !== "rejected" ? null : app.hodDecision?.decision === "rejected" ? "hod" : "doctor";
+  const currentIndex = MEDICAL_STEPS.findIndex((s) => s.stage === (rejectedAt ?? stage));
+  const total = app.teachersTotal ?? 0;
+  const confirmed = app.teachersConfirmed ?? 0;
+
+  let caption: string;
+  if (stage === "doctor") caption = `Waiting for ${app.doctorName ?? "the doctor"} to check your report.`;
+  else if (stage === "hod") caption = `Doctor approved · waiting for ${app.hodName ?? "your HOD"}.`;
+  else if (stage === "teachers")
+    caption = total > 0 ? `HOD approved · ${confirmed} of ${total} teachers have excused your classes.` : "HOD approved · finding your teachers…";
+  else if (stage === "done")
+    caption = total > 0 ? "All teachers confirmed — your missed classes are excused." : app.teacherNote ?? "Approved.";
+  else {
+    const d = rejectedAt === "hod" ? app.hodDecision : app.doctorDecision;
+    caption = `Rejected by ${d?.byName ?? (rejectedAt === "hod" ? app.hodName : app.doctorName) ?? "approver"}${d?.remark ? `: "${d.remark}"` : "."}`;
+  }
+
+  return (
+    <View style={{ marginTop: spacing.sm }}>
+      <View style={progressStyles.row}>
+        {MEDICAL_STEPS.map((s, i) => {
+          const isRejectedHere = rejectedAt === s.stage;
+          const done = stage === "done" || i < currentIndex;
+          const active = !isRejectedHere && i === currentIndex && stage !== "done";
+          const color = isRejectedHere ? colors.danger : done ? colors.success : active ? colors.primary : colors.border;
+          return (
+            <React.Fragment key={s.stage}>
+              {i > 0 && <View style={[progressStyles.line, { backgroundColor: done || active ? color : colors.border }]} />}
+              <View style={progressStyles.step}>
+                <View style={[progressStyles.dot, { backgroundColor: color }]}>
+                  {(done || isRejectedHere) && (
+                    <Ionicons name={isRejectedHere ? "close" : "checkmark"} size={11} color={colors.surface} />
+                  )}
+                </View>
+                <Text style={[progressStyles.label, (active || isRejectedHere) && { color, fontWeight: "700" }]}>
+                  {s.label}
+                </Text>
+              </View>
+            </React.Fragment>
+          );
+        })}
+      </View>
+      <Text style={progressStyles.caption}>{caption}</Text>
+      {(stage === "teachers" || stage === "done") && (app.unmatchedFaculty?.length ?? 0) > 0 && (
+        <Text style={progressStyles.note}>
+          Some classes list no matched teacher ({app.unmatchedFaculty!.join(", ")}) — show your approved leave to them
+          directly.
+        </Text>
+      )}
+    </View>
+  );
+}
+
+const progressStyles = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "flex-start" },
+  step: { alignItems: "center", width: 56 },
+  dot: { width: 18, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center" },
+  line: { flex: 1, height: 2, marginTop: 8 },
+  label: { fontSize: 11, color: colors.textSecondary, marginTop: 4 },
+  caption: { fontSize: 12, color: colors.textPrimary, marginTop: spacing.sm },
+  note: { fontSize: 11, color: colors.textSecondary, marginTop: 4, fontStyle: "italic" },
+});
 
 export default function ApplyLeaveScreen() {
   const { profile } = useAuth();
@@ -53,7 +151,61 @@ export default function ApplyLeaveScreen() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [reason, setReason] = useState("");
+  const [medicalReportUrl, setMedicalReportUrl] = useState("");
+  const [medicalReportFileName, setMedicalReportFileName] = useState("");
+  const [uploadingReport, setUploadingReport] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Who a medical leave will go through, for this student's branch.
+  const [medicalConfig, setMedicalConfig] = useState<MedicalLeaveConfig | null | undefined>(undefined);
+  useEffect(() => {
+    getMedicalLeaveConfig()
+      .then(setMedicalConfig)
+      .catch(() => setMedicalConfig(null));
+  }, []);
+  const medicalHod = profile?.branch ? medicalConfig?.hodByBranch?.[profile.branch] : undefined;
+
+  // Medical leave never uses the faculty picker (the chain is fixed), so
+  // switching type clears whatever was picked or attached for the other.
+  const handleTypeChange = (next: LeaveType) => {
+    setType(next);
+    setSelectedFaculty(null);
+    if (next !== "medical") {
+      setMedicalReportUrl("");
+      setMedicalReportFileName("");
+    }
+  };
+
+  const handlePickMedicalReport = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ["application/pdf", "image/*"],
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    const asset = result.assets[0];
+
+    if (!profile) return;
+    setUploadingReport(true);
+    try {
+      // Timestamped, not a fixed filename like the profile photo
+      // upload — a student may apply for medical leave more than
+      // once, and each application's report needs to stay its own
+      // file, not silently overwrite whatever they uploaded last time.
+      const safeName = asset.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+      const path = `medicalReports/${profile.uid}/${Date.now()}-${safeName}`;
+      const fileRef = ref(storage, path);
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      await uploadBytes(fileRef, blob, { contentType: asset.mimeType ?? "application/octet-stream" });
+      const url = await getDownloadURL(fileRef);
+      setMedicalReportUrl(url);
+      setMedicalReportFileName(asset.name);
+    } catch (err: any) {
+      Alert.alert("Couldn't upload", err.message ?? "Please try again.");
+    } finally {
+      setUploadingReport(false);
+    }
+  };
 
   const [myApplications, setMyApplications] = useState<LeaveApplication[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -80,7 +232,7 @@ export default function ApplyLeaveScreen() {
 
   const handleSubmit = async () => {
     if (!profile) return;
-    if (!selectedFaculty) {
+    if (type === "casual" && !selectedFaculty) {
       Alert.alert("Pick a faculty member", "Choose who this request is addressed to.");
       return;
     }
@@ -109,27 +261,55 @@ export default function ApplyLeaveScreen() {
       return;
     }
 
+    const reportUrlTrimmed = medicalReportUrl.trim();
+    // Just checks something was actually uploaded — the URL itself is
+    // never typed by hand anymore, it's always whatever
+    // handlePickMedicalReport's own upload produced, so there's
+    // nothing further to validate about its shape.
+    if (type === "medical" && !reportUrlTrimmed) {
+      Alert.alert("Add your medical report", "Attach a PDF or photo of your report before submitting.");
+      return;
+    }
 
     setSubmitting(true);
     try {
-      await applyForLeave({
-        studentUid: profile.uid,
-        studentName: profile.name,
-        studentEnrollmentNumber: profile.enrollmentNumber,
-        facultyEmail: selectedFaculty.email,
-        facultyUid: selectedFaculty.uid,
-        facultyName: selectedFaculty.name,
-        type,
-        fromDate: fromDate.trim(),
-        toDate: toDate.trim(),
-         reason: reasonTrimmed,
-
-      });
+      let sentTo: string;
+      if (type === "medical") {
+        if (!profile.branch) throw new Error("Your profile has no branch set, so your HOD can't be found. Contact the admin.");
+        const route = await applyForMedicalLeave({
+          studentUid: profile.uid,
+          studentName: profile.name,
+          studentEnrollmentNumber: profile.enrollmentNumber,
+          studentBranch: profile.branch,
+          fromDate: fromDate.trim(),
+          toDate: toDate.trim(),
+          reason: reasonTrimmed,
+          medicalReportUrl: reportUrlTrimmed,
+        });
+        sentTo = `${route.doctorName}. After the doctor, it goes to ${route.hodName} (HOD), then to your teachers.`;
+      } else {
+        const to = selectedFaculty!;
+        await applyForLeave({
+          studentUid: profile.uid,
+          studentName: profile.name,
+          studentEnrollmentNumber: profile.enrollmentNumber,
+          facultyEmail: to.email,
+          facultyUid: to.uid,
+          facultyName: to.name,
+          type,
+          fromDate: fromDate.trim(),
+          toDate: toDate.trim(),
+          reason: reasonTrimmed,
+        });
+        sentTo = `${to.name}.`;
+      }
       setSelectedFaculty(null);
       setFromDate("");
       setToDate("");
       setReason("");
-      Alert.alert("Submitted", `Your leave request was sent to ${selectedFaculty.name}.`);
+      setMedicalReportUrl("");
+      setMedicalReportFileName("");
+      Alert.alert("Submitted", `Your leave request was sent to ${sentTo}`);
     } catch (err: any) {
       Alert.alert("Couldn't submit", err.message ?? "Please try again.");
     } finally {
@@ -140,26 +320,44 @@ export default function ApplyLeaveScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <Text style={styles.header}>Apply for Leave</Text>
 
           <Text style={styles.label}>Type</Text>
           <View style={styles.toggleRow}>
             <TouchableOpacity
               style={[styles.toggleButton, type === "casual" && styles.toggleButtonActive]}
-              onPress={() => setType("casual")}
+              onPress={() => handleTypeChange("casual")}
             >
               <Text style={[styles.toggleText, type === "casual" && styles.toggleTextActive]}>Casual</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.toggleButton, type === "medical" && styles.toggleButtonActive]}
-              onPress={() => setType("medical")}
+              onPress={() => handleTypeChange("medical")}
             >
               <Text style={[styles.toggleText, type === "medical" && styles.toggleTextActive]}>Medical</Text>
             </TouchableOpacity>
           </View>
 
           <Text style={styles.label}>Addressed to</Text>
+          {type === "medical" ? (
+            <View style={styles.routeCard}>
+              {medicalConfig === undefined ? (
+                <ActivityIndicator color={colors.primary} />
+              ) : !medicalConfig?.doctor || !medicalHod ? (
+                <Text style={styles.routeWarning}>
+                  Medical leave isn't set up for your branch yet — contact the admin.
+                </Text>
+              ) : (
+                <>
+                  <Text style={styles.routeStep}>1 · {medicalConfig.doctor.name} (Doctor)</Text>
+                  <Text style={styles.routeStep}>2 · {medicalHod.name} (HOD, {profile?.branch})</Text>
+                  <Text style={styles.routeStep}>3 · Your teachers excuse the classes you missed</Text>
+                </>
+              )}
+            </View>
+          ) : (
           <TouchableOpacity
             style={styles.dropdownField}
             onPress={() => setPickerOpen(true)}
@@ -171,6 +369,7 @@ export default function ApplyLeaveScreen() {
             </Text>
             <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
           </TouchableOpacity>
+          )}
 
           <Modal
             visible={pickerOpen}
@@ -223,21 +422,53 @@ export default function ApplyLeaveScreen() {
           <TextInput
             style={styles.input}
             value={fromDate}
-            onChangeText={setFromDate}
+            onChangeText={(text) => setFromDate(maskDateInput(text))}
             placeholder="2026-09-15"
             placeholderTextColor={colors.textSecondary}
-            keyboardType="numbers-and-punctuation"
+            keyboardType="number-pad"
+            maxLength={10}
           />
 
           <Text style={styles.label}>To</Text>
           <TextInput
             style={styles.input}
             value={toDate}
-            onChangeText={setToDate}
+            onChangeText={(text) => setToDate(maskDateInput(text))}
             placeholder="2026-09-17"
             placeholderTextColor={colors.textSecondary}
-            keyboardType="numbers-and-punctuation"
+            keyboardType="number-pad"
+            maxLength={10}
           />
+
+          {type === "medical" && (
+            <>
+              <Text style={styles.label}>Medical Report (PDF or photo)</Text>
+              <TouchableOpacity
+                style={styles.attachButton}
+                onPress={handlePickMedicalReport}
+                disabled={uploadingReport}
+              >
+                {uploadingReport ? (
+                  <ActivityIndicator color={colors.primary} />
+                ) : (
+                  <>
+                    <Ionicons
+                      name={medicalReportUrl ? "checkmark-circle" : "attach-outline"}
+                      size={18}
+                      color={medicalReportUrl ? colors.success : colors.primary}
+                    />
+                    <Text style={[styles.attachButtonText, medicalReportUrl && { color: colors.success }]}>
+                      {medicalReportFileName || "Attach report"}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <Text style={styles.hint}>
+                Attach the actual PDF or photo of your report from your phone — the Medical Officer needs to open it
+                before approving.
+              </Text>
+            </>
+          )}
 
           <Text style={styles.label}>Reason</Text>
           <TextInput
@@ -273,15 +504,25 @@ export default function ApplyLeaveScreen() {
                     <Text style={[styles.statusPillText, { color: statusColors[app.status] }]}>{app.status}</Text>
                   </View>
                 </View>
-                <Text style={styles.historySubtitle}>To {app.facultyName}</Text>
-                <Text style={styles.historyReason}>{app.reason}</Text>
-                {app.facultyRemark && (
-                  <Text style={styles.historyRemark}>Remark: {app.facultyRemark}</Text>
+                {app.type === "medical" && app.stage ? (
+                  <>
+                    <Text style={styles.historyReason}>{app.reason}</Text>
+                    <MedicalProgress app={app} />
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.historySubtitle}>To {app.facultyName}</Text>
+                    <Text style={styles.historyReason}>{app.reason}</Text>
+                    {app.facultyRemark && (
+                      <Text style={styles.historyRemark}>Remark: {app.facultyRemark}</Text>
+                    )}
+                  </>
                 )}
               </View>
             ))
           )}
         </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -292,6 +533,29 @@ const styles = StyleSheet.create({
   scrollContent: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
   header: { ...typography.h2, color: colors.textPrimary, marginBottom: spacing.md },
   label: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.md, marginBottom: 4, fontWeight: "600" },
+  hint: { ...typography.caption, color: colors.textSecondary, marginTop: 4, fontStyle: "italic" },
+  routeCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: 6,
+  },
+  routeStep: { ...typography.body, color: colors.textPrimary, fontWeight: "600" },
+  routeWarning: { ...typography.caption, color: colors.danger, fontWeight: "600" },
+  attachButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+  },
+  attachButtonText: { ...typography.body, color: colors.primary, fontWeight: "600" },
   input: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,
@@ -321,7 +585,7 @@ const styles = StyleSheet.create({
   dropdownPlaceholder: { ...typography.body, color: colors.textSecondary },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: colors.overlay,
     justifyContent: "flex-end",
   },
   modalSheet: {

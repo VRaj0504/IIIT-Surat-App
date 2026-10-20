@@ -12,11 +12,11 @@ import {
   Modal,
   FlatList,
   Linking,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { searchPublications, PublicationCandidate } from "../utils/publicationLookup";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -26,9 +26,9 @@ import {
   spacing,
   radius,
   typography,
-  clayShadowSoft,
 } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
+import { getCurrentSemester } from "../utils/academicInfo";
 
 export default function EditProfileScreen() {
   const navigation = useNavigation();
@@ -40,6 +40,7 @@ export default function EditProfileScreen() {
   const [officeHours, setOfficeHours] = useState(profile?.officeHours ?? "");
   const [phone, setPhone] = useState(profile?.phone ?? "");
   const [researchAreas, setResearchAreas] = useState(profile?.researchAreas ?? "");
+  const [aboutMe, setAboutMe] = useState(profile?.aboutMe ?? "");
   const [publicationsCount, setPublicationsCount] = useState(
     profile?.publicationsCount != null ? String(profile.publicationsCount) : "",
   );
@@ -140,6 +141,7 @@ export default function EditProfileScreen() {
           officeHours,
           phone,
           researchAreas,
+          aboutMe,
           publicationsCount: publicationsCount.trim() ? Number(publicationsCount.trim()) : null,
         });
       } else if (profile?.role === "student") {
@@ -157,158 +159,167 @@ export default function EditProfileScreen() {
     }
   };
 
+  const isStudent = profile?.role === "student";
+  const isFaculty = profile?.role === "faculty";
+  const semester =
+    isStudent && profile?.admissionYear ? getCurrentSemester(profile.admissionYear, undefined, profile.program) : null;
+
+  const phoneField = (hint: string) => (
+    <Field label="Phone" hint={hint}>
+      <TextInput
+        style={styles.input}
+        value={phone}
+        onChangeText={setPhone}
+        placeholder="Leave blank to keep private"
+        placeholderTextColor={colors.textSecondary}
+        keyboardType="phone-pad"
+      />
+    </Field>
+  );
+
   return (
-    <LinearGradient
-      colors={[colors.gradientStart, colors.gradientEnd]}
-      style={{ flex: 1 }}
-    >
-            <SafeAreaView style={styles.container} edges={["top"]}>
+    <View style={styles.page}>
+      {/* behavior="height" on Android, not undefined — the OS-level resize
+          is unreliable on newer Android with edge-to-edge display on. */}
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView
-          style={styles.content}
-          contentContainerStyle={styles.contentContainer}
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <View style={styles.photoSection}>
-            <TouchableOpacity onPress={handlePickPhoto} disabled={uploadingPhoto}>
+          {/* Photo */}
+          <View style={styles.photoCard}>
+            <TouchableOpacity onPress={handlePickPhoto} disabled={uploadingPhoto} activeOpacity={0.85}>
               {uploadingPhoto ? (
-                <View style={styles.photoCircle}>
+                <View style={styles.photo}>
                   <ActivityIndicator color={colors.primary} />
                 </View>
               ) : profile?.photoUrl ? (
-                <Image source={{ uri: profile.photoUrl }} style={styles.photoCircle} />
+                <Image source={{ uri: profile.photoUrl }} style={styles.photo} />
               ) : (
-                <View style={styles.photoCircle}>
+                <View style={styles.photo}>
                   <Text style={styles.photoInitial}>{profile?.name?.trim()?.[0]?.toUpperCase() ?? "?"}</Text>
                 </View>
               )}
-            </TouchableOpacity>
-            <Text style={styles.photoHint}>Tap to {profile?.photoUrl ? "change" : "add"} photo</Text>
-          </View>
-
-          <Text style={styles.label}>Full Name</Text>
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="Your name"
-            placeholderTextColor={colors.textSecondary}
-          />
-
-          {/* Read-only fields — these come from the roster/allowlist and admin
-            records, not something the app lets you self-edit. */}
-          <Text style={styles.label}>Email</Text>
-          <View style={styles.readOnlyField}>
-            <Text style={styles.readOnlyText}>{profile?.email}</Text>
-          </View>
-
-          {profile?.role === "student" && (
-            <>
-              <Text style={styles.label}>Enrollment Number</Text>
-              <View style={styles.readOnlyField}>
-                <Text style={styles.readOnlyText}>
-                  {profile?.enrollmentNumber}
-                </Text>
+              <View style={styles.cameraBadge}>
+                <Ionicons name="camera" size={14} color={colors.onPrimary} />
               </View>
-              <Text style={styles.hint}>
-                Enrollment number, branch, and section come from the official
-                roster and can't be changed here — contact an admin if any of
-                this is wrong.
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.photoName} numberOfLines={1}>
+                {name.trim() || profile?.name}
               </Text>
+              <Text style={styles.photoHint}>Tap the photo to {profile?.photoUrl ? "change" : "add"} it</Text>
+            </View>
+          </View>
 
-              <Text style={styles.label}>Phone (optional — used for Lost &amp; Found contact)</Text>
+          <Section title="Basic">
+            <Field label="Full name">
               <TextInput
                 style={styles.input}
-                value={phone}
-                onChangeText={setPhone}
-                placeholder="Leave blank to keep private"
+                value={name}
+                onChangeText={setName}
+                placeholder="Your name"
                 placeholderTextColor={colors.textSecondary}
-                keyboardType="phone-pad"
               />
+            </Field>
+            <Locked label="Email" value={profile?.email ?? ""} />
+          </Section>
+
+          {isStudent && (
+            <>
+              <Section
+                title="College"
+                note="These come from the official roster and can't be changed here — contact an admin if anything is wrong."
+              >
+                <Locked label="Enrollment number" value={profile?.enrollmentNumber ?? "—"} />
+                <Locked
+                  label="Class"
+                  value={[profile?.branch, profile?.section, semester ? `Sem ${semester}` : null].filter(Boolean).join(" · ") || "—"}
+                />
+              </Section>
+              <Section title="Contact">{phoneField("Optional — used for Lost & Found contact.")}</Section>
             </>
           )}
 
-          {profile?.role === "faculty" && (
+          {isFaculty && (
             <>
-              <Text style={styles.hint}>
-                These show up in the Faculty Directory so students can find and contact you — all optional.
-              </Text>
+              <Section title="Faculty directory" note="Students see these in the Faculty Directory — all optional.">
+                <Field label="Department">
+                  <ChipPicker value={department} onChange={setDepartment} options={DEPARTMENTS} />
+                </Field>
+                <Field label="Designation">
+                  <ChipPicker value={designation} onChange={setDesignation} options={DESIGNATIONS} />
+                </Field>
+                <Field label="Office location">
+                  <TextInput
+                    style={styles.input}
+                    value={officeLocation}
+                    onChangeText={setOfficeLocation}
+                    placeholder="e.g. Faculty Block, Room 204"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                </Field>
+                <Field label="Office hours">
+                  <TextInput
+                    style={styles.input}
+                    value={officeHours}
+                    onChangeText={setOfficeHours}
+                    placeholder="e.g. Mon–Fri, 2–4 PM"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                </Field>
+              </Section>
 
-              <Text style={styles.label}>Department</Text>
-              <TextInput
-                style={styles.input}
-                value={department}
-                onChangeText={setDepartment}
-                placeholder="e.g. Computer Science and Engineering"
-                placeholderTextColor={colors.textSecondary}
-              />
+              <Section title="Contact">{phoneField("Optional — shown to students.")}</Section>
 
-              <Text style={styles.label}>Designation</Text>
-              <TextInput
-                style={styles.input}
-                value={designation}
-                onChangeText={setDesignation}
-                placeholder="e.g. Assistant Professor"
-                placeholderTextColor={colors.textSecondary}
-              />
-
-              <Text style={styles.label}>Office Location</Text>
-              <TextInput
-                style={styles.input}
-                value={officeLocation}
-                onChangeText={setOfficeLocation}
-                placeholder="e.g. Faculty Block, Room 204"
-                placeholderTextColor={colors.textSecondary}
-              />
-
-              <Text style={styles.label}>Office Hours</Text>
-              <TextInput
-                style={styles.input}
-                value={officeHours}
-                onChangeText={setOfficeHours}
-                placeholder="e.g. Mon-Fri, 2-4 PM"
-                placeholderTextColor={colors.textSecondary}
-              />
-
-              <Text style={styles.label}>Phone (optional — shown to students)</Text>
-              <TextInput
-                style={styles.input}
-                value={phone}
-                onChangeText={setPhone}
-                placeholder="Leave blank to keep private"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="phone-pad"
-              />
-
-              <Text style={styles.label}>Research Areas</Text>
-              <TextInput
-                style={styles.input}
-                value={researchAreas}
-                onChangeText={setResearchAreas}
-                placeholder="e.g. Machine Learning, Computer Vision"
-                placeholderTextColor={colors.textSecondary}
-              />
-
-              <Text style={styles.label}>Publications (just a count, not a list)</Text>
-              <TextInput
-                style={styles.input}
-                value={publicationsCount}
-                onChangeText={(v) => setPublicationsCount(v.replace(/[^0-9]/g, ""))}
-                placeholder="e.g. 12"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="number-pad"
-              />
-              <TouchableOpacity
-                style={styles.lookupButton}
-                onPress={() => {
-                  setLookupQuery(profile?.name ?? "");
-                  setLookupResults(null);
-                  setLookupError(null);
-                  setLookupOpen(true);
-                }}
-              >
-                <Ionicons name="search-outline" size={16} color={colors.primary} />
-                <Text style={styles.lookupButtonText}>Look up my count (DBLP / Semantic Scholar)</Text>
-              </TouchableOpacity>
+              <Section title="About you">
+                <Field label="A few lines for students">
+                  <TextInput
+                    style={[styles.input, styles.textArea]}
+                    value={aboutMe}
+                    onChangeText={setAboutMe}
+                    placeholder="e.g. I teach Data Structures and Operating Systems, and I'm happy to talk about grad school plans."
+                    placeholderTextColor={colors.textSecondary}
+                    multiline
+                    numberOfLines={3}
+                  />
+                </Field>
+                <Field label="Research areas">
+                  <TextInput
+                    style={styles.input}
+                    value={researchAreas}
+                    onChangeText={setResearchAreas}
+                    placeholder="e.g. Machine Learning, Computer Vision"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                </Field>
+                <Field label="Publications (a count)">
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <TextInput
+                      style={[styles.input, { flex: 1 }]}
+                      value={publicationsCount}
+                      onChangeText={(v) => setPublicationsCount(v.replace(/[^0-9]/g, ""))}
+                      placeholder="e.g. 12"
+                      placeholderTextColor={colors.textSecondary}
+                      keyboardType="number-pad"
+                    />
+                    <TouchableOpacity
+                      style={styles.lookupButton}
+                      onPress={() => {
+                        setLookupQuery(profile?.name ?? "");
+                        setLookupResults(null);
+                        setLookupError(null);
+                        setLookupOpen(true);
+                      }}
+                    >
+                      <Ionicons name="search-outline" size={16} color={colors.primary} />
+                      <Text style={styles.lookupButtonText}>Look up</Text>
+                    </TouchableOpacity>
+                  </View>
+                </Field>
+              </Section>
 
               <Modal visible={lookupOpen} animationType="slide" transparent onRequestClose={() => setLookupOpen(false)}>
                 <View style={styles.modalOverlay}>
@@ -320,8 +331,7 @@ export default function EditProfileScreen() {
                       </TouchableOpacity>
                     </View>
                     <Text style={styles.lookupHint}>
-                      Not Google Scholar — there's no public API for that. This searches Semantic Scholar and DBLP
-                      instead, both free public research databases.
+                      Searches Semantic Scholar and DBLP (free public research databases) — Google Scholar has no public API.
                     </Text>
                     <View style={styles.lookupSearchRow}>
                       <TextInput
@@ -334,7 +344,11 @@ export default function EditProfileScreen() {
                         onSubmitEditing={runLookup}
                       />
                       <TouchableOpacity style={styles.lookupSearchButton} onPress={runLookup} disabled={lookupLoading}>
-                        {lookupLoading ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.lookupSearchButtonText}>Search</Text>}
+                        {lookupLoading ? (
+                          <ActivityIndicator color={colors.surface} />
+                        ) : (
+                          <Text style={styles.lookupSearchButtonText}>Search</Text>
+                        )}
                       </TouchableOpacity>
                     </View>
                     {lookupError && <Text style={styles.emptyNote}>{lookupError}</Text>}
@@ -360,122 +374,200 @@ export default function EditProfileScreen() {
             </>
           )}
 
-          {/* Any role other than the two above — admin accounts are the
-            real case today (set directly in Firestore for access to
-            Inbox Imports etc., outside the normal signup flow the Role
-            type covers), but this also protects any future role from
-            silently having no way to set a contact phone at all, the
-            exact gap that left an admin's Lost & Found phone field
-            invisible even though the phone value itself was already
-            saved. */}
-          {profile?.role !== "student" && profile?.role !== "faculty" && (
-            <>
-              <Text style={styles.label}>Phone (optional — used for Lost &amp; Found contact)</Text>
-              <TextInput
-                style={styles.input}
-                value={phone}
-                onChangeText={setPhone}
-                placeholder="Leave blank to keep private"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="phone-pad"
-              />
-            </>
-          )}
+          {/* Any other role (admin today) — just the contact phone. */}
+          {!isStudent && !isFaculty && <Section title="Contact">{phoneField("Optional — used for Lost & Found contact.")}</Section>}
 
           {error && <Text style={styles.error}>{error}</Text>}
+        </ScrollView>
 
-          <TouchableOpacity
-            style={styles.saveBtn}
-            onPress={handleSave}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.saveBtnText}>Save Changes</Text>
-            )}
+        {/* Save stays put at the bottom while you scroll */}
+        <View style={styles.saveBar}>
+          <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving} activeOpacity={0.85}>
+            {saving ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={styles.saveBtnText}>Save changes</Text>}
           </TouchableOpacity>
-         </ScrollView>
-      </SafeAreaView>
-    </LinearGradient>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+const DEPARTMENTS = [
+  "Computer Science and Engineering",
+  "Electronics and Communication Engineering",
+  "Mathematics and Computational Sciences",
+  "Applied Sciences",
+  "Humanities and Social Sciences",
+];
+const DESIGNATIONS = ["Professor", "Associate Professor", "Assistant Professor", "Visiting Faculty", "Adjunct Faculty", "Teaching Assistant"];
+
+// Pick-from-list for fixed values (no typos); a value already saved that
+// isn't in the list still shows, selected.
+function ChipPicker({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
+  const all = value && !options.includes(value) ? [value, ...options] : options;
+  return (
+    <View style={styles.chipWrap}>
+      {all.map((o) => {
+        const on = o === value;
+        return (
+          <TouchableOpacity
+            key={o}
+            style={[styles.pick, on && styles.pickOn]}
+            onPress={() => onChange(on ? "" : o)}
+            activeOpacity={0.8}
+          >
+            {on && <Ionicons name="checkmark" size={14} color={colors.onInk} />}
+            <Text style={[styles.pickText, on && styles.pickTextOn]}>{o}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
+  return (
+    <View style={{ marginTop: 18 }}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <View style={styles.sectionCard}>{children}</View>
+      {note ? <Text style={styles.note}>{note}</Text> : null}
+    </View>
+  );
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      {children}
+      {hint ? <Text style={styles.fieldHint}>{hint}</Text> : null}
+    </View>
+  );
+}
+
+function Locked({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.locked}>
+        <Text style={styles.lockedText} numberOfLines={1}>
+          {value}
+        </Text>
+        <Ionicons name="lock-closed" size={14} color={colors.textSecondary} />
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: { flex : 1},
-  contentContainer: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
-  photoSection: { alignItems: "center", marginBottom: spacing.md },
-  photoCircle: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: colors.primary + "20",
+  page: { flex: 1, backgroundColor: colors.background },
+  scroll: { paddingHorizontal: 18, paddingTop: spacing.md, paddingBottom: 120 },
+
+  photoCard: { flexDirection: "row", alignItems: "center", gap: 16, backgroundColor: colors.surface, borderRadius: 24, padding: 16 },
+  photo: {
+    width: 76,
+    height: 76,
+    borderRadius: 26,
+    backgroundColor: colors.tile.blue.bg,
     justifyContent: "center",
     alignItems: "center",
     overflow: "hidden",
   },
-  photoInitial: { fontSize: 36, fontWeight: "800", color: colors.primary },
-  photoHint: { ...typography.caption, color: colors.primary, marginTop: spacing.xs, fontWeight: "600" },
-  label: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-    marginTop: spacing.md,
+  photoInitial: { fontSize: 30, fontWeight: "800", color: colors.tile.blue.fg },
+  cameraBadge: {
+    position: "absolute",
+    right: -4,
+    bottom: -4,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    borderWidth: 3,
+    borderColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
   },
+  photoName: { fontSize: 18, fontWeight: "800", letterSpacing: -0.3, color: colors.textPrimary },
+  photoHint: { fontSize: 13, fontWeight: "600", color: colors.textSecondary, marginTop: 2 },
+
+  sectionTitle: { fontSize: 13, fontWeight: "800", color: colors.textSecondary, marginBottom: 8, marginLeft: 4 },
+  sectionCard: { backgroundColor: colors.surface, borderRadius: 22, paddingHorizontal: 14, paddingVertical: 4 },
+  note: { fontSize: 12, fontWeight: "600", color: colors.textSecondary, marginTop: 8, marginHorizontal: 4, lineHeight: 17 },
+  field: { paddingVertical: 10 },
+  label: { fontSize: 12, fontWeight: "800", color: colors.textSecondary, marginBottom: 6 },
+  fieldHint: { fontSize: 12, fontWeight: "600", color: colors.textSecondary, marginTop: 6 },
   input: {
-    backgroundColor: colors.surface,
-    ...clayShadowSoft,
-    borderWidth: 1,
-    borderColor: "rgba(11,61,145,0.12)",
-    borderRadius: radius.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    backgroundColor: colors.background,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     color: colors.textPrimary,
-    ...typography.body,
+    fontSize: 15,
+    fontWeight: "600",
   },
-  readOnlyField: {
-    backgroundColor: colors.border,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+  textArea: { minHeight: 90, textAlignVertical: "top" },
+  locked: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.background,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
-  readOnlyText: { ...typography.body, color: colors.textSecondary },
-  hint: {    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.sm,
+  lockedText: { flex: 1, fontSize: 15, fontWeight: "600", color: colors.textSecondary },
+
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  pick: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: colors.background,
   },
+  pickOn: { backgroundColor: colors.ink },
+  pickText: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },
+  pickTextOn: { color: colors.onInk },
+
   error: {
     color: colors.danger,
-    backgroundColor: "#FCEAEB",
-    padding: spacing.sm,
-    borderRadius: radius.sm,
-    marginTop: spacing.md,
-    ...typography.caption,
+    backgroundColor: colors.dangerBg,
+    padding: 12,
+    borderRadius: 14,
+    marginTop: 16,
+    fontSize: 13,
+    fontWeight: "600",
   },
-  saveBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    alignItems: "center",
-    marginTop: spacing.lg,
+  saveBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 24,
+    backgroundColor: colors.background,
   },
-  saveBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  saveBtn: { backgroundColor: colors.primary, borderRadius: 18, paddingVertical: 16, alignItems: "center" },
+  saveBtnText: { color: colors.onPrimary, fontWeight: "800", fontSize: 16 },
+
   lookupButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
-    marginTop: spacing.sm,
-    alignSelf: "flex-start",
+    gap: 6,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: colors.tile.blue.bg,
   },
-  lookupButtonText: { ...typography.caption, color: colors.primary, fontWeight: "600" },
+  lookupButtonText: { fontSize: 13, color: colors.primary, fontWeight: "800" },
   lookupHint: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.sm },
   lookupSearchRow: { flexDirection: "row", gap: spacing.sm, alignItems: "center" },
   lookupSearchButton: {
     backgroundColor: colors.primary,
-    borderRadius: radius.sm,
+    borderRadius: 14,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: 12,
     justifyContent: "center",
   },
   lookupSearchButtonText: { color: colors.surface, fontWeight: "700" },
@@ -483,14 +575,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderRadius: 14,
     marginTop: spacing.sm,
   },
-  lookupOptionName: { ...typography.body, color: colors.textPrimary, fontWeight: "600" },
+  lookupOptionName: { ...typography.body, color: colors.textPrimary, fontWeight: "700" },
   lookupOptionMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: "flex-end" },
   modalSheet: {
     backgroundColor: colors.background,
     borderTopLeftRadius: radius.xl,

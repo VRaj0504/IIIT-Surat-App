@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -16,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { getAdmissionYears, getClassOptionsForYear, yearOfStudyLabel, ClassOption } from "../firebase/announcementsService";
+import { getCurrentSemester } from "../utils/academicInfo";
 import { subscribeToCurriculum, CurriculumSubject } from "../firebase/curriculumService";
 import { getClassRoster, RosterStudent } from "../firebase/gradesService";
 import { markAttendance, getExistingSession } from "../firebase/attendanceService";
@@ -23,10 +23,53 @@ import LoadingSpinner from "../components/LoadingSpinner";
 
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
-// The college is moving attendance-marking to NTProxy (QR shown by
-// faculty, scanned by students) — this link is the bridge until this
-// screen either syncs with that data or is retired in its favor.
-const NTPROXY_URL = "https://ntproxy.onrender.com";
+// A class is a SECTION: 1st-year MNC students sit in "CSE D" with CSE
+// students and are marked together. Each branch still gets its own
+// session doc (students look their attendance up by their own branch).
+type ClassGroup = {
+  key: string;
+  label: string;
+  section: string | null;
+  branches: string[];
+  mainBranch: string; // for the subject list
+  specializations: string[];
+};
+
+function groupClasses(options: ClassOption[]): ClassGroup[] {
+  const map = new Map<string, ClassGroup>();
+  for (const o of options) {
+    const key = o.section ?? `branch:${o.branch}`;
+    const g = map.get(key);
+    if (!g) {
+      map.set(key, {
+        key,
+        label: o.section ?? o.branch,
+        section: o.section,
+        branches: [o.branch],
+        mainBranch: o.branch,
+        specializations: [...o.specializations],
+      });
+    } else {
+      if (!g.branches.includes(o.branch)) g.branches.push(o.branch);
+      o.specializations.forEach((sp) => !g.specializations.includes(sp) && g.specializations.push(sp));
+    }
+  }
+  return Array.from(map.values()).map((g) => {
+    // The branch named in the section ("CSE D" → CSE) owns the subject list.
+    g.mainBranch = g.branches.find((b) => g.section && new RegExp(`\\b${b}\\b`, "i").test(g.section)) ?? g.branches[0];
+    const pg = options.some((o) => o.section === g.section && o.label.startsWith("M.Tech"));
+    const others = g.branches.filter((b) => b !== g.mainBranch);
+    g.label = `${pg ? "M.Tech " : ""}${g.section && /\b(CSE|ECE|MNC)\b/i.test(g.section) ? g.section : [g.mainBranch, g.section].filter(Boolean).join(" ")}${others.length ? ` + ${others.join(", ")}` : ""}`;
+    return g;
+  });
+}
+
+const isValidDate = (s: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s.trim());
+  if (!m) return false;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.getFullYear() === +m[1] && d.getMonth() === +m[2] - 1 && d.getDate() === +m[3];
+};
 
 // Receives only this row's own isAbsent boolean, not the whole
 // absentSet — same reasoning as GradeEntryScreen.tsx's StudentGradeRow:
@@ -68,8 +111,8 @@ export default function MarkAttendanceScreen() {
 
   const [years, setYears] = useState<number[]>([]);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
-  const [classOptions, setClassOptions] = useState<ClassOption[]>([]);
-  const [selectedClass, setSelectedClass] = useState<ClassOption | null>(null);
+  const [classOptions, setClassOptions] = useState<ClassGroup[]>([]);
+  const [selectedClass, setSelectedClass] = useState<ClassGroup | null>(null);
   const [selectedSpecialization, setSelectedSpecialization] = useState<string | null>(null);
   const [classesLoading, setClassesLoading] = useState(false);
 
@@ -79,7 +122,7 @@ export default function MarkAttendanceScreen() {
 
   const [date, setDate] = useState(todayDateString());
 
-  const [roster, setRoster] = useState<RosterStudent[]>([]);
+  const [roster, setRoster] = useState<(RosterStudent & { branch: string })[]>([]);
   const [rosterLoading, setRosterLoading] = useState(false);
   const [absentSet, setAbsentSet] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -95,8 +138,11 @@ export default function MarkAttendanceScreen() {
     }
     setClassesLoading(true);
     setSelectedClass(null);
+    // Default to the semester this batch is in now (can still be changed).
+    setSemester(getCurrentSemester(selectedYear) as (typeof SEMESTERS)[number]);
+    setSelectedSubject(null);
     getClassOptionsForYear(selectedYear)
-      .then(setClassOptions)
+      .then((opts) => setClassOptions(groupClasses(opts)))
       .catch(() => setClassOptions([]))
       .finally(() => setClassesLoading(false));
   }, [selectedYear]);
@@ -106,32 +152,37 @@ export default function MarkAttendanceScreen() {
       setSubjects([]);
       return;
     }
-    const unsubscribe = subscribeToCurriculum(selectedClass.branch, semester, setSubjects);
+    const unsubscribe = subscribeToCurriculum(selectedClass.mainBranch, semester, setSubjects);
     return () => unsubscribe();
   }, [selectedClass, semester]);
 
   useEffect(() => {
     const needsSpecialization = selectedClass && selectedClass.specializations.length > 0;
-    if (!selectedClass || selectedYear === null || !selectedSubject || !date.trim() || (needsSpecialization && !selectedSpecialization)) {
+    if (!selectedClass || selectedYear === null || !selectedSubject || !isValidDate(date) || (needsSpecialization && !selectedSpecialization)) {
       setRoster([]);
       setAbsentSet(new Set());
       return;
     }
     const specFilter = selectedSpecialization === "__ALL__" ? null : selectedSpecialization;
     setRosterLoading(true);
-    Promise.all([
-      getClassRoster(selectedYear, selectedClass.branch, selectedClass.section, specFilter),
-      getExistingSession({
-        branch: selectedClass.branch,
-        admissionYear: selectedYear,
-        section: selectedClass.section,
-        subjectCode: selectedSubject.code,
-        date: date.trim(),
+    Promise.all(
+      selectedClass.branches.map(async (branch) => {
+        const [students, absent] = await Promise.all([
+          getClassRoster(selectedYear, branch, selectedClass.section, specFilter),
+          getExistingSession({
+            branch,
+            admissionYear: selectedYear,
+            section: selectedClass.section,
+            subjectCode: selectedSubject.code,
+            date: date.trim(),
+          }),
+        ]);
+        return { students: students.map((st) => ({ ...st, branch })), absent: absent ?? [] };
       }),
-    ])
-      .then(([students, existingAbsentees]) => {
-        setRoster(students);
-        setAbsentSet(new Set(existingAbsentees ?? []));
+    )
+      .then((parts) => {
+        setRoster(parts.flatMap((p) => p.students).sort((a, b) => a.enrollmentNumber.localeCompare(b.enrollmentNumber)));
+        setAbsentSet(new Set(parts.flatMap((p) => p.absent)));
       })
       .catch(() => {
         setRoster([]);
@@ -154,20 +205,31 @@ export default function MarkAttendanceScreen() {
     });
   }, []);
 
+  const today = todayDateString();
+  const dateError = !isValidDate(date) ? "Use the format YYYY-MM-DD." : date.trim() > today ? "That date is in the future." : "";
+
   const handleSave = async () => {
-    if (!profile || !selectedClass || selectedYear === null || !selectedSubject || !date.trim()) return;
+    if (!profile || !selectedClass || selectedYear === null || !selectedSubject || dateError) return;
     setSaving(true);
     try {
-      await markAttendance({
-        branch: selectedClass.branch,
-        admissionYear: selectedYear,
-        section: selectedClass.section,
-        subjectCode: selectedSubject.code,
-        subjectName: selectedSubject.name,
-        date: date.trim(),
-        absentEnrollmentNumbers: Array.from(absentSet),
-        markedBy: profile.uid,
-      });
+      const spec = selectedSpecialization && selectedSpecialization !== "__ALL__" ? selectedSpecialization : null;
+      for (const branch of selectedClass.branches) {
+        const mine = roster.filter((r) => r.branch === branch);
+        if (!mine.length) continue;
+        await markAttendance({
+          branch,
+          admissionYear: selectedYear,
+          section: selectedClass.section,
+          subjectCode: selectedSubject.code,
+          subjectName: selectedSubject.name,
+          date: date.trim(),
+          absentEnrollmentNumbers: mine.filter((r) => absentSet.has(r.enrollmentNumber)).map((r) => r.enrollmentNumber),
+          markedBy: profile.uid,
+          markedByName: profile.name,
+          semester: semester ?? undefined,
+          specialization: spec,
+        });
+      }
       Alert.alert("Saved", `Attendance recorded for ${roster.length - absentSet.size} of ${roster.length} present.`);
     } catch (err: any) {
       Alert.alert("Couldn't save", err.message ?? "Please try again.");
@@ -180,18 +242,9 @@ export default function MarkAttendanceScreen() {
     <View>
       <Text style={styles.header}>Mark Attendance</Text>
 
-      <TouchableOpacity
-        style={styles.ntproxyBanner}
-        onPress={() =>
-          Linking.openURL(NTPROXY_URL).catch(() =>
-            Alert.alert("Couldn't open NTProxy", "Try again in a moment."),
-          )
-        }
-      >
-        <Ionicons name="qr-code-outline" size={18} color={colors.primary} />
-        <Text style={styles.ntproxyBannerText}>Generate a QR code on NTProxy instead</Text>
-        <Ionicons name="open-outline" size={16} color={colors.primary} />
-      </TouchableOpacity>
+      <Text style={styles.helperNote}>
+        Marked here or on the faculty portal — students see their percentage in the app right away.
+      </Text>
 
       <View style={styles.pickersArea}>
         <Text style={styles.label}>Year (batch)</Text>
@@ -215,10 +268,10 @@ export default function MarkAttendanceScreen() {
             ) : (
               <View style={styles.chipRow}>
                 {classOptions.map((c) => {
-                  const active = selectedClass?.branch === c.branch && selectedClass?.section === c.section;
+                  const active = selectedClass?.key === c.key;
                   return (
                     <TouchableOpacity
-                      key={`${c.branch}||${c.section ?? ""}`}
+                      key={c.key}
                       style={[styles.chip, active && styles.chipActive]}
                       onPress={() => {
                         setSelectedClass(c);
@@ -283,7 +336,7 @@ export default function MarkAttendanceScreen() {
           <>
             <Text style={styles.label}>Subject</Text>
             {subjects.length === 0 ? (
-              <Text style={styles.emptyNote}>No subjects found for {selectedClass.branch} sem {semester}.</Text>
+              <Text style={styles.emptyNote}>No subjects found for {selectedClass.mainBranch} sem {semester}.</Text>
             ) : (
               <View style={styles.chipRow}>
                 {subjects.map((s) => (
@@ -309,12 +362,15 @@ export default function MarkAttendanceScreen() {
               onChangeText={setDate}
               placeholder="YYYY-MM-DD"
               placeholderTextColor={colors.textSecondary}
+              autoCapitalize="none"
+              keyboardType="numbers-and-punctuation"
             />
+            {!!dateError && <Text style={[styles.emptyNote, { color: colors.danger, paddingHorizontal: 0 }]}>{dateError}</Text>}
           </>
         )}
       </View>
 
-      {selectedSubject && date.trim() && (
+      {selectedSubject && !dateError && (
         <>
           {rosterLoading && (
             <LoadingSpinner style={{ marginTop: spacing.lg }} />
@@ -333,7 +389,7 @@ export default function MarkAttendanceScreen() {
   );
 
   const ListFooter =
-    selectedSubject && date.trim() && !rosterLoading && roster.length > 0 ? (
+    selectedSubject && !dateError && !rosterLoading && roster.length > 0 ? (
       <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={saving}>
         {saving ? (
           <ActivityIndicator color={colors.surface} />
@@ -349,7 +405,7 @@ export default function MarkAttendanceScreen() {
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
         <FlatList
-          data={selectedSubject && date.trim() && !rosterLoading ? roster : []}
+          data={selectedSubject && !dateError && !rosterLoading ? roster : []}
           keyExtractor={(item) => item.enrollmentNumber}
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={ListHeader}
@@ -369,19 +425,6 @@ export default function MarkAttendanceScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  ntproxyBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.sm,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  ntproxyBannerText: { ...typography.caption, color: colors.textPrimary, flex: 1, fontWeight: "600" },
   header: { ...typography.h2, color: colors.textPrimary, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   pickersArea: { paddingHorizontal: spacing.lg },
   label: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.md, marginBottom: 4, fontWeight: "600" },

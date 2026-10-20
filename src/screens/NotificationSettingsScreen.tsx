@@ -10,6 +10,7 @@ import {
   updateNotificationPreference,
   NotificationPreferences,
 } from "../firebase/notificationPreferences";
+import LoadingSpinner from "../components/LoadingSpinner";
 
 type Row = {
   key: Exclude<keyof NotificationPreferences, "classReminderMinutes">;
@@ -119,7 +120,7 @@ export default function NotificationSettingsScreen() {
           </Text>
 
           {!prefs ? (
-            <ActivityIndicator style={{ marginTop: spacing.lg }} color={colors.primary} />
+            <LoadingSpinner style={{ marginTop: spacing.lg }} />
           ) : (
             ROWS.map((row) => (
               <React.Fragment key={row.key}>
@@ -193,7 +194,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: radius.full,
-    backgroundColor: "#EAF0FB",
+    backgroundColor: colors.badge.blue.bg,
     alignItems: "center",
     justifyContent: "center",
     marginRight: spacing.md,
@@ -214,9 +215,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
     borderRadius: radius.full,
-    backgroundColor: "#EAF0FB",
+    backgroundColor: colors.badge.blue.bg,
   },
   chipSelected: { backgroundColor: colors.primary },
   chipText: { ...typography.caption, color: colors.textPrimary, fontWeight: "600" },
-  chipTextSelected: { color: "#fff" },
+  chipTextSelected: { color: colors.onPrimary },
 });

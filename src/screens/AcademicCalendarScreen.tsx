@@ -91,7 +91,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
   },
-  tabTextActive: { color: "#fff" },
+  tabTextActive: { color: colors.onPrimary },
   list: { paddingBottom: spacing.xl },
   eventCard: {
     backgroundColor: colors.surface,

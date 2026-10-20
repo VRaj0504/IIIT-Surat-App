@@ -25,8 +25,13 @@ const mealIcons: Record<MealType, keyof typeof Ionicons.glyphMap> = {
 };
 
 export default function MessMenuScreen() {
-  const [selectedIndex, setSelectedIndex] = useState(getTodayIndex());
+  // On a weekend, getTodayIndex() returns -1 (no entry exists for
+  // Sat/Sun) — default the initial tab to Monday (index 0) instead of
+  // an invalid index, but keep todayIndex itself at -1 so the "today"
+  // dot correctly shows on no tab at all over the weekend, rather than
+  // falsely marking Monday as "today" three days early.
   const todayIndex = getTodayIndex();
+  const [selectedIndex, setSelectedIndex] = useState(todayIndex === -1 ? 0 : todayIndex);
   const dayMenu = messMenu[selectedIndex];
 
   return (
@@ -65,6 +70,16 @@ export default function MessMenuScreen() {
           ))}
         </ScrollView>
 
+        {!dayMenu ? (
+          // Shouldn't be reachable now that selectedIndex is always
+          // clamped to a real weekday above, but a friendly message
+          // here costs nothing and means a future change to messMenu
+          // (removing a day, say) fails safe instead of crashing the
+          // whole screen the way this exact spot already has once.
+          <View style={styles.mealsList}>
+            <Text style={styles.title}>No menu set for this day yet.</Text>
+          </View>
+        ) : (
         <ScrollView contentContainerStyle={styles.mealsList}>
           {(Object.keys(dayMenu.meals) as MealType[]).map((meal) => (
             <View key={meal} style={styles.mealCard}>
@@ -86,6 +101,7 @@ export default function MessMenuScreen() {
             </View>
           ))}
         </ScrollView>
+        )}
       </SafeAreaView>
     </LinearGradient>
   );
@@ -117,7 +133,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: "600",
   },
-  dayTabTextActive: { color: "#fff" },
+  dayTabTextActive: { color: colors.onPrimary },
   todayDot: {
     position: "absolute",
     top: 4,

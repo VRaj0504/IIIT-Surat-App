@@ -1,6 +1,6 @@
 import { doc, collection, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from './firestore';
-import { expandFaculty } from '../data/facultyLegend';
+import { slotTaughtBy } from '../data/facultyLegend';
 
 export type TimetableSlot = {
   id: string;
@@ -78,17 +78,13 @@ export function subscribeToFacultyTimetable(
   facultyName: string,
   onUpdate: (entries: FacultyScheduleEntry[]) => void
 ): () => void {
-  const target = facultyName.trim().toLowerCase();
   return onSnapshot(collection(db, TIMETABLE_COLLECTION), (snap) => {
     const entries: FacultyScheduleEntry[] = [];
     snap.docs.forEach((docSnap) => {
       const tt = docSnap.data() as Timetable;
-      tt.days.forEach((day) => {
-        day.slots.forEach((slot) => {
-          const names = expandFaculty(slot.faculty)
-            .split('/')
-            .map((n) => n.trim().toLowerCase());
-          if (names.includes(target)) {
+      (tt.days ?? []).forEach((day) => {
+        (day.slots ?? []).forEach((slot) => {
+          if (slotTaughtBy(slot.faculty, facultyName)) {
             entries.push({
               ...slot,
               branch: tt.branch,
@@ -102,4 +98,28 @@ export function subscribeToFacultyTimetable(
     });
     onUpdate(entries);
   });
+}
+
+// Every section's whole timetable, live, unfiltered — the raw
+// material for the Room Availability screen, same whole-collection
+// subscription as subscribeToFacultyTimetable above. Kept deliberately
+// dumb (just the raw array, no day/time filtering here) so a student
+// picking a different day or time in that screen recomputes locally
+// instead of re-subscribing to Firestore on every tap — see
+// src/utils/roomAvailability.ts for the actual "who's using what,
+// when" logic that runs against this.
+export function subscribeToAllTimetables(
+  onUpdate: (timetables: Timetable[]) => void,
+  onError?: (error: Error) => void,
+): () => void {
+  return onSnapshot(
+    collection(db, TIMETABLE_COLLECTION),
+    (snap) => {
+      onUpdate(snap.docs.map((d) => d.data() as Timetable));
+    },
+    (error) => {
+      console.warn('subscribeToAllTimetables failed:', error);
+      onError?.(error);
+    },
+  );
 }

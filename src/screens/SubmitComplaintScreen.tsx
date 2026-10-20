@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
   dropdownValue: { ...typography.body, color: colors.textPrimary, fontWeight: "600" },
   dropdownPlaceholder: { ...typography.body, color: colors.textSecondary },
   helperText: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: "flex-end" },
   modalSheet: {
     backgroundColor: colors.background,
     borderTopLeftRadius: radius.xl,

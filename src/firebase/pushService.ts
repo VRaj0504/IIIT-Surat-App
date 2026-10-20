@@ -24,7 +24,7 @@ const isExpoGo = Constants.executionEnvironment === "storeClient";
 // foreground — without this, foreground notifications are silent on some
 // platforms by default. Skipped entirely in Expo Go, same reasoning as
 // registerForPushNotificationsAsync below.
-if (!isExpoGo) {
+if (!isExpoGo && Platform.OS !== "web") {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const Notifications = require("expo-notifications");
   Notifications.setNotificationHandler({
@@ -51,7 +51,7 @@ if (!isExpoGo) {
 // touch expo-notifications there is what caused the crash, not just
 // "safe but useless."
 export async function registerForPushNotificationsAsync(uid: string): Promise<void> {
-  if (isExpoGo) return;
+  if (isExpoGo || Platform.OS === "web") return; // no push on the web build
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -66,6 +66,17 @@ export async function registerForPushNotificationsAsync(uid: string): Promise<vo
       await Notifications.setNotificationChannelAsync("default", {
         name: "default",
         importance: Notifications.AndroidImportance.DEFAULT,
+      });
+      // SOS alerts get their own loud, pop-up channel (sendSosPush sends
+      // with channelId "sos").
+      await Notifications.setNotificationChannelAsync("sos", {
+        name: "SOS alerts",
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 400, 200, 400, 200, 800],
+        lightColor: "#DC2626",
+        sound: "default",
+        bypassDnd: true,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       });
     }
 

@@ -1,5 +1,6 @@
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {ImageAnnotatorClient} from "@google-cloud/vision";
+import * as admin from "firebase-admin";
 
 const visionClient = new ImageAnnotatorClient();
 
@@ -140,8 +141,8 @@ function guessTitle(fullTextAnnotation: any): string | null {
 
 export const extractPosterInfo = onCall<ExtractPosterInfoRequest, Promise<ExtractPosterInfoResponse>>(
   {
-    // Same region as every other callable in this app (placeOrderFn,
-    // etc.) — this isn't just a latency nicety: the client's
+    // Same region as every other callable in this app — this isn't
+    // just a latency nicety: the client's
     // functionsClient.ts is hardcoded to call the asia-south1 endpoint,
     // so a function deployed anywhere else genuinely can't be reached at
     // all (not slower — a real invocation failure), which is exactly
@@ -153,12 +154,20 @@ export const extractPosterInfo = onCall<ExtractPosterInfoRequest, Promise<Extrac
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "You must be signed in.");
     }
-    const {storagePath, bucket} = request.data;
-    if (!storagePath || !bucket) {
-      throw new HttpsError("invalid-argument", "Missing storagePath or bucket.");
+    const {storagePath} = request.data;
+    if (!storagePath || typeof storagePath !== "string") {
+      throw new HttpsError("invalid-argument", "Missing storagePath.");
     }
 
-    const gcsUri = `gs://${bucket}/${storagePath}`;
+    // The caller may only scan a file inside THEIR OWN scan folder, in THIS
+    // project's bucket. Without this check the function (which runs with
+    // admin rights) would OCR any file in the bucket the caller names —
+    // including other students' medical reports — and return its text.
+    const ownPrefix = `posterScans/${request.auth.uid}/`;
+    if (!storagePath.startsWith(ownPrefix) || storagePath.includes("..")) {
+      throw new HttpsError("permission-denied", "You can only scan your own uploads.");
+    }
+    const gcsUri = `gs://${admin.storage().bucket().name}/${storagePath}`;
 
     try {
       const [result] = await visionClient.documentTextDetection(gcsUri);

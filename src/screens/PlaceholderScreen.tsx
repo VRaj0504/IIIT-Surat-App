@@ -53,7 +53,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: radius.full,
-    backgroundColor: "#EAF0FB",
+    backgroundColor: colors.badge.blue.bg,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: spacing.md,
@@ -75,5 +75,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     borderRadius: radius.full,
   },
-  badgeText: { color: "#fff", fontWeight: "700", fontSize: 12 },
+  badgeText: { color: colors.onPrimary, fontWeight: "700", fontSize: 12 },
 });

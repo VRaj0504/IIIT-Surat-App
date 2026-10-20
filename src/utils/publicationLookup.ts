@@ -40,23 +40,60 @@ const FETCH_TIMEOUT_MS = 8000;
 async function fetchJson(url: string): Promise<any> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  let response: Response;
   try {
-    const response = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.json();
+    response = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } });
   } catch (err: any) {
+    clearTimeout(timeout);
     if (err?.name === "AbortError") throw new Error(`timed out after ${FETCH_TIMEOUT_MS / 1000}s`);
     throw new Error(err?.message ?? "network error");
-  } finally {
-    clearTimeout(timeout);
   }
+  clearTimeout(timeout);
+
+  // Read as text first, not response.json() directly — whether it's an
+  // HTTP error (a 429's body sometimes explains itself, e.g. a retry
+  // time) or a 200 that isn't actually JSON (DBLP once sent back an
+  // HTML block page here), a parse error alone gives zero evidence of
+  // what the server actually said. Reading as text first means a
+  // broken response can always show its own content in the error.
+  const raw = await response.text();
+  const snippet = () => raw.trim().slice(0, 140).replace(/\s+/g, " ") + (raw.length > 140 ? "…" : "");
+
+  if (!response.ok) {
+    const err: any = new Error(raw.trim() ? `HTTP ${response.status}: "${snippet()}"` : `HTTP ${response.status}`);
+    err.status = response.status;
+    throw err;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error(`got non-JSON response: "${snippet()}"`);
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function searchSemanticScholar(name: string): Promise<PublicationCandidate[]> {
   const url = `https://api.semanticscholar.org/graph/v1/author/search?query=${encodeURIComponent(
     name,
   )}&fields=name,affiliations,paperCount,url&limit=8`;
-  const data = await fetchJson(url);
+  // One retry on a 429 specifically — their anonymous-tier rate limit
+  // is shared and easy to hit; a short wait often clears it. Anything
+  // else (a real network error, a non-JSON body) isn't worth retrying
+  // and fails straight through.
+  let data: any;
+  try {
+    data = await fetchJson(url);
+  } catch (err: any) {
+    if (err?.status === 429) {
+      await delay(1500);
+      data = await fetchJson(url);
+    } else {
+      throw err;
+    }
+  }
   const hits: any[] = Array.isArray(data?.data) ? data.data : [];
   return hits.map((hit) => ({
     source: "semanticScholar" as const,

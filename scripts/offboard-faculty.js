@@ -1,13 +1,3 @@
-// Fully removes a faculty member who's left the institute — not just
-// their allowlist entry (which seed-allowlist.js already handles once
-// their line is deleted from there), but their actual account: the
-// users/{uid} Firestore profile (what makes them show up in Faculty
-// Directory) AND the Firebase Auth account itself (so they genuinely
-// can't sign back in, not just "no profile if they did").
-//
-// Edit EMAILS_TO_OFFBOARD below, then run: node offboard-faculty.js
-// Safe to re-run — anyone already removed is just skipped.
-
 const { initializeApp } = require("firebase-admin/app");
 const { cert } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
@@ -22,7 +12,7 @@ const db = getFirestore();
 const auth = getAuth();
 
 const EMAILS_TO_OFFBOARD = [
-  "shreya.agarwal@iiitsurat.ac.in", // left the institute
+  "shreya.agarwal@iiitsurat.ac.in",
 ];
 
 async function main() {
@@ -49,10 +39,6 @@ async function main() {
       console.log(`  deleted Auth account (${authUser.uid}) — can no longer sign in`);
     }
 
-    // Also clean up the allowlist entry if it's still there for some
-    // reason (normally you'd have already removed their line from
-    // seed-allowlist.js and re-run it, but this covers the case where
-    // that hasn't happened yet).
     const allowDoc = await db.collection("allowlist").doc(email).get();
     if (allowDoc.exists) {
       await allowDoc.ref.delete();

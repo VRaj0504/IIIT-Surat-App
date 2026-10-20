@@ -1,81 +1,121 @@
 // src/theme/theme.ts
 //
-// "Soft campus" palette — warm cream/peach base instead of the previous
-// cool blue-grey, pastel-tinted badges per category instead of a single
-// low-opacity blue-grey tint everywhere. Chosen specifically over the
-// previous claymorphism look because it drops shadows/elevation
-// entirely (see clayShadow/clayShadowSoft below) — a flat, bordered
-// depth style rather than a raised one, which permanently sidesteps
-// Android's elevation-always-renders-black behavior instead of just
-// tuning it down.
-export const colors = {
+// Light "Today-first" design (UI canvas direction A) with the coloured
+// bento tiles of direction C. Light only.
+//
+// Token NAMES are unchanged from the old palette (primary, surface,
+// textPrimary, badge.*, …) so every existing screen keeps compiling.
+
+type Badge = { bg: string; fg: string };
+
+export type Palette = {
+  primary: string;
+  primaryDark: string;
+  onPrimary: string; // text/icons drawn ON a primary-coloured fill
+  accent: string;
+  background: string;
+  surface: string;
+  surfaceAlt: string; // inputs, inset rows, tracks
+  textPrimary: string;
+  textSecondary: string;
+  border: string;
+  success: string;
+  danger: string;
+  warning: string;
+  successBg: string;
+  successFg: string;
+  successBorder: string;
+  dangerBg: string;
+  overlay: string; // modal backdrops
+  ink: string; // tab bar / strong dark surfaces
+  onInk: string;
+  inkMuted: string;
+  heroBg: string; // the "next class" hero card
+  heroText: string;
+  heroMuted: string;
+  heroChip: string;
+  gradientStart: string;
+  gradientEnd: string;
+  glassTint: string;
+  glassBorder: string;
+  clayHighlight: string;
+  claySurface: string;
+  badge: { peach: Badge; pink: Badge; green: Badge; blue: Badge; purple: Badge };
+  // Bento tiles (direction C): brighter pastels for the big home tiles.
+  tile: { blue: Badge; mint: Badge; peach: Badge; lilac: Badge; yellow: Badge; pink: Badge };
+};
+
+const light: Palette = {
   primary: '#0B3D91',
   primaryDark: '#082A66',
-  accent: '#C1621F',
-  background: '#FDF6F0',       // warm cream, not cool lavender
+  onPrimary: '#FFFFFF',
+  accent: '#D9661F',
+  background: '#F3F5F9',
   surface: '#FFFFFF',
-  textPrimary: '#3D3229',      // warm dark brown, not blue-black
-  textSecondary: '#A6957F',    // warm taupe, not cool grey
-  border: '#EDE4D6',
-  success: '#2E6B45',
-  danger: '#C1442E',           // stays a real alarming red, not pink — 73 usages across the app rely on this reading as "error", separate from the badge.pink category tint below
+  surfaceAlt: '#EEF1F6',
+  textPrimary: '#0E1A33',
+  textSecondary: '#5B6478',
+  border: '#E1E6EF',
+  success: '#15803D',
+  danger: '#C1442E',
   warning: '#9A4A0F',
-
-  // gradient stops for background + hero areas — same warm family, just
-  // two adjacent stops rather than one flat fill.
-  gradientStart: '#FDF6F0',
-  gradientEnd: '#FBEEE3',
-  glassTint: 'rgba(255,255,255,0.72)',
-  glassBorder: '#EDE4D6',
+  successBg: '#DCFCE7',
+  successFg: '#14532D',
+  successBorder: '#86EFAC',
+  dangerBg: '#FDECEA',
+  overlay: 'rgba(14,26,51,0.5)',
+  ink: '#0E1A33',
+  onInk: '#FFFFFF',
+  inkMuted: '#AEB8CC',
+  heroBg: '#0B3D91',
+  heroText: '#FFFFFF',
+  heroMuted: '#C9D6F2',
+  heroChip: 'rgba(255,255,255,0.14)',
+  gradientStart: '#F3F5F9',
+  gradientEnd: '#EEF2F8',
+  glassTint: 'rgba(255,255,255,0.8)',
+  glassBorder: '#E1E6EF',
   clayHighlight: '#FFFFFF',
-  claySurface: '#FDF6F0',
-
-  // Pastel category badges — each a { bg, fg } pair, fg chosen dark
-  // enough on its own bg for AA contrast. Use bg for an icon's rounded
-  // backdrop and fg for the icon/number itself, e.g. peach for
-  // academics/timetable, pink for mess/food, green for clubs/social,
-  // blue for utility/lookup actions. Pick whichever pair best fits the
-  // thing being tagged — these replace the old single-tint-color-plus-
-  // opacity-suffix pattern (e.g. `item.tint + '1A'`) with real color
-  // grading per category instead of one hue at varying alpha.
+  claySurface: '#F3F5F9',
   badge: {
-    peach: { bg: '#FFE8D6', fg: '#9A4A0F' },
-    pink: { bg: '#F5DCE3', fg: '#B0446A' },
-    green: { bg: '#E3EFE2', fg: '#2E6B45' },
-    blue: { bg: '#E0E7F5', fg: '#3C5AA6' },
-    purple: { bg: '#E9E3F5', fg: '#5B3FA6' },
+    peach: { bg: '#FDEBDD', fg: '#A04E12' },
+    pink: { bg: '#F9E1E8', fg: '#A63D63' },
+    green: { bg: '#E1F3E6', fg: '#1F6B3A' },
+    blue: { bg: '#E3EAF8', fg: '#2F4F9E' },
+    purple: { bg: '#ECE6F8', fg: '#5B3FA6' },
+  },
+  tile: {
+    blue: { bg: '#DCE7FF', fg: '#1D3FA8' },
+    mint: { bg: '#D5F2E3', fg: '#11643F' },
+    peach: { bg: '#FFE1CC', fg: '#9A3412' },
+    lilac: { bg: '#E7DEFF', fg: '#5B21B6' },
+    yellow: { bg: '#FFF1B8', fg: '#854D0E' },
+    pink: { bg: '#FADCE6', fg: '#9D174D' },
   },
 };
+
+// Kept so existing imports compile; the app is light-only.
+export const isDark = false;
+
+export const colors: Palette = light;
 
 export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 };
 export const radius = { sm: 10, md: 16, lg: 22, xl: 28, full: 999 };
 
+// System font (SF Pro on iOS, Roboto on Android): a custom font can't be
+// applied app-wide in React Native without editing every <Text>, and a
+// half-applied one looks worse than a consistent native one. The new look
+// comes from tighter, heavier headings instead.
 export const typography = {
-  h1: { fontSize: 28, fontWeight: '700' as const },
-  h2: { fontSize: 22, fontWeight: '700' as const },
-  h3: { fontSize: 18, fontWeight: '600' as const },
-  body: { fontSize: 15, fontWeight: '400' as const },
-  caption: { fontSize: 13, fontWeight: '400' as const },
+  h1: { fontSize: 28, fontWeight: '800' as const, letterSpacing: -0.6 },
+  h2: { fontSize: 22, fontWeight: '800' as const, letterSpacing: -0.4 },
+  h3: { fontSize: 17, fontWeight: '700' as const, letterSpacing: -0.2 },
+  body: { fontSize: 15, fontWeight: '500' as const },
+  caption: { fontSize: 13, fontWeight: '500' as const },
 };
 
-// Formerly a raised claymorphism shadow (see the git history on this
-// file for the old shadowColor/shadowOffset/elevation version, and the
-// two rounds of tuning it needed on Android). Deliberately empty now,
-// not just tuned down further — the new soft-campus direction is a
-// FLAT style: white cards separated from the page purely by the
-// background's own color contrast (warm cream page vs white card), no
-// shadow or border needed at all. That also means it's now structurally
-// impossible for Android's elevation shadow to render as an unwanted
-// dark tint, in any card anywhere that spreads this in — not tuned
-// down, entirely absent as a rendering path.
-//
-// Left as empty (rather than deleted) so every file across the app that
-// still does `...clayShadow` / `...clayShadowSoft` in a style array
-// keeps compiling unchanged and just renders flat now — no per-file
-// edits needed for this redesign pass to take effect everywhere at
-// once. ClayCard.tsx (the shared wrapper most screens use) has its own
-// matching update; anything spreading these two constants directly
-// picks up the flat look automatically.
+// Cards stay flat (separated from the page by colour, not shadow) — kept
+// as empty objects so every `...clayShadow` spread still compiles.
 export const clayShadow = {};
 
 export const clayShadowSoft = {};

@@ -36,6 +36,10 @@ export const sendLeaveResolutionPush = onDocumentWritten(
     const justResolved =
       wasPending && (afterData.status === "approved" || afterData.status === "rejected");
     if (!justResolved) return;
+    // Medical leave is a multi-step chain with its own notifications at
+    // every step (medicalLeaveWorkflow.ts) — "approved" there only means
+    // the HOD approved, which this generic message would misreport.
+    if (afterData.type === "medical") return;
 
     const db = getFirestore();
     const studentSnap = await db.collection("users").doc(afterData.studentUid).get();
@@ -43,7 +47,7 @@ export const sendLeaveResolutionPush = onDocumentWritten(
     if (!student?.expoPushToken) return;
 
     const verb = afterData.status === "approved" ? "approved" : "rejected";
-    const leaveTypeLabel = afterData.type === "medical" ? "Medical" : "Casual";
+    const leaveTypeLabel = "Casual";
     const body = afterData.facultyRemark
       ? `${afterData.facultyName} ${verb} your ${leaveTypeLabel} leave: "${afterData.facultyRemark}"`
       : `${afterData.facultyName} ${verb} your ${leaveTypeLabel} leave request.`;

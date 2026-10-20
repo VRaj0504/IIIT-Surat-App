@@ -26,7 +26,8 @@ import { guessMimeType, isPreviewableInWebView } from "../utils/fileType";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
-function formatBytes(bytes: number): string {
+function formatBytes(bytes: number | null): string {
+  if (bytes == null) return "Saved on this phone";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -37,9 +38,15 @@ function formatBytes(bytes: number): string {
 // sitting in that folder, right from the filesystem itself, so a
 // download is something you can find and reopen again later — not just
 // bytes that quietly landed somewhere invisible.
+type SavedFile = { uri: string; name: string; size: number | null };
+
 export default function MyDownloadsScreen() {
   const navigation = useNavigation<NavProp>();
-  const [files, setFiles] = useState<File[]>([]);
+  // Plain snapshots, never live File objects: every property on a File
+  // (size, creationTime, …) is a native call, and React/dev tools reading
+  // one for a file that's gone (or whose name has a space and was stored
+  // encoded) threw "NoSuchFileException" and crashed the screen.
+  const [files, setFiles] = useState<SavedFile[]>([]);
   const [opening, setOpening] = useState<string | null>(null);
 
   // Images preview fine inside the app's own WebView. Everything else
@@ -66,7 +73,7 @@ export default function MyDownloadsScreen() {
   // there already offers a Quick Look preview plus "Copy to Files", so
   // the old shareAsync path stays for iOS.
   const openFile = useCallback(
-    async (file: File) => {
+    async (file: SavedFile) => {
       if (isPreviewableInWebView(file.name)) {
         navigation.navigate("FileViewer", { uri: file.uri, name: file.name });
         return;
@@ -112,8 +119,23 @@ export default function MyDownloadsScreen() {
   const refresh = useCallback(() => {
     try {
       const entries = Paths.document.list();
-      const onlyFiles = entries.filter((e): e is File => e instanceof File);
-      setFiles(onlyFiles);
+      const snapshots: SavedFile[] = [];
+      for (const e of entries) {
+        if (!(e instanceof File)) continue;
+        try {
+          if (!e.exists) continue;
+          let size: number | null = null;
+          try {
+            size = e.size ?? null;
+          } catch {
+            size = null;
+          }
+          snapshots.push({ uri: e.uri, name: e.name, size });
+        } catch {
+          // unreadable entry — skip it rather than break the whole list
+        }
+      }
+      setFiles(snapshots);
     } catch {
       setFiles([]);
     }
@@ -125,7 +147,7 @@ export default function MyDownloadsScreen() {
   useFocusEffect(refresh);
 
   const handleDelete = useCallback(
-    (file: File) => {
+    (file: SavedFile) => {
       Alert.alert("Delete download?", `"${file.name}" will be removed from your device.`, [
         { text: "Cancel", style: "cancel" },
         {
@@ -133,7 +155,7 @@ export default function MyDownloadsScreen() {
           style: "destructive",
           onPress: () => {
             try {
-              file.delete();
+              new File(file.uri).delete();
               refresh();
             } catch (err: any) {
               Alert.alert("Couldn't delete", err.message ?? "Something went wrong.");
@@ -170,7 +192,7 @@ export default function MyDownloadsScreen() {
                 <Ionicons name="document-outline" size={20} color={colors.primary} />
               )}
               <View style={styles.rowInfo}>
-                <Text style={styles.rowName}>{item.name}</Text>
+                <Text style={styles.rowName}>{item.name.replace(/_/g, " ")}</Text>
                 <Text style={styles.rowMeta}>{formatBytes(item.size)}</Text>
               </View>
               <TouchableOpacity onPress={() => handleDelete(item)} hitSlop={8}>

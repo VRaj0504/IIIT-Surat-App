@@ -8,6 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import { getCurrentSemester } from "../utils/academicInfo";
 import { subscribeToExamSchedules, ExamSchedule, ExamEntry } from "../firebase/examScheduleService";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { openSafeUrl } from "../utils/safeLink";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -46,7 +47,7 @@ export default function ExamScheduleScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const semester = profile?.admissionYear ? getCurrentSemester(profile.admissionYear) : null;
+  const semester = profile?.admissionYear ? getCurrentSemester(profile.admissionYear, undefined, profile.program) : null;
 
   useEffect(() => {
     if (!profile?.branch || !semester) {
@@ -122,17 +123,25 @@ export default function ExamScheduleScreen() {
                 <TouchableOpacity
                   style={styles.pdfButton}
                   onPress={() =>
-                    Linking.openURL(activeSchedule.sourcePdfUrl as string).catch(() =>
+                    openSafeUrl(activeSchedule.sourcePdfUrl as string).catch(() =>
                       Alert.alert("Couldn't open the PDF", "Try again in a moment."),
                     )
                   }
                 >
                   <Ionicons name="document-text-outline" size={18} color={colors.primary} />
-                  <Text style={styles.pdfButtonText}>Open the official date sheet</Text>
+                  <Text style={styles.pdfButtonText}>
+                    {activeSchedule.entries.length === 0 ? "Open / download the date sheet" : "Open the official date sheet"}
+                  </Text>
                 </TouchableOpacity>
               ) : null}
 
-              {nextExam ? (
+              {activeSchedule.entries.length === 0 ? (
+                <Text style={styles.emptyHint}>
+                  {activeSchedule.sourcePdfUrl
+                    ? "Faculty shared the date sheet as a file. Tap above to open or download it."
+                    : "No exams listed on this sheet yet."}
+                </Text>
+              ) : nextExam ? (
                 <View style={styles.nextCard}>
                   <Text style={styles.nextLabel}>NEXT EXAM · {countdownLabel(daysUntil(nextExam.date, now)).toUpperCase()}</Text>
                   <Text style={styles.nextTitle}>{nextExam.subjectName || nextExam.subjectCode}</Text>
@@ -202,7 +211,7 @@ const styles = StyleSheet.create({
   },
   chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { ...typography.caption, color: colors.textPrimary, fontWeight: "600" },
-  chipTextSelected: { color: "#fff" },
+  chipTextSelected: { color: colors.onPrimary },
   pdfButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -223,9 +232,9 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     marginBottom: spacing.md,
   },
-  nextLabel: { fontSize: 11, fontWeight: "700", color: "rgba(255,255,255,0.75)", letterSpacing: 0.6 },
-  nextTitle: { fontSize: 20, fontWeight: "700", color: "#fff", marginTop: 4 },
-  nextMeta: { ...typography.caption, color: "rgba(255,255,255,0.85)", marginTop: 4 },
+  nextLabel: { fontSize: 11, fontWeight: "700", color: colors.onPrimary, opacity: 0.75, letterSpacing: 0.6 },
+  nextTitle: { fontSize: 20, fontWeight: "700", color: colors.onPrimary, marginTop: 4 },
+  nextMeta: { ...typography.caption, color: colors.onPrimary, opacity: 0.85, marginTop: 4 },
   examCard: {
     flexDirection: "row",
     alignItems: "center",

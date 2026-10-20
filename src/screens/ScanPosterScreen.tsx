@@ -16,6 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useNavigation } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import * as Calendar from "expo-calendar";
+import { downloadIcs } from "../utils/icsDownload";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
@@ -93,6 +94,18 @@ export default function ScanPosterScreen() {
       return;
     }
     const endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // default 1-hour event
+
+    if (Platform.OS === "web") {
+      // Browsers can't write to a calendar directly — hand over a .ics file.
+      downloadIcs({
+        title: title.trim(),
+        start: startDate,
+        end: endDate,
+        location: location.trim() || undefined,
+        notes: "Added from a scanned poster — IIIT Surat App",
+      });
+      return;
+    }
 
     setAdding(true);
     try {

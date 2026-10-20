@@ -25,6 +25,15 @@ export type AttendanceSession = {
   subjectName: string;
   date: string; // "YYYY-MM-DD"
   absentEnrollmentNumbers: string[];
+  // Optional fields written by the faculty portal (older docs lack them):
+  lecture?: number; // 2 = second class of this subject that day
+  semester?: number;
+  specialization?: string | null; // only these students take it
+  excusedEnrollmentNumbers?: string[]; // on duty / leave — counts as attended
+  hours?: number; // a 2-hour lab counts as 2
+  kind?: "lecture" | "lab";
+  onlyEnrollmentNumbers?: string[]; // one lab batch: only these students
+  batchLabel?: string;
   markedBy: string; // faculty uid
   markedAt: any;
 };
@@ -53,8 +62,22 @@ export async function markAttendance(params: {
   date: string;
   absentEnrollmentNumbers: string[];
   markedBy: string;
+  markedByName?: string;
+  semester?: number;
+  specialization?: string | null;
 }): Promise<void> {
   const id = sessionDocId(params);
+  // Keep on-duty marks made on the portal, except for anyone now marked absent.
+  const prev = await getDoc(doc(db, COLLECTION, id));
+  const prevData = prev.exists() ? (prev.data() as AttendanceSession) : null;
+  const excused = (prevData?.excusedEnrollmentNumbers ?? []).filter((r) => !params.absentEnrollmentNumbers.includes(r));
+  // Keep lab details set on the portal (length, which batch).
+  const lab = {
+    ...(prevData?.hours ? { hours: prevData.hours } : {}),
+    ...(prevData?.kind ? { kind: prevData.kind } : {}),
+    ...(prevData?.onlyEnrollmentNumbers?.length ? { onlyEnrollmentNumbers: prevData.onlyEnrollmentNumbers } : {}),
+    ...(prevData?.batchLabel ? { batchLabel: prevData.batchLabel } : {}),
+  };
   await setDoc(doc(db, COLLECTION, id), {
     branch: params.branch,
     admissionYear: params.admissionYear,
@@ -62,8 +85,15 @@ export async function markAttendance(params: {
     subjectCode: params.subjectCode,
     subjectName: params.subjectName,
     date: params.date,
+    lecture: 1,
+    ...(params.semester ? { semester: params.semester } : {}),
+    specialization: params.specialization ?? null,
     absentEnrollmentNumbers: params.absentEnrollmentNumbers,
+    excusedEnrollmentNumbers: excused,
+    ...lab,
     markedBy: params.markedBy,
+    markedByName: params.markedByName ?? null,
+    source: "app",
     markedAt: serverTimestamp(),
   });
 }
@@ -91,65 +121,89 @@ export type SubjectAttendance = {
   totalSessions: number;
   presentCount: number;
   percentage: number; // 0-100, rounded to 1 decimal
+  // Classes you can still miss and stay at 75% (0 if already below), or
+  // classes in a row you need to attend to get back to 75%.
+  canMiss: number;
+  needToAttend: number;
+  lastClass: string | null; // "YYYY-MM-DD"
 };
 
-// Student side — computes attendance percentage per subject by fetching
-// every session held for their class+subject and checking whether their
-// enrollment number appears in each session's absentee list. Fine at the
-// scale of a semester's worth of sessions (tens, not thousands); if this
-// were tracking years of history it would need a different approach,
-// but "how many days of THIS subject THIS semester" always stays small.
+export const ATTENDANCE_TARGET = 75;
+
+function slack(present: number, total: number) {
+  const t = ATTENDANCE_TARGET / 100;
+  // largest k with present / (total + k) >= t
+  const canMiss = Math.max(0, Math.floor(present / t - total + 1e-9));
+  // smallest k with (present + k) / (total + k) >= t
+  const needToAttend = present / Math.max(total, 1) >= t ? 0 : Math.ceil((t * total - present) / (1 - t) - 1e-9);
+  return { canMiss, needToAttend };
+}
+
+// Student side — every class held for the student's own section this
+// semester, grouped by subject (electives included). One query; the rules
+// let a student read exactly their branch + year + section.
+//   · OD / leave marked by the teacher, approved event excusals and
+//     medical leaves confirmed by the teacher count as attended
+//   · classes saved for another specialization don't count
+//   · a class from an earlier semester doesn't count
 export async function getMyAttendance(params: {
   enrollmentNumber: string;
   branch: string;
   admissionYear: number;
   section: string | null;
-  subjects: { code: string; name: string }[];
+  specialization?: string | null;
+  semester: number;
+  subjects: { code: string; name: string }[]; // this semester's curriculum
+  medicalExcusedSessions?: Set<string>; // "CS304|2026-10-19"
 }): Promise<SubjectAttendance[]> {
-  const results: SubjectAttendance[] = [];
-  // Fetched once per student, not once per session — a student is
-  // realistically covered by a handful of approved event excusals across
-  // a whole semester at most, so this is far cheaper than checking per
-  // date, and every subject's loop below reuses the same list.
-  const excusalRanges = await getApprovedExcusalRanges(params.enrollmentNumber);
+  const q = query(
+    collection(db, COLLECTION),
+    where("branch", "==", params.branch),
+    where("admissionYear", "==", params.admissionYear),
+    where("section", "==", params.section),
+  );
+  const [snap, excusalRanges] = await Promise.all([getDocs(q), getApprovedExcusalRanges(params.enrollmentNumber)]);
+  const norm = (c: string) => String(c ?? "").replace(/\s+/g, "").toUpperCase();
+  const semCodes = new Map(params.subjects.map((s) => [norm(s.code), s]));
 
-  for (const subject of params.subjects) {
-    const q = query(
-      collection(db, COLLECTION),
-      where("branch", "==", params.branch),
-      where("admissionYear", "==", params.admissionYear),
-      where("section", "==", params.section),
-      where("subjectCode", "==", subject.code),
-    );
-    const snap = await getDocs(q);
-    const totalSessions = snap.size;
-    if (totalSessions === 0) continue; // no classes held yet — nothing to show
+  const bySubject = new Map<string, { code: string; name: string; total: number; present: number; last: string | null }>();
+  snap.forEach((docSnap) => {
+    const d = docSnap.data() as AttendanceSession;
+    const key = norm(d.subjectCode);
+    const thisSem = d.semester !== undefined ? d.semester === params.semester : semCodes.has(key);
+    if (!thisSem) return;
+    if (d.specialization && d.specialization !== params.specialization) return;
+    // A lab batch I'm not in isn't my class.
+    if (d.onlyEnrollmentNumbers?.length && !d.onlyEnrollmentNumbers.includes(params.enrollmentNumber)) return;
+    const w = Math.max(1, Math.round(d.hours ?? 1)); // a 2-hour lab counts as 2
 
-    let absentCount = 0;
-    snap.forEach((docSnap) => {
-      const data = docSnap.data() as AttendanceSession;
-      const wasMarkedAbsent = data.absentEnrollmentNumbers.includes(params.enrollmentNumber);
-      // An absence on a day covered by an APPROVED event excusal (inter-
-      // IIIT events, hackathons, etc.) doesn't count against the
-      // student — this is the whole point of the excusal workflow: the
-      // faculty who marked attendance that day has no way to know in
-      // advance who's representing the college elsewhere, so this
-      // reconciles it after the fact rather than requiring every
-      // faculty to manually re-edit past attendance records.
-      if (wasMarkedAbsent && !isDateWithinExcusal(data.date, excusalRanges)) {
-        absentCount++;
-      }
-    });
+    const entry = bySubject.get(key) ?? {
+      code: semCodes.get(key)?.code ?? d.subjectCode,
+      name: semCodes.get(key)?.name ?? d.subjectName,
+      total: 0,
+      present: 0,
+      last: null,
+    };
+    entry.total += w;
+    const absent = d.absentEnrollmentNumbers.includes(params.enrollmentNumber);
+    const excused =
+      d.excusedEnrollmentNumbers?.includes(params.enrollmentNumber) ||
+      isDateWithinExcusal(d.date, excusalRanges) ||
+      params.medicalExcusedSessions?.has(`${d.subjectCode}|${d.date}`);
+    if (!absent || excused) entry.present += w;
+    if (!entry.last || d.date > entry.last) entry.last = d.date;
+    bySubject.set(key, entry);
+  });
 
-    const presentCount = totalSessions - absentCount;
-    results.push({
-      subjectCode: subject.code,
-      subjectName: subject.name,
-      totalSessions,
-      presentCount,
-      percentage: Math.round((presentCount / totalSessions) * 1000) / 10,
-    });
-  }
-
-  return results;
+  return Array.from(bySubject.values())
+    .map((e) => ({
+      subjectCode: e.code,
+      subjectName: e.name,
+      totalSessions: e.total,
+      presentCount: e.present,
+      percentage: Math.round((e.present / e.total) * 1000) / 10,
+      lastClass: e.last,
+      ...slack(e.present, e.total),
+    }))
+    .sort((a, b) => a.percentage - b.percentage || a.subjectCode.localeCompare(b.subjectCode));
 }

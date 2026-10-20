@@ -6,6 +6,8 @@ export async function sendExpoPush(
   title: string,
   body: string,
   logTag: string,
+  data?: Record<string, unknown>,
+  channelId?: string,
 ): Promise<void> {
   if (tokens.length === 0) return;
 
@@ -23,7 +25,7 @@ export async function sendExpoPush(
           "Content-Type": "application/json",
         },
         body: JSON.stringify(
-          chunk.map((token) => ({to: token, title, body, sound: "default", priority: "high"})),
+          chunk.map((token) => ({to: token, title, body, sound: "default", priority: "high", ...(data ? {data} : {}), ...(channelId ? {channelId} : {})})),
         ),
       }).catch((err) => {
         // eslint-disable-next-line no-console

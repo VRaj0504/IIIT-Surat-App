@@ -7,11 +7,6 @@ import TabNavigator from "./TabNavigator";
 
 import AcademicCalendarScreen from "../screens/AcademicCalendarScreen";
 import MessMenuScreen from "../screens/MessMenuScreen";
-import MessOrderScreen from "../screens/MessOrderScreen";
-import MessTokenScreen from "../screens/MessTokenScreen";
-import MessWalletScreen from "../screens/MessWalletScreen";
-import MessOrderHistoryScreen from "../screens/MessOrderHistoryScreen";
-import MessStaffScreen from "../screens/MessStaffScreen";
 import ThaliPassScreen from "../screens/ThaliPassScreen";
 import ScanThaliPassScreen from "../screens/ScanThaliPassScreen";
 import ResourcesScreen from "../screens/ResourcesScreen";
@@ -25,7 +20,6 @@ import TranscriptScreen from "../screens/TranscriptScreen";
 import ExamScheduleScreen from "../screens/ExamScheduleScreen";
 import GradeEntryScreen from "../screens/GradeEntryScreen";
 import ScanPosterScreen from "../screens/ScanPosterScreen";
-import RechargeCheckoutScreen from "../screens/RechargeCheckoutScreen";
 import MarkAttendanceScreen from "../screens/MarkAttendanceScreen";
 import MyAttendanceScreen from "../screens/MyAttendanceScreen";
 import SubmitEventExcusalScreen from "../screens/SubmitEventExcusalScreen";
@@ -34,6 +28,7 @@ import PlaceholderScreen from "../screens/PlaceholderScreen";
 import ClubDetailScreen from "../screens/ClubDetailScreen";
 import EventsScreen from "../screens/EventsScreen";
 import CounsellingScreen from "../screens/CounsellingScreen";
+import RoomAvailabilityScreen from "../screens/RoomAvailabilityScreen";
 import CounsellingQueueScreen from "../screens/CounsellingQueueScreen";
 import CreateClubScreen from "../screens/CreateClubScreen";
 import PostEventScreen from "../screens/PostEventScreen";
@@ -47,6 +42,8 @@ import ImportantContactsScreen from "../screens/ImportantContactsScreen";
 import MyDownloadsScreen from "../screens/MyDownloadsScreen";
 import FileViewerScreen from "../screens/FileViewerScreen";
 import AboutScreen from "../screens/AboutScreen";
+import SOSScreen from "../screens/SOSScreen";
+import SosAlertsScreen from "../screens/SosAlertsScreen";
 
 import SubmitComplaintScreen from "../screens/SubmitComplaintScreen";
 import ComplaintsScreen from "../screens/ComplaintsScreen";
@@ -83,31 +80,6 @@ export default function RootNavigator() {
         name="MessMenu"
         component={MessMenuScreen}
         options={{ title: "Mess Menu" }}
-      />
-      <Stack.Screen
-        name="MessOrder"
-        component={MessOrderScreen}
-        options={{ title: "Order Food" }}
-      />
-      <Stack.Screen
-        name="MessToken"
-        component={MessTokenScreen}
-        options={{ title: "Your Token", headerShown: false }}
-      />
-      <Stack.Screen
-        name="MessWallet"
-        component={MessWalletScreen}
-        options={{ title: "Mess Wallet" }}
-      />
-      <Stack.Screen
-        name="MessOrderHistory"
-        component={MessOrderHistoryScreen}
-        options={{ title: "Order History" }}
-      />
-      <Stack.Screen
-        name="MessStaff"
-        component={MessStaffScreen}
-        options={{ title: "Mess Counter" }}
       />
       <Stack.Screen
         name="ThaliPass"
@@ -193,11 +165,6 @@ export default function RootNavigator() {
         options={{ title: "Scan Event Poster" }}
       />
       <Stack.Screen
-        name="RechargeCheckout"
-        component={RechargeCheckoutScreen}
-        options={{ title: "Recharge Wallet" }}
-      />
-      <Stack.Screen
         name="MarkAttendance"
         component={MarkAttendanceScreen}
         options={{ title: "Mark Attendance" }}
@@ -236,6 +203,11 @@ export default function RootNavigator() {
         name="Counselling"
         component={CounsellingScreen}
         options={{ title: "Counselling & Wellness" }}
+      />
+      <Stack.Screen
+        name="RoomAvailability"
+        component={RoomAvailabilityScreen}
+        options={{ title: "Empty Classes" }}
       />
       <Stack.Screen
         name="CounsellingQueue"
@@ -291,6 +263,16 @@ export default function RootNavigator() {
         name="About"
         component={AboutScreen}
         options={{ title: "About" }}
+      />
+      <Stack.Screen
+        name="SOS"
+        component={SOSScreen}
+        options={{ title: "Emergency SOS", headerTintColor: "#DC2626" }}
+      />
+      <Stack.Screen
+        name="SosAlerts"
+        component={SosAlertsScreen}
+        options={{ title: "SOS alerts", headerTintColor: "#DC2626" }}
       />
     </Stack.Navigator>
   );

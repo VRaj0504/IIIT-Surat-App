@@ -76,7 +76,7 @@ export default function HelpSupportScreen() {
             style={styles.primaryBtn}
             onPress={() => openMail("IIIT Surat App — Support")}
           >
-            <Ionicons name="mail-outline" size={18} color="#fff" />
+            <Ionicons name="mail-outline" size={18} color={colors.onPrimary} />
             <Text style={styles.primaryBtnText}>Email Support</Text>
           </TouchableOpacity>
 
@@ -110,7 +110,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  primaryBtnText: { color: colors.onPrimary, fontWeight: "700", fontSize: 16 },
   secondaryBtn: {
     flexDirection: "row",
     gap: spacing.sm,

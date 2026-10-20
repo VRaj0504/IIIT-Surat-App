@@ -44,7 +44,8 @@ function toIso(d: Date): string {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
-export function getHolidayName(iso: string): string | null {
+export function getHolidayName(iso: string, overrides?: Record<string, string>): string | null {
+  if (overrides?.[iso]) return overrides[iso];
   if (PUBLIC_HOLIDAYS[iso]) return PUBLIC_HOLIDAYS[iso];
   return BREAKS.find((b) => iso >= b.start && iso <= b.end)?.name ?? null;
 }
@@ -59,9 +60,13 @@ function inExamPeriod(schedules: ExamSchedule[], iso: string): boolean {
   });
 }
 
-export function getDayStatus(now: Date, schedules: ExamSchedule[]): DayStatus | null {
+export function getDayStatus(
+  now: Date,
+  schedules: ExamSchedule[],
+  holidayOverrides?: Record<string, string>,
+): DayStatus | null {
   const iso = toIso(now);
-  const holiday = getHolidayName(iso);
+  const holiday = getHolidayName(iso, holidayOverrides);
   if (holiday) return { short: "Off", label: `Holiday · ${holiday}` };
   if (inExamPeriod(schedules, iso)) return { short: "Exams", label: "Exam period · no classes" };
   return null;

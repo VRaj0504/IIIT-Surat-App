@@ -16,6 +16,11 @@ export type CrisisResource = {
 
 export const NATIONAL_HELPLINES: CrisisResource[] = [
   {
+    name: "Medical Emergency (Ambulance)",
+    description: "Any physical emergency, anywhere in India",
+    phone: "108",
+  },
+  {
     name: "KIRAN Mental Health Helpline",
     description: "Govt. of India, toll-free, 24/7, multilingual",
     phone: "18005990019",
@@ -27,11 +32,15 @@ export const NATIONAL_HELPLINES: CrisisResource[] = [
   },
 ];
 
-// !! PLACEHOLDER !! — replace before shipping.
+// Real campus contact, from the Health Issue Escalation & Management
+// page, iiitsurat.ac.in (captured 2026-09-24) — the Medical Officer,
+// not a dedicated counsellor (IIIT Surat doesn't have one listed there
+// yet). Real and reachable is still far better than a placeholder;
+// swap this out the moment a real counselling-specific contact exists.
 export const CAMPUS_CONTACT: CrisisResource = {
-  name: "IIIT Surat Wellness Centre (placeholder — replace this)",
-  description: "Add the real on-campus contact here",
-  phone: "0000000000",
+  name: "IIIT Surat Medical Officer (Dr. Paresh Chhotala)",
+  description: "For anything urgent on campus — not counselling-specific, but real and reachable",
+  phone: "9824270476",
 };
 
 export type LinkResource = {

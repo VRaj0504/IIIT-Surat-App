@@ -2,10 +2,11 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { Platform } from 'react-native';
 
 import {
-  createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithCredential,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   signOut,
   deleteUser,
@@ -13,43 +14,34 @@ import {
   sendPasswordResetEmail,
   User,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { auth } from '../firebase/auth';
 import { db } from '../firebase/firestore';
 import { claimPendingClubLead } from '../firebase/clubsService';
 import { registerForPushNotificationsAsync, clearPushToken } from '../firebase/pushService';
 
-// NOTE: this is intentionally NOT a static `import` for GoogleSignin. This
-// package's native-module spec file runs `TurboModuleRegistry.getEnforcing(...)`
-// at module top-level, which throws synchronously the moment the module is
-// evaluated — and with a static import, that evaluation is hoisted and runs
-// before ANY of this file's own code, so no try/catch in this file could ever
-// catch it. Expo Go has no binding for this native module, so a static import
-// crashes the whole app on launch there. A `require()` call, by contrast,
-// runs exactly where it's written — wrapping it here lets us catch the throw
-// and degrade gracefully instead. Under a dev client / standalone build this
-// resolves normally and behaves identically to a static import.
 let GoogleSignin: typeof import('@react-native-google-signin/google-signin').GoogleSignin;
 let isSuccessResponse: typeof import('@react-native-google-signin/google-signin').isSuccessResponse;
 let googleSignInAvailable = true;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const googleSigninModule = require('@react-native-google-signin/google-signin');
   GoogleSignin = googleSigninModule.GoogleSignin;
   isSuccessResponse = googleSigninModule.isSuccessResponse;
   GoogleSignin.configure({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    // iPhone: the iOS OAuth client (see app.config.js). Ignored on Android.
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
   });
 } catch {
   googleSignInAvailable = false;
 }
 
-// Signup is restricted to the institute email domain. This doesn't by itself
-// prove *whose* inbox it is — that's what email verification (below) is
-// for — but it narrows the field before we even get there, and it's free
-// (no Cloud Functions, no email-sending service; Firebase's own
-// verification email covers it on the Spark/free plan).
 export const ALLOWED_EMAIL_DOMAIN = '@iiitsurat.ac.in';
+
+// The single app-store reviewer login (email + password, created by
+// scripts/create-reviewer.js). The only non-institute address that can sign in.
+export const REVIEWER_EMAIL = 'reviewer@collegego.app';
+export const isReviewerEmail = (email: string) => email.trim().toLowerCase() === REVIEWER_EMAIL;
 
 export function isAllowedEmailDomain(email: string): boolean {
   return email.trim().toLowerCase().endsWith(ALLOWED_EMAIL_DOMAIN);
@@ -64,39 +56,29 @@ export type UserProfile = {
   name: string;
   email: string;
   role: Role;
-  // A profile photo, self-uploaded (see updatePhoto below) — used
-  // wherever an actual photo adds real value over an initials avatar,
-  // e.g. the Thali Pass ID card. Optional everywhere else in the app.
   photoUrl?: string;
+  // Up to 3 people the SOS screen can text with your location.
+  emergencyContacts?: { name: string; phone: string }[];
+  // Admin on top of the normal role (scripts/make-admin.js); not self-editable.
+  isAdmin?: boolean;
   enrollmentNumber?: string;
   branch?: Branch;
   section?: string;
-  // Only set for students in a section that mixes multiple specializations
-  // (e.g. CSE B = Core + AI/ML + Cyber) — comes from an optional column in
-  // the roster upload, blank for everyone in an unsplit section.
   specialization?: string;
   admissionYear?: number;
-  // Faculty-only, optional — self-filled via EditProfileScreen, shown in
-  // FacultyDirectoryScreen. Left blank by default; nothing here is
-  // required at signup since the allowlist gate already covers who's
-  // allowed to be faculty at all.
+  program?: 'UG' | 'PG';
   department?: string;
   designation?: string;
   officeLocation?: string;
   officeHours?: string;
   phone?: string;
-  // Also faculty-only, self-filled, shown in FacultyDirectoryScreen as a
-  // brief "what and how many" summary — never a full publication list.
   researchAreas?: string;
   publicationsCount?: number | null;
-  // Set only via the allowlist at signup (see scripts/seed-allowlist.js),
-  // never self-edited — a role-based address like hod.cse@iiitsurat.ac.in
-  // that stays valid across whoever currently holds that position.
+  aboutMe?: string;
+  inCabin?: boolean;
+  reviewer?: boolean; // app-store review account (demo SOS)
   roleEmail?: string;
   shortForm?: string;
-  // Set by pushService.ts after the device registers for notifications —
-  // never self-edited, and cleared on sign-out so a shared device doesn't
-  // keep receiving a previous user's pushes.
   expoPushToken?: string;
 };
 
@@ -105,18 +87,17 @@ type AuthContextValue = {
   profile: UserProfile | null;
   initializing: boolean;
   profileLoading: boolean;
-  signUp: (params: { name: string; email: string; password: string; role: Role; enrollmentNumber?: string }) => Promise<void>;
+  /** True when the profile fetch failed (offline etc.) — NOT the same as "no profile yet". */
+  profileLoadFailed: boolean;
+  retryProfileLoad: () => Promise<void>;
+  /** Set when a sign-in was refused (e.g. non-institute Google account); shown on the login screens. */
+  authError: string | null;
+  clearAuthError: () => void;
   logIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   completeGoogleProfile: (params: { role: Role; enrollmentNumber?: string }) => Promise<void>;
   logOut: () => Promise<void>;
   updateProfileName: (name: string) => Promise<void>;
-  // Faculty-only fields (see UserProfile) — a partial update, so callers
-  // only send what changed rather than the whole profile every time.
-  // researchAreas/publicationsCount show up in Faculty Directory as a
-  // brief "what and how many" summary, not a full publication list —
-  // faculty type it in themselves here, same self-service way as their
-  // office hours/location, rather than needing an admin to seed it.
   updateFacultyDetails: (details: {
     department?: string;
     designation?: string;
@@ -125,28 +106,41 @@ type AuthContextValue = {
     phone?: string;
     researchAreas?: string;
     publicationsCount?: number | null;
+    aboutMe?: string;
   }) => Promise<void>;
   updatePhone: (phone: string) => Promise<void>;
   updatePhoto: (photoUrl: string) => Promise<void>;
+  setInCabin: (inCabin: boolean) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
-  // Dev-only convenience — lets ONE specific account preview the
-  // other role's screens without actually changing anything in
-  // Firestore (so security rules, data ownership, everything else
-  // stays exactly correct for the account's real role). Deliberately
-  // NOT a real feature: setPreviewRole silently no-ops for anyone
-  // whose email doesn't match DEV_PREVIEW_EMAIL below, so this can't
-  // be used to grant faculty-view access to a real student account.
   previewRole: Role | null;
   setPreviewRole: (role: Role | null) => void;
 };
 
-// Firestore's own errors are written for developers, not for someone
-// staring at a signup screen — "Failed to get document because the
-// client is offline" tells a real person nothing actionable. This
-// rewrites the network-related ones into plain language; anything else
-// (an actual gating rejection, e.g. "not on the roster") passes through
-// unchanged, since those messages are already written to be read by a
-// person, not a machine.
+// Turns Firebase's raw "Firebase: Error (auth/...)" text into something a
+// person can act on. Returns null for "the user simply closed the window",
+// which is not an error worth showing.
+function friendlyGoogleError(err: any): string | null {
+  switch (err?.code) {
+    case 'auth/popup-closed-by-user':
+    case 'auth/cancelled-popup-request':
+      return null;
+    case 'auth/popup-blocked':
+      return 'Your browser blocked the Google sign-in window. Allow pop-ups for this site and try again.';
+    case 'auth/unauthorized-domain':
+      return "This website's address isn't authorised for Google sign-in yet. An admin needs to add it in Firebase → Authentication → Settings → Authorized domains.";
+    case 'auth/operation-not-allowed':
+      return 'Google sign-in is not enabled for this project. An admin needs to enable it in Firebase → Authentication → Sign-in method.';
+    case 'auth/network-request-failed':
+      return 'No internet connection right now — check your connection and try again.';
+    case 'auth/account-exists-with-different-credential':
+      return 'An account with this email already exists using a password. Log in with your email and password instead.';
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Please wait a few minutes and try again.';
+    default:
+      return err?.message ?? 'Google sign-in failed. Please try again.';
+  }
+}
+
 function friendlyAuthErrorMessage(err: any): string {
   const code = err?.code ?? "";
   const raw = err?.message ?? "";
@@ -156,12 +150,17 @@ function friendlyAuthErrorMessage(err: any): string {
   if (isOffline) {
     return "No internet connection right now — check your connection and try again.";
   }
+  // Profile creation is refused by the Firestore rules unless the account's
+  // institute email is VERIFIED — which an email/password account usually
+  // isn't. Before, this showed Firebase's raw "Missing or insufficient
+  // permissions." with no hint what to do.
+  if (code === "permission-denied" || /insufficient permissions/i.test(raw)) {
+    return `This account's email isn't verified as an institute address. Log out, then use "Continue with Google" with your ${ALLOWED_EMAIL_DOMAIN} account.`;
+  }
   return raw || "Something went wrong. Please try again.";
 }
 
-// Shared by email/password signUp and completeGoogleProfile — both need to
-// check the same admin-seeded allowlist/roster collections before a profile
-// doc can be created. Throws a user-facing Error on any gating failure.
+
 async function buildGatedProfile(params: {
   uid: string;
   name: string;
@@ -177,6 +176,7 @@ async function buildGatedProfile(params: {
   let sectionOut: string | undefined;
   let specializationOut: string | undefined;
   let admissionYearOut: number | undefined;
+  let programOut: 'UG' | 'PG' | undefined;
   let departmentOut: string | undefined;
   let designationOut: string | undefined;
   let roleEmailOut: string | undefined;
@@ -188,18 +188,7 @@ async function buildGatedProfile(params: {
     if (!allowSnap.exists() || allowData?.role !== 'faculty') {
       throw new Error('This email is not on the approved faculty list. Contact an admin if you believe this is a mistake.');
     }
-    // Carries the department code, designation, and (for a HOD/Dean) their
-    // role-based email address — all already seeded in the allowlist (see
-    // scripts/seed-allowlist.js) — straight onto the profile at signup, the
-    // same way a student's branch/section come from the roster below — so
-    // this shows up correctly in FacultyDirectoryScreen immediately, with
-    // no manual entry needed. A faculty member can still overwrite either
-    // via EditProfileScreen later — this is just what's true from day one.
-    // roleEmail specifically MUST be carried over here: once someone signs
-    // up, their `users` doc takes over from the allowlist entry in
-    // FacultyDirectoryScreen's merge (see facultyService.ts) — without
-    // copying it here, a HOD's office email would silently vanish from the
-    // directory the moment they actually signed in.
+    
     departmentOut = allowData?.department;
     designationOut = allowData?.designation;
     roleEmailOut = allowData?.roleEmail;
@@ -212,12 +201,13 @@ async function buildGatedProfile(params: {
     if (!rosterSnap.exists()) {
       throw new Error('This enrollment number was not found on the student roster. Contact an admin if you believe this is a mistake.');
     }
-    const rosterData = rosterSnap.data() as { branch: Branch; section: string; admissionYear: number; specialization?: string };
+    const rosterData = rosterSnap.data() as { branch: Branch; section: string; admissionYear: number; specialization?: string; program?: 'UG' | 'PG' };
     enrollmentNumberOut = typedRegNo;
     branchOut = rosterData.branch;
     sectionOut = rosterData.section;
     admissionYearOut = rosterData.admissionYear;
     specializationOut = rosterData.specialization;
+    programOut = rosterData.program;
   }
 
   return {
@@ -230,6 +220,7 @@ async function buildGatedProfile(params: {
     ...(sectionOut ? { section: sectionOut } : {}),
     ...(specializationOut ? { specialization: specializationOut } : {}),
     ...(admissionYearOut ? { admissionYear: admissionYearOut } : {}),
+    ...(programOut ? { program: programOut } : {}),
     ...(departmentOut ? { department: departmentOut } : {}),
     ...(designationOut ? { designation: designationOut } : {}),
     ...(roleEmailOut ? { roleEmail: roleEmailOut } : {}),
@@ -237,43 +228,33 @@ async function buildGatedProfile(params: {
   };
 }
 
-// Writes the `users/{uid}` doc — for a student, in the SAME transaction as
-// claiming their enrollment number in `enrollmentClaims`, so the two either
-// both succeed or both fail together. This is the piece that actually makes
-// the enrollmentClaims Firestore rule meaningful: without this transaction,
-// a student's profile could still end up carrying an enrollment number
-// nobody actually holds a claim on. If the enrollment number was already
-// claimed by a different account, the transaction fails and throws before
-// either write lands — surfaced to the caller as a normal Error so
-// signUp/completeGoogleProfile's existing catch blocks handle it the same
-// way as any other signup failure (rolling back the just-created auth
-// account, in signUp's case).
+
 async function createUserProfileAtomically(uid: string, profile: UserProfile): Promise<void> {
-  if (profile.role !== 'student' || !profile.enrollmentNumber) {
-    // Faculty accounts are already uniquely identified by their verified
-    // auth email (checked directly in firestore.rules), so there's no
-    // parallel impersonation risk here needing a claim doc.
-    await setDoc(doc(db, 'users', uid), profile);
-    return;
-  }
-  const enrollmentNumber = profile.enrollmentNumber;
+  const userRef = doc(db, 'users', uid);
   await runTransaction(db, async (tx) => {
-    const claimRef = doc(db, 'enrollmentClaims', enrollmentNumber);
-    const claimSnap = await tx.get(claimRef);
-    if (claimSnap.exists()) {
-      throw new Error(
-        'This enrollment number is already associated with another account. Contact an admin if you believe this is a mistake.',
-      );
+    // Never overwrite an existing profile (a failed profile fetch must not
+    // be able to wipe a faculty member's saved details).
+    const existing = await tx.get(userRef);
+    if (existing.exists()) {
+      throw new Error('Your profile already exists. Please close and reopen the app.');
     }
-    tx.set(claimRef, { uid, claimedAt: serverTimestamp() });
-    tx.set(doc(db, 'users', uid), profile);
+    if (profile.role === 'student' && profile.enrollmentNumber) {
+      const claimRef = doc(db, 'enrollmentClaims', profile.enrollmentNumber);
+      const claimSnap = await tx.get(claimRef);
+      if (claimSnap.exists()) {
+        throw new Error(
+          'This enrollment number is already associated with another account. Contact an admin if you believe this is a mistake.',
+        );
+      }
+      tx.set(claimRef, { uid, claimedAt: serverTimestamp() });
+    }
+    tx.set(userRef, profile);
   });
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-// See previewRole's comment on AuthContextValue above — this is the one
-// account allowed to use it.
+
 const DEV_PREVIEW_EMAIL = 'ug25cse114@iiitsurat.ac.in';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -281,8 +262,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [initializing, setInitializing] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [profileLoadFailed, setProfileLoadFailed] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const clearAuthError = useCallback(() => setAuthError(null), []);
   const [previewRole, setPreviewRoleState] = useState<Role | null>(null);
-  const justSignedUpRef = React.useRef(false);
 
   const setPreviewRole = useCallback(
     (role: Role | null) => {
@@ -292,165 +275,109 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [profile?.email],
   );
 
+  // Loads users/{uid}. A FAILED load (offline, timeout) is reported as
+  // profileLoadFailed — never as "no profile", because "no profile" sends
+  // the user to CompleteProfileScreen.
+  const loadProfile = useCallback(async (firebaseUser: User) => {
+    setProfileLoading(true);
+    setProfileLoadFailed(false);
+    try {
+      const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
+      setProfile(snap.exists() ? (snap.data() as UserProfile) : null);
+    } catch {
+      setProfileLoadFailed(true);
+    } finally {
+      setProfileLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // A Google-only account outside the institute domain is refused here,
+      // BEFORE it is ever put into state — so the app never flashes the
+      // "complete your profile" screen for it, and the login screen stays
+      // mounted to show the reason (authError).
+      if (firebaseUser) {
+        const email = (firebaseUser.email ?? '').trim().toLowerCase();
+        const googleOnly =
+          firebaseUser.providerData.length > 0 &&
+          firebaseUser.providerData.every((p) => p.providerId === 'google.com');
+        if (googleOnly && !isAllowedEmailDomain(email)) {
+          await deleteUser(firebaseUser).catch(() => signOut(auth).catch(() => {}));
+          if (Platform.OS !== 'web' && googleSignInAvailable) {
+            await GoogleSignin.signOut().catch(() => {});
+          }
+          setAuthError(
+            `${email || 'That account'} isn't an institute account. Please sign in with your ${ALLOWED_EMAIL_DOMAIN} Google account.`,
+          );
+          setUser(null);
+          setProfile(null);
+          setProfileLoadFailed(false);
+          setInitializing(false);
+          return;
+        }
+      }
       setUser(firebaseUser);
       if (firebaseUser) {
-        if (!justSignedUpRef.current) {
-          setProfileLoading(true);
-          try {
-            const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
-            setProfile(snap.exists() ? (snap.data() as UserProfile) : null);
-          } catch {
-            // Most commonly: offline with no cached copy of this doc
-            // yet (e.g. first launch with no signal). Leaving profile
-            // as whatever it already was rather than clearing it to
-            // null — a stale-but-correct profile from a previous
-            // session is more useful than none at all, and either way
-            // the app must not get stuck here: without this catch, the
-            // error used to skip past setInitializing(false) below
-            // entirely, leaving the splash screen up forever with no
-            // way in.
-          } finally {
-            setProfileLoading(false);
-          }
-        }
-        // Fire-and-forget: registers this device for push and saves the
-        // token onto the profile. Never awaited/blocking — a slow or
-        // failed push registration should never delay getting into the
-        // app. Safe to call every time auth state resolves to "signed
-        // in" (covers app relaunch, not just fresh sign-in), since it's
-        // just overwriting the same token field each time.
+        await loadProfile(firebaseUser);
         registerForPushNotificationsAsync(firebaseUser.uid);
       } else {
         setProfile(null);
+        setProfileLoadFailed(false);
       }
       setInitializing(false);
     });
     return unsubscribe;
+  }, [loadProfile]);
+
+  // Only used by the redirect fallback above: when the browser comes back
+  // from Google, surface any failure instead of silently showing the login
+  // screen again.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    getRedirectResult(auth).catch((e) => {
+      const message = friendlyGoogleError(e);
+      if (message) setAuthError(message);
+    });
   }, []);
 
-  const signUp: AuthContextValue['signUp'] = useCallback(async ({ name, email, password, role, enrollmentNumber }) => {
-    const normalizedEmail = email.trim().toLowerCase();
-    const typedRegNo = (enrollmentNumber ?? '').trim().toUpperCase();
-
-    // Reject off-domain emails before we ever create a Firebase Auth
-    // account — no point spending an account-creation attempt (or letting
-    // someone occupy an email slot) on an address that could never pass.
-    if (!isAllowedEmailDomain(normalizedEmail)) {
-      throw new Error(`Please sign up with your institute email (${ALLOWED_EMAIL_DOMAIN}).`);
-    }
-
-    
-    justSignedUpRef.current = true;
-    setProfileLoading(true);
-    let credential;
-    try {
-      credential = await createUserWithEmailAndPassword(auth, email, password);
-
-      // Faculty (and admin) accounts are gated by the `allowlist` collection,
-      // keyed by lowercased email, admin-seeded via scripts/seed-allowlist.js.
-      // Students are gated by the `roster` collection, keyed by enrollment
-      // number, admin-seeded via scripts/seed-roster.js — there's no student
-      // email list, so the enrollment number is the identity check instead.
-      // This is a UX nicety only; the real enforcement is in firestore.rules,
-      // since a client-side check alone can be bypassed by calling the API directly.
-      const newProfile = await buildGatedProfile({
-        uid: credential.user.uid,
-        name,
-        normalizedEmail,
-        role,
-        enrollmentNumber: typedRegNo,
-      });
-      await createUserProfileAtomically(credential.user.uid, newProfile);
-      setProfile(newProfile);
-      // Best-effort: if a club was pre-assigned to this email before the person
-      // signed up, link them as lead now. Never let this fail the signup itself.
-      try {
-        await claimPendingClubLead(credential.user.uid, normalizedEmail);
-      } catch {
-        // ignore — worst case, a faculty member links them later from the club page
-      }
-    } catch (err) {
-      if (credential) {
-        // The auth account exists but the gating check (or the profile
-        // write) failed — remove it rather than leaving an orphaned,
-        // profile-less account squatting on this email.
-        await deleteUser(credential.user).catch(() => signOut(auth).catch(() => {}));
-      } else {
-        await signOut(auth).catch(() => {});
-      }
-      throw new Error(friendlyAuthErrorMessage(err));
-    } finally {
-      justSignedUpRef.current = false;
-      setProfileLoading(false);
-    }
-  }, []);
+  const retryProfileLoad = useCallback(async () => {
+    if (auth.currentUser) await loadProfile(auth.currentUser);
+  }, [loadProfile]);
 
   const logIn: AuthContextValue['logIn'] = useCallback(async (email, password) => {
     await signInWithEmailAndPassword(auth, email, password);
   }, []);
 
-  // Shared by both the native and web sign-in paths below — the actual
-  // security-relevant check (institute domain only) has to be identical
-  // either way, so it isn't duplicated per-platform where the two copies
-  // could quietly drift apart.
-  //
-  // Deleting the Firebase Auth user alone isn't enough here. Both Google's
-  // native SDK and a browser's Google session cache "the last account this
-  // app/site used" and can silently reuse it on the NEXT sign-in attempt —
-  // either skipping the account picker entirely, or re-showing it with the
-  // same wrong account pre-selected. A student who accidentally signs in
-  // with a personal Gmail, gets rejected, then tries again meaning to pick
-  // their college account, can end up hitting the exact same wrong account
-  // again without realizing it — which looks exactly like "I can't sign in
-  // with my college email at all". Explicitly clearing that cached session
-  // here (not just on a normal logOut) is what actually fixes it: the next
-  // attempt is guaranteed to show a real account chooser.
-  const enforceAllowedDomainOrCleanUp = useCallback(async (user: User) => {
-    const normalizedEmail = (user.email ?? '').trim().toLowerCase();
-    if (!isAllowedEmailDomain(normalizedEmail)) {
-      // Wrong-domain Google account — this Firebase Auth user is brand new
-      // and useless without a profile, so remove it rather than leaving an
-      // orphaned account behind.
-      await deleteUser(user).catch(() => signOut(auth).catch(() => {}));
-      if (Platform.OS !== 'web' && googleSignInAvailable) {
-        await GoogleSignin.signOut().catch(() => {});
-      }
-      throw new Error(`Please sign in with your institute Google account (${ALLOWED_EMAIL_DOMAIN}).`);
-    }
-  }, []);
-
-  // Forces Google's account chooser to actually appear every time, rather
-  // than silently reusing whatever Google account the browser/device last
-  // used for this app — without this, picking a different account (e.g.
-  // after accidentally choosing a personal Gmail) isn't guaranteed to even
-  // show a picker at all, native or web.
+  
   function newGoogleProviderForcingAccountChooser(): GoogleAuthProvider {
     const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
+    // hd = hint that narrows Google's account chooser to the institute domain.
+    provider.setCustomParameters({ prompt: 'select_account', hd: ALLOWED_EMAIL_DOMAIN.slice(1) });
     return provider;
   }
 
-  // Kicks off the native Google account picker, then exchanges the Google
-  // idToken for a Firebase credential. Domain gating happens here (same
-  // @iiitsurat.ac.in restriction as email signup); role/enrollment gating
-  // (allowlist/roster) happens afterwards in completeGoogleProfile, once we
-  // know whether this is a brand-new sign-in or a returning user.
-  //
-  // Web is a genuinely different flow, not a variant of the native one:
-  // @react-native-google-signin/google-signin's own web implementation is
-  // a paywalled stub ("Web support is only available to sponsors") that
-  // throws on every method — googleSignInAvailable is misleadingly true on
-  // web (require() doesn't throw there, since the module resolves to that
-  // stub instead of a missing native binding), so without this branch a
-  // web user would tap the button and hit that raw library error. Firebase
-  // Auth's own signInWithPopup needs no extra library at all and reaches
-  // the exact same institute Google accounts.
+
   const signInWithGoogle: AuthContextValue['signInWithGoogle'] = useCallback(async () => {
     if (Platform.OS === 'web') {
-      const userCredential = await signInWithPopup(auth, newGoogleProviderForcingAccountChooser());
-      await enforceAllowedDomainOrCleanUp(userCredential.user);
+      setAuthError(null);
+      const provider = newGoogleProviderForcingAccountChooser();
+      try {
+        // A wrong-domain account is refused by the auth listener above,
+        // before the UI ever sees it; the reason shows up as authError.
+        await signInWithPopup(auth, provider);
+      } catch (e: any) {
+        if (e?.code === 'auth/popup-blocked') {
+          // Some browsers (mostly phones) never allow the pop-up: fall back
+          // to a full-page redirect. The result is picked up by the
+          // getRedirectResult effect below when the page comes back.
+          await signInWithRedirect(auth, provider);
+          return;
+        }
+        const message = friendlyGoogleError(e);
+        if (message === null) return; // user closed the window — not an error
+        throw new Error(message);
+      }
       return;
     }
     if (!googleSignInAvailable) {
@@ -464,22 +391,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // User cancelled the picker — not an error, just a no-op.
       return;
     }
+    // Check the chosen account BEFORE touching Firebase: a wrong-domain
+    // account then never becomes a signed-in user at all, so nothing flickers
+    // and the error goes straight back to the login screen.
+    const pickedEmail = (response.data.user?.email ?? '').trim().toLowerCase();
+    if (!isAllowedEmailDomain(pickedEmail)) {
+      await GoogleSignin.signOut().catch(() => {});
+      throw new Error(
+        `${pickedEmail || 'That account'} isn't an institute account. Please sign in with your ${ALLOWED_EMAIL_DOMAIN} Google account.`,
+      );
+    }
     const idToken = response.data.idToken;
     if (!idToken) {
       throw new Error('Google did not return an ID token. Please try again.');
     }
+    setAuthError(null);
     const credential = GoogleAuthProvider.credential(idToken);
-    const userCredential = await signInWithCredential(auth, credential);
-    await enforceAllowedDomainOrCleanUp(userCredential.user);
-    // If a profile doc already exists, onAuthStateChanged's listener will
-    // pick it up normally. If not, we leave the user signed in with
-    // profile === null — the Gate component shows the complete-profile
-    // screen, and completeGoogleProfile finishes setup from there.
-  }, [enforceAllowedDomainOrCleanUp]);
+    await signInWithCredential(auth, credential);
+  }, []);
 
-  // Called from the complete-profile screen after a first-time Google
-  // sign-in, once the person has picked a role (and, for students, entered
-  // an enrollment number).
+
   const completeGoogleProfile: AuthContextValue['completeGoogleProfile'] = useCallback(async ({ role, enrollmentNumber }) => {
     if (!user) throw new Error('You must be signed in.');
     const normalizedEmail = (user.email ?? '').trim().toLowerCase();
@@ -504,28 +435,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   const logOut = useCallback(async () => {
-    // Clear the push token BEFORE signing out — once signed out, we no
-    // longer have a uid to write to, and a stale token left behind would
-    // mean this device keeps getting this user's pushes if someone else
-    // signs into the same phone afterward.
+    
     if (user) {
       await clearPushToken(user.uid);
     }
     await signOut(auth);
     setPreviewRoleState(null);
-    // Best-effort — clears Google's local session so the next sign-in shows
-    // the account picker again instead of silently reusing the last account.
-    // Harmless no-op for users who never signed in with Google.
+    
     if (Platform.OS !== 'web' && googleSignInAvailable) {
       await GoogleSignin.signOut().catch(() => {});
     }
   }, [user]);
 
-  // Only `name` is editable — role and email are fixed at signup (both by
-  // UI convention and by firestore.rules, which reject a `users` update
-  // that changes role/email). Everything else on the profile (enrollment
-  // number, branch, section, admissionYear) comes from the roster and
-  // isn't user-editable either.
+  
   const updateProfileName: AuthContextValue['updateProfileName'] = useCallback(async (name) => {
     const trimmed = name.trim();
     if (!trimmed) throw new Error('Name cannot be empty.');
@@ -536,10 +458,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updateFacultyDetails: AuthContextValue['updateFacultyDetails'] = useCallback(async (details) => {
     if (!user) throw new Error('You must be signed in.');
-    // Trim every string field that was actually passed; leave anything
-    // not included in `details` untouched on both Firestore and local
-    // state. publicationsCount is numeric, not a string, so it's
-    // written as-is (or null to clear it) rather than trimmed.
+    
     const patch: Record<string, string | number | null> = {};
     (Object.keys(details) as (keyof typeof details)[]).forEach((key) => {
       const value = details[key];
@@ -554,10 +473,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await sendPasswordResetEmail(auth, email.trim());
   }, []);
 
-  // Unlike updateFacultyDetails (faculty-only, shows in Faculty
-  // Directory), this works for any role — a student's phone is used
-  // purely for Lost & Found Call/WhatsApp contact buttons, not shown
-  // anywhere else.
+  
   const updatePhone: AuthContextValue['updatePhone'] = useCallback(async (phone) => {
     if (!user) throw new Error('You must be signed in.');
     const trimmed = phone.trim();
@@ -565,14 +481,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile((prev) => (prev ? { ...prev, phone: trimmed } : prev));
   }, [user]);
 
-  // Just records the already-uploaded photo's download URL — the actual
-  // Storage upload happens in the caller (EditProfileScreen.tsx), same
-  // division of responsibility as every other file upload in this app
-  // (the service/context layer never touches Storage directly).
+  
   const updatePhoto: AuthContextValue['updatePhoto'] = useCallback(async (photoUrl) => {
     if (!user) throw new Error('You must be signed in.');
     await updateDoc(doc(db, 'users', user.uid), { photoUrl });
     setProfile((prev) => (prev ? { ...prev, photoUrl } : prev));
+  }, [user]);
+
+  const setInCabin: AuthContextValue['setInCabin'] = useCallback(async (inCabin) => {
+    if (!user) throw new Error('You must be signed in.');
+    await updateDoc(doc(db, 'users', user.uid), { inCabin });
+    setProfile((prev) => (prev ? { ...prev, inCabin } : prev));
   }, [user]);
 
   const value = useMemo<AuthContextValue>(
@@ -581,7 +500,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       profile,
       initializing,
       profileLoading,
-      signUp,
+      profileLoadFailed,
+      retryProfileLoad,
+      authError,
+      clearAuthError,
       logIn,
       signInWithGoogle,
       completeGoogleProfile,
@@ -590,6 +512,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updateFacultyDetails,
       updatePhone,
       updatePhoto,
+      setInCabin,
       sendPasswordReset,
       previewRole,
       setPreviewRole,
@@ -599,7 +522,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       profile,
       initializing,
       profileLoading,
-      signUp,
+      profileLoadFailed,
+      retryProfileLoad,
+      authError,
+      clearAuthError,
       logIn,
       signInWithGoogle,
       completeGoogleProfile,
@@ -608,6 +534,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updateFacultyDetails,
       updatePhone,
       updatePhoto,
+      setInCabin,
       sendPasswordReset,
       previewRole,
       setPreviewRole,

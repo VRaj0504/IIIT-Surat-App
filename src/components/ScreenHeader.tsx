@@ -29,7 +29,7 @@ export default function ScreenHeader({ title, subtitle, actionIcon, onAction }: 
       </View>
       {actionIcon && onAction && (
         <TouchableOpacity style={styles.actionBtn} onPress={onAction}>
-          <Ionicons name={actionIcon} size={20} color="#fff" />
+          <Ionicons name={actionIcon} size={20} color={colors.onPrimary} />
         </TouchableOpacity>
       )}
     </View>

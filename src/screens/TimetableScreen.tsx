@@ -1,21 +1,9 @@
-import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  FlatList,
-  ActivityIndicator,
-} from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
-import {
-  colors,
-  spacing,
-  radius,
-  typography,
-} from "../theme/theme";
+import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
+import { colors, spacing, typography } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { getCurrentSemester } from "../utils/academicInfo";
 import {
@@ -26,101 +14,103 @@ import {
   FacultyScheduleEntry,
 } from "../firebase/timetableService";
 import { expandFaculty } from "../data/facultyLegend";
-import { mergeContiguousSlots } from "../utils/timetable";
-import ScreenHeader from "../components/ScreenHeader";
+import { mergeContiguousSlots, toMinutes } from "../utils/timetable";
+import LoadingSpinner from "../components/LoadingSpinner";
 
-// Same reasoning as functions/src/sendClassReminderPush.ts's
-// mergeContiguousSessions — a 2-hour lab is stored as two back-to-back
-// 1-hour rows (e.g. 1-2 PM and 2-3 PM) so the reminder logic can treat
-// each hour independently, but that means showing them as-is here would
-// render two duplicate-looking cards for what a student experiences as
-// one continuous class. This collapses any run of same-subject,
-// same-room, contiguous slots into a single card spanning the full
-// range before rendering — display-only, doesn't touch what's stored.
+// One day at a time: finished classes fade, the running one is
+// highlighted, and any free hour shows up as its own slot with a shortcut
+// to Class Emptiness. Plain views only (no row animations), so switching
+// days is instant.
 //
-// Accepts either a student's plain TimetableSlot[] or a faculty
-// member's FacultyScheduleEntry[] (which also carries branch/section,
-// since one faculty member's schedule spans multiple sections that a
-// bare TimetableSlot can't distinguish between).
-//
-// The real bug (found via a debug log, after two earlier guesses at
-// string-normalization that turned out to be solving a problem that
-// never existed — every field on the "duplicate" rows was already
-// byte-identical): this used to only ever compare against
-// merged[merged.length - 1], the single most-recently-pushed card.
-// That's fine for one linear sequence, but Group 1 and Group 2 run in
-// PARALLEL, so sorted by time they interleave — CS302-Group1 (1-2pm),
-// CS303-Group2 (1-2pm), CS302-Group1 (2-3pm), CS303-Group2 (2-3pm).  By
-// the time CS302's second hour comes up, the "last" pushed card is
-// CS303's, not CS302's own — so it never saw its own predecessor and
-// always started a fresh card. Fixed by tracking the last entry PER
-// (subject/room/group/section) key independently, so each group's own
-// run of hours merges against itself regardless of what interleaves
-// between them in sorted order.
-/*function mergeContiguousSlots<T extends TimetableSlot & { branch?: string; section?: string }>(
-  slots: T[],
-): T[] {
-  const sorted = [...slots].sort((a, b) => a.startTime.localeCompare(b.startTime));
-  const merged: T[] = [];
-  const openByKey = new Map<string, T>();
+// Saturday is excluded: every timetable in this app only runs Mon–Fri.
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
-  const keyOf = (s: T) =>
-    [s.subjectCode, s.room, s.group ?? "", s.branch ?? "", s.section ?? ""].join("|");
+type Slot = TimetableSlot & { branch?: string; semester?: number; section?: string };
 
-  for (const slot of sorted) {
-    const key = keyOf(slot);
-    const open = openByKey.get(key);
-    if (open && open.endTime === slot.startTime) {
-      open.endTime = slot.endTime; // extend the existing card for this track
-    } else {
-      const copy = { ...slot };
-      merged.push(copy);
-      openByKey.set(key, copy);
-    }
-  }
+type Row =
+  | { kind: "class"; slot: Slot; showTime: boolean; state: "past" | "now" | "upcoming" }
+  | { kind: "gap"; from: number; to: number };
 
-  return merged;
+function fmt(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
 }
-  */
 
-// Saturday is deliberately excluded here — every seed/import path leaves
-// it as an empty slots array (the source college timetables only ever
-// run Mon-Fri), so showing it as a 6th pill was just permanent dead
-// weight that crowded the row and pushed it into needing a scroll.
-const WEEKDAYS = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-];
+// "9:00 – 11:00 AM" (one AM/PM when both ends share it) — fits one line.
+function fmtRange(a: number, b: number): string {
+  const sameHalf = (a < 720) === (b < 720);
+  const short = (m: number) => fmt(m).replace(/ (AM|PM)$/, "");
+  return sameHalf ? `${short(a)} – ${fmt(b)}` : `${fmt(a)} – ${fmt(b)}`;
+}
+
+// Monday..Friday of the current week (on a weekend: the coming week).
+function weekDates(today: Date): Date[] {
+  const d = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const dow = d.getDay(); // 0 Sun .. 6 Sat
+  const offsetToMonday = dow === 0 ? 1 : dow === 6 ? 2 : 1 - dow;
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + offsetToMonday);
+  return WEEKDAYS.map((_, i) => {
+    const x = new Date(monday);
+    x.setDate(monday.getDate() + i);
+    return x;
+  });
+}
+
+// Classes and free gaps (>= 60 min), in time order.
+function buildRows(slots: Slot[], isToday: boolean, nowMin: number): Row[] {
+  const sorted = mergeContiguousSlots(slots)
+    .filter((s) => toMinutes(s.startTime) >= 0)
+    .sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+  const rows: Row[] = [];
+  let lastEnd = -1;
+  let lastStart = -1;
+  for (const s of sorted) {
+    const start = toMinutes(s.startTime);
+    const end = Math.max(toMinutes(s.endTime), start + 1);
+    if (lastEnd >= 0 && start - lastEnd >= 60) {
+      rows.push({ kind: "gap", from: lastEnd, to: start });
+    }
+    const state: "past" | "now" | "upcoming" = !isToday
+      ? "upcoming"
+      : end <= nowMin
+        ? "past"
+        : start <= nowMin
+          ? "now"
+          : "upcoming";
+    rows.push({ kind: "class", slot: s, showTime: start !== lastStart, state });
+    lastStart = start;
+    lastEnd = Math.max(lastEnd, end);
+  }
+  return rows;
+}
 
 export default function TimetableScreen() {
   const { profile, previewRole } = useAuth();
+  const navigation = useNavigation<any>();
   const isFaculty = (previewRole ?? profile?.role) === "faculty";
 
   // --- Student path: one section's timetable doc ---
   const [timetable, setTimetable] = useState<Timetable | null>(null);
-  const hasAcademicInfo = !!(
-    profile?.branch &&
-    profile?.section &&
-    profile?.admissionYear
-  );
-  const semester = profile?.admissionYear
-    ? getCurrentSemester(profile.admissionYear)
-    : null;
+  const hasAcademicInfo = !!(profile?.branch && profile?.section && profile?.admissionYear);
+  const semester = profile?.admissionYear ? getCurrentSemester(profile.admissionYear, undefined, profile.program) : null;
 
-  // --- Faculty path: derived from every section's timetable — see
-  // subscribeToFacultyTimetable's own comment in timetableService.ts for
-  // why this is derived rather than a separate upload. ---
+  // --- Faculty path: derived from every section's timetable (see
+  // subscribeToFacultyTimetable in timetableService.ts). ---
   const [facultyEntries, setFacultyEntries] = useState<FacultyScheduleEntry[]>([]);
-
   const [loading, setLoading] = useState(true);
 
-  const todayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
-  const [selectedDay, setSelectedDay] = useState(
-    WEEKDAYS.includes(todayName) ? todayName : "Monday",
-  );
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
+  const todayName = now.toLocaleDateString("en-US", { weekday: "long" });
+  const [selectedDay, setSelectedDay] = useState(WEEKDAYS.includes(todayName) ? todayName : "Monday");
+  const dates = useMemo(() => weekDates(now), [now.toDateString()]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (isFaculty) {
@@ -135,64 +125,46 @@ export default function TimetableScreen() {
       });
       return () => unsubscribe();
     }
-
     if (!profile?.branch || !profile?.section || !semester) {
       setLoading(false);
       return;
     }
     setLoading(true);
-    const unsubscribe = subscribeToTimetable(
-      profile.branch,
-      semester,
-      profile.section,
-      (data) => {
-        setTimetable(data);
-        setLoading(false);
-      },
-    );
+    const unsubscribe = subscribeToTimetable(profile.branch, semester, profile.section, (data) => {
+      setTimetable(data);
+      setLoading(false);
+    });
     return () => unsubscribe();
   }, [isFaculty, profile?.name, profile?.branch, profile?.section, semester]);
 
-  const daySlots: (TimetableSlot & { branch?: string; section?: string })[] = isFaculty
+  const daySlots: Slot[] = isFaculty
     ? facultyEntries.filter((e) => e.day === selectedDay)
     : timetable?.days.find((d) => d.day === selectedDay)?.slots ?? [];
 
-  // TEMPORARY — remove once this is confirmed fixed for real. Logs the
-  // exact raw field values Firestore is returning for the selected
-  // day's slots, before any merge logic runs. Brought back because the
-  // last fix (keyed merge tracking) + a corrected re-imported Excel
-  // together still aren't producing the right result, which means
-  // there's still something about the actual current data we haven't
-  // seen yet — same reasoning as the first time this log found the real
-  // bug, rather than guessing at a fifth explanation blind.
-  useEffect(() => {
-    if (daySlots.length) {
-      console.log(
-        `[TimetableScreen debug] ${selectedDay} raw slots:`,
-        JSON.stringify(daySlots, null, 2),
-      );
-    }
-  }, [daySlots, selectedDay]);
+  const isToday = selectedDay === todayName;
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const rows = useMemo(() => buildRows(daySlots, isToday, nowMin), [daySlots, isToday, nowMin]);
+  const classCount = rows.filter((r) => r.kind === "class").length;
 
   const noProfileInfo = isFaculty ? !profile?.name : !hasAcademicInfo;
-  const hasNoTimetableYet = isFaculty ? false : !timetable; // faculty schedule is just "0 entries", not "not uploaded"
+  const hasNoTimetableYet = isFaculty ? false : !timetable;
 
   return (
-    <LinearGradient
-      colors={[colors.gradientStart, colors.gradientEnd]}
-      style={{ flex: 1 }}
-    >
+    <View style={styles.page}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <ScreenHeader
-          title="Timetable"
-          subtitle={
-            isFaculty
-              ? "Your teaching schedule, across every section"
+        <View style={styles.header}>
+          <Text style={styles.kicker}>
+            {now.toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
+          </Text>
+          <Text style={styles.title}>{isFaculty ? "Your teaching week" : "Your week"}</Text>
+          <Text style={styles.subtitle}>
+            {isFaculty
+              ? "Every section you teach"
               : hasAcademicInfo
                 ? `${profile?.branch} · Semester ${semester} · ${profile?.section}`
-                : undefined
-          }
-        />
+                : ""}
+          </Text>
+        </View>
 
         {noProfileInfo ? (
           <Text style={styles.emptyText}>
@@ -202,185 +174,186 @@ export default function TimetableScreen() {
           </Text>
         ) : (
           <>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.dayTabs}
-              contentContainerStyle={{ gap: spacing.sm }}
-            >
-              {WEEKDAYS.map((d) => (
-                <TouchableOpacity
-                  key={d}
-                  onPress={() => setSelectedDay(d)}
-                  style={[
-                    styles.dayTab,
-                    selectedDay === d && styles.dayTabActive,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.dayTabText,
-                      selectedDay === d && styles.dayTabTextActive,
-                    ]}
+            <View style={styles.dayRow}>
+              {WEEKDAYS.map((d, i) => {
+                const active = selectedDay === d;
+                const isTodayPill = d === todayName;
+                return (
+                  <TouchableOpacity
+                    key={d}
+                    onPress={() => setSelectedDay(d)}
+                    style={[styles.dayPill, active && styles.dayPillActive]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={d}
                   >
-                    {d.slice(0, 3)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                    <Text style={[styles.dayName, active && styles.dayTextActive]}>{d.slice(0, 3).toUpperCase()}</Text>
+                    <Text style={[styles.dayNum, active && styles.dayTextActive]}>{dates[i].getDate()}</Text>
+                    {isTodayPill && !active && <View style={styles.todayDot} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
             {loading ? (
-              <ActivityIndicator
-                style={{ marginTop: spacing.xl }}
-                color={colors.primary}
-              />
+              <LoadingSpinner style={{ marginTop: spacing.xl }} />
             ) : hasNoTimetableYet ? (
-              <Text style={styles.emptyText}>
-                No timetable has been uploaded for your section yet.
-              </Text>
+              <Text style={styles.emptyText}>No timetable has been uploaded for your section yet.</Text>
+            ) : classCount === 0 ? (
+              <View style={styles.emptyDay}>
+                <Ionicons name="sunny-outline" size={34} color={colors.textSecondary} />
+                <Text style={styles.emptyText}>
+                  {isFaculty ? "No classes assigned to you on this day." : "No classes scheduled."}
+                </Text>
+              </View>
             ) : (
-              <FlatList
-                data={mergeContiguousSlots(daySlots)}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.list}
-                ListEmptyComponent={
-                  <Text style={styles.emptyText}>
-                    {isFaculty
-                      ? "No classes assigned to you on this day."
-                      : "No classes scheduled."}
-                  </Text>
-                }
-                renderItem={({ item }) => (
-                  <ClassCard item={item} showSection={isFaculty} />
-                )}
-              />
+              <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+                {rows.map((row, i) => {
+                  if (row.kind === "gap") {
+                    return (
+                      <View key={`gap-${i}`} style={styles.row}>
+                        <Text style={styles.timeCol}>{fmt(row.from)}</Text>
+                        <TouchableOpacity
+                          style={styles.gapCard}
+                          onPress={() => navigation.navigate("RoomAvailability")}
+                          activeOpacity={0.75}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.gapTitle}>Free · {Math.round((row.to - row.from) / 60 * 10) / 10} hr</Text>
+                            <Text style={styles.gapSub}>
+                              {fmt(row.from)} – {fmt(row.to)}
+                            </Text>
+                          </View>
+                          <Text style={styles.gapLink}>Find empty room</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  }
+                  return (
+                    <View key={`c-${row.slot.id}-${i}`} style={styles.row}>
+                      <Text style={[styles.timeCol, row.state === "past" && { opacity: 0.5 }]}>
+                        {row.showTime ? fmt(toMinutes(row.slot.startTime)) : ""}
+                      </Text>
+                      <ClassCard slot={row.slot} state={row.state} showSection={isFaculty} />
+                    </View>
+                  );
+                })}
+              </ScrollView>
             )}
           </>
         )}
       </SafeAreaView>
-    </LinearGradient>
+    </View>
   );
 }
 
-// Stored as 24hr "HH:MM" (e.g. "13:00") — that's the right format for
-// sorting/comparing (mergeContiguousSlots above relies on plain string
-// equality/ordering), but not what anyone wants to actually read on a
-// class card, so this only converts at the point of display.
-function to12Hour(time: string): string {
-  const [hourStr, minute] = time.split(":");
-  const hour = parseInt(hourStr, 10);
-  const period = hour >= 12 ? "PM" : "AM";
-  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
-  return `${hour12}:${minute} ${period}`;
-}
-
-function ClassCard({
-  item,
-  showSection,
-}: {
-  item: TimetableSlot & { branch?: string; semester?: number; section?: string };
-  showSection: boolean;
-}) {
-  // Room strings for labs always contain "LAB" (e.g. "CSE LAB 1", "PHY LAB
-  // 2" — see scripts/seed-timetable.mjs and timetableImport.ts). Using
-  // that to color-code and tag lab sessions differently from lectures is
-  // both more scannable (labs run longer and need specific kit/seating)
-  // and breaks up what was otherwise a stack of visually identical white
-  // rows with no way to tell a 3-hour lab from a 1-hour lecture at a glance.
-  const isLab = item.room.toUpperCase().includes("LAB");
-  const accent = isLab ? colors.badge.peach : colors.badge.blue;
+function ClassCard({ slot, state, showSection }: { slot: Slot; state: "past" | "now" | "upcoming"; showSection: boolean }) {
+  // Labs (room contains "LAB") get a warm tint; lectures a cool one, so a
+  // 2-hour lab reads differently from a 1-hour lecture at a glance.
+  const isLab = (slot.room ?? "").toUpperCase().includes("LAB");
+  const tone = isLab ? colors.tile.peach : colors.tile.blue;
+  const live = state === "now";
+  const start = toMinutes(slot.startTime);
+  const end = toMinutes(slot.endTime);
 
   return (
-    <View style={[styles.classCard, { borderLeftColor: accent.fg }]}>
-      <View style={styles.timeBlock}>
-        <Text style={styles.timeText}>{to12Hour(item.startTime)}</Text>
-        <Text style={styles.timeText}>{to12Hour(item.endTime)}</Text>
-      </View>
-      <View style={styles.classInfo}>
-        <View style={styles.subjectRow}>
-          <Text style={styles.subject}>
-            {item.subjectCode} {item.subjectName}
-            {item.group ? ` · ${item.group}` : ""}
-          </Text>
-          {isLab && (
-            <View style={[styles.labTag, { backgroundColor: accent.bg }]}>
-              <Text style={[styles.labTagText, { color: accent.fg }]}>LAB</Text>
-            </View>
-          )}
-        </View>
-        {/* Faculty view only — a student always knows their own section,
-            but a faculty member teaches several, so each card needs to
-            say which one this particular class belongs to. */}
-        {showSection && item.branch && (
-          <Text style={styles.sectionTag}>
-            {item.branch} · Sem {item.semester} · {item.section}
-          </Text>
-        )}
-        <Text style={styles.meta}>
-          {expandFaculty(item.faculty)} · {item.room}
+    <View
+      style={[
+        styles.card,
+        { backgroundColor: live ? colors.primary : tone.bg },
+        state === "past" && { opacity: 0.5 },
+      ]}
+    >
+      <View style={styles.cardTop}>
+        <Text style={[styles.subject, { color: live ? colors.onPrimary : tone.fg }]} numberOfLines={2}>
+          {slot.subjectName || slot.subjectCode}
+          {slot.group ? ` · ${slot.group}` : ""}
         </Text>
+        {live ? (
+          <View style={[styles.tag, { backgroundColor: colors.onPrimary }]}>
+            <Text style={[styles.tagText, { color: colors.primary }]}>NOW</Text>
+          </View>
+        ) : isLab ? (
+          <View style={[styles.tag, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.tagText, { color: tone.fg }]}>LAB</Text>
+          </View>
+        ) : null}
       </View>
+      <Text style={[styles.cardMeta, { color: live ? colors.onPrimary : colors.textPrimary }]} numberOfLines={1}>
+        {[slot.room, start >= 0 && end >= 0 ? fmtRange(start, end) : null].filter(Boolean).join(" · ")}
+      </Text>
+      <Text style={[styles.cardMeta2, { color: live ? colors.onPrimary : colors.textSecondary }]} numberOfLines={2}>
+        {[
+          slot.subjectCode,
+          showSection && slot.branch
+            ? [slot.branch, slot.semester ? `Sem ${slot.semester}` : null, slot.section].filter(Boolean).join(" ")
+            : expandFaculty(slot.faculty ?? ""),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: spacing.md },
-  dayTabs: { marginBottom: spacing.md, flexGrow: 0 },
-  dayTab: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.full,
+  page: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1, paddingHorizontal: 20 },
+  header: { paddingTop: spacing.md, marginBottom: spacing.md },
+  kicker: { fontSize: 13, fontWeight: "700", color: colors.primary },
+  title: { ...typography.h1, color: colors.textPrimary, marginTop: 2 },
+  subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+
+  dayRow: { flexDirection: "row", gap: 8, marginBottom: spacing.md },
+  dayPill: {
+    flex: 1,
+    height: 58,
+    borderRadius: 16,
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minWidth: 56,
     alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
   },
-  dayTabActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  dayTabText: {
-    ...typography.body,
-    color: colors.textPrimary,
-    fontWeight: "600",
-  },
-  dayTabTextActive: { color: "#fff" },
-  list: { paddingBottom: spacing.xl },
-  classCard: {
+  dayPillActive: { backgroundColor: colors.primary },
+  dayName: { fontSize: 11, fontWeight: "800", color: colors.textSecondary, letterSpacing: 0.4 },
+  dayNum: { fontSize: 17, fontWeight: "800", color: colors.textPrimary },
+  dayTextActive: { color: colors.onPrimary },
+  todayDot: { position: "absolute", bottom: 6, width: 5, height: 5, borderRadius: 3, backgroundColor: colors.accent },
+
+  list: { paddingBottom: spacing.xl * 2, gap: 8 },
+  row: { flexDirection: "row", alignItems: "stretch", gap: 10 },
+  timeCol: { width: 62, fontSize: 12, fontWeight: "700", color: colors.textSecondary, paddingTop: 12 },
+
+  card: { flex: 1, borderRadius: 18, paddingVertical: 12, paddingHorizontal: 14 },
+  cardTop: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  subject: { flex: 1, fontSize: 15, fontWeight: "800", letterSpacing: -0.2 },
+  tag: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
+  tagText: { fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
+  cardMeta: { fontSize: 13, fontWeight: "700", marginTop: 4 },
+  cardMeta2: { fontSize: 12, fontWeight: "600", marginTop: 2 },
+
+  gapCard: {
+    flex: 1,
     flexDirection: "row",
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    borderWidth: 1,
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderStyle: "dashed",
     borderColor: colors.border,
-    borderLeftWidth: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
-  timeBlock: { width: 60, marginRight: spacing.md, justifyContent: "center" },
-  timeText: { ...typography.caption, color: colors.primary, fontWeight: "600" },
-  classInfo: { flex: 1, justifyContent: "center" },
-  subjectRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, flexWrap: "wrap" },
-  labTag: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: radius.sm },
-  labTagText: { fontSize: 10, fontWeight: "700" },
-  subject: { ...typography.h3, color: colors.textPrimary },
-  sectionTag: {
-    ...typography.caption,
-    color: colors.primary,
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  meta: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-  },
+  gapTitle: { fontSize: 14, fontWeight: "800", color: colors.textPrimary },
+  gapSub: { fontSize: 12, fontWeight: "600", color: colors.textSecondary, marginTop: 2 },
+  gapLink: { fontSize: 12, fontWeight: "800", color: colors.primary },
+
+  emptyDay: { alignItems: "center", marginTop: spacing.xl, gap: spacing.sm },
   emptyText: {
     ...typography.body,
     color: colors.textSecondary,
     textAlign: "center",
-    marginTop: spacing.xl,
+    marginTop: spacing.md,
     paddingHorizontal: spacing.md,
   },
 });

@@ -201,7 +201,7 @@ export default function CreateClubScreen() {
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.onPrimary} />
               ) : (
                 <Text style={styles.primaryBtnText}>Create Club</Text>
               )}
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
   },
   error: {
     color: colors.danger,
-    backgroundColor: "#FCEAEB",
+    backgroundColor: colors.dangerBg,
     padding: spacing.sm,
     borderRadius: radius.sm,
     marginBottom: spacing.md,
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     ...clayShadowSoft,
     borderWidth: 1,
-    borderColor: "rgba(11,61,145,0.12)",
+    borderColor: colors.border,
     borderRadius: radius.sm,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: "600",
   },
-  chipTextSelected: { color: "#fff" },
+  chipTextSelected: { color: colors.onPrimary },
   primaryBtn: {
     backgroundColor: colors.primary,
     borderRadius: radius.md,
@@ -283,5 +283,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: spacing.lg,
   },
-  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  primaryBtnText: { color: colors.onPrimary, fontWeight: "700", fontSize: 16 },
 });

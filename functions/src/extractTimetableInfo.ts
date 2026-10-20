@@ -1,5 +1,6 @@
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {ImageAnnotatorClient} from "@google-cloud/vision";
+import * as admin from "firebase-admin";
 
 const visionClient = new ImageAnnotatorClient();
 
@@ -81,8 +82,14 @@ function normalizeTime(hour: string, minute: string | undefined, meridiem: strin
     const isPM = /pm/i.test(meridiem);
     if (isPM && h !== 12) h += 12;
     if (!isPM && h === 12) h = 0;
+  } else if (h >= 1 && h <= 7) {
+    // No AM/PM on the header ("2:00-3:00"): classes never run 1–7 AM,
+    // so this is the afternoon. Stored as "02:00" before, which the app
+    // read as 2 AM and showed those rooms as empty all afternoon.
+    h += 12;
   }
-  return `${String(h).padStart(2, "0")}:${m}`;
+  // Un-padded hour ("9:00"), matching every other timetable writer.
+  return `${h}:${m}`;
 }
 
 export const extractTimetableInfo = onCall<ExtractTimetableRequest, Promise<ExtractTimetableResponse>>(
@@ -91,12 +98,24 @@ export const extractTimetableInfo = onCall<ExtractTimetableRequest, Promise<Extr
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "You must be signed in.");
     }
-    const {storagePath, bucket} = request.data;
-    if (!storagePath || !bucket) {
-      throw new HttpsError("invalid-argument", "Missing storagePath or bucket.");
+    const {storagePath} = request.data;
+    if (!storagePath || typeof storagePath !== "string") {
+      throw new HttpsError("invalid-argument", "Missing storagePath.");
     }
 
-    const gcsUri = `gs://${bucket}/${storagePath}`;
+    // Only faculty/admin import timetables (also keeps Vision costs bounded).
+    const callerSnap = await admin.firestore().collection("users").doc(request.auth.uid).get();
+    const callerRole = callerSnap.data()?.role;
+    if (callerRole !== "faculty" && callerRole !== "admin") {
+      throw new HttpsError("permission-denied", "Only faculty can import timetables.");
+    }
+
+    // Own scan folder, this project's bucket only (see extractPosterInfo).
+    const ownPrefix = `timetableScans/${request.auth.uid}/`;
+    if (!storagePath.startsWith(ownPrefix) || storagePath.includes("..")) {
+      throw new HttpsError("permission-denied", "You can only scan your own uploads.");
+    }
+    const gcsUri = `gs://${admin.storage().bucket().name}/${storagePath}`;
 
     try {
       const [result] = await visionClient.documentTextDetection(gcsUri);

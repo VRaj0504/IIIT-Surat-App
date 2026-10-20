@@ -1,8 +1,11 @@
 import React from 'react';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { View, Pressable, StyleSheet } from 'react-native';
+import { createBottomTabNavigator, BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme/theme';
 import type { RootTabParamList } from './types';
+import { useWebLayout } from '../utils/useWebLayout';
 
 import HomeScreen from '../screens/HomeScreen';
 import TimetableScreen from '../screens/TimetableScreen';
@@ -20,21 +23,51 @@ const iconMap: Record<keyof RootTabParamList, keyof typeof Ionicons.glyphMap> = 
   Profile: 'person',
 };
 
+// C-style bar: a dark rounded pill; the active tab is a white circle.
+// It sits in its own strip (not floating over content), so no list item
+// can hide behind it. Plain views — switching tabs is instant.
+function AppTabBar({ state, navigation }: BottomTabBarProps) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+      <View style={styles.pill}>
+        {state.routes.map((route, index) => {
+          const focused = state.index === index;
+          const name = route.name as keyof RootTabParamList;
+          const onPress = () => {
+            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+            if (!focused && !event.defaultPrevented) navigation.navigate(route.name as never);
+          };
+          return (
+            <Pressable
+              key={route.key}
+              onPress={onPress}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: focused }}
+              accessibilityLabel={route.name}
+              hitSlop={4}
+              style={[styles.item, focused && styles.itemActive]}
+            >
+              <Ionicons
+                name={focused ? iconMap[name] : (`${iconMap[name]}-outline` as keyof typeof Ionicons.glyphMap)}
+                size={22}
+                color={focused ? colors.ink : colors.inkMuted}
+              />
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 export default function TabNavigator() {
+  // On a wide browser the website header carries the navigation instead.
+  const { isDesktop } = useWebLayout();
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textSecondary,
-        tabBarIcon: ({ color, size, focused }) => (
-          <Ionicons
-            name={focused ? iconMap[route.name as keyof RootTabParamList] : (`${iconMap[route.name as keyof RootTabParamList]}-outline` as keyof typeof Ionicons.glyphMap)}
-            size={size}
-            color={color}
-          />
-        ),
-      })}
+      tabBar={(props) => (isDesktop ? null : <AppTabBar {...props} />)}
+      screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Timetable" component={TimetableScreen} />
@@ -44,3 +77,18 @@ export default function TabNavigator() {
     </Tab.Navigator>
   );
 }
+
+const styles = StyleSheet.create({
+  wrap: { backgroundColor: colors.surface, paddingTop: 8, paddingHorizontal: 20 },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.ink,
+    borderRadius: 32,
+    height: 64,
+    paddingHorizontal: 8,
+  },
+  item: { width: 52, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  itemActive: { backgroundColor: colors.onInk },
+});

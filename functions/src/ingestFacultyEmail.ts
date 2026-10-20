@@ -31,7 +31,26 @@ type IngestBody = {
   subject: string;
   bodyText: string;
   attachments: IncomingAttachment[];
+  // The "Authentication-Results" header Gmail stamps on every received
+  // message (SPF/DKIM/DMARC verdicts). Sent by the Apps Script bridge.
+  authResults?: string;
 };
+
+// The From: line of an email is trivially forgeable, so it proves nothing
+// by itself. Gmail's own verdicts do: accept only if the message passed
+// DMARC, a DKIM signature, or SPF — in each case for the SAME domain as
+// the From address (so a spoofer can't pass using their own domain).
+function senderIsAuthenticated(authResults: string | undefined, fromEmail: string): boolean {
+  if (!authResults) return false;
+  const domain = fromEmail.split("@")[1]?.toLowerCase();
+  if (!domain) return false;
+  const ar = authResults.toLowerCase();
+  const d = domain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const dmarcPass = new RegExp(`dmarc=pass[^;]*header\\.from=${d}(?![\\w.-])`).test(ar);
+  const dkimPass = new RegExp(`dkim=pass[^;]*header\\.(?:i=@|d=)${d}(?![\\w.-])`).test(ar);
+  const spfPass = new RegExp(`spf=pass[^;]*smtp\\.mailfrom=[^;\\s]*@${d}(?![\\w.-])`).test(ar);
+  return dmarcPass || dkimPass || spfPass;
+}
 
 type TargetScope = {
   scope: "all" | "branch" | "section";
@@ -384,8 +403,8 @@ export const ingestFacultyEmail = onRequest(
   {
     secrets: [ingestSecret, geminiKey],
     region: "asia-south1",
-    // Low-volume, bursty at most around exam/notice season — no need for
-    // the throughput headroom placeOrderFn or razorpayWebhook carry.
+    // Low-volume, bursty at most around exam/notice season — no need
+    // for extra throughput headroom here.
     concurrency: 10,
     maxInstances: 5,
     // Attachments can be a few MB of base64; give this more room than the
@@ -394,8 +413,11 @@ export const ingestFacultyEmail = onRequest(
     timeoutSeconds: 120,
   },
   async (req, res) => {
-    const providedSecret = req.headers["x-ingest-secret"];
-    if (providedSecret !== ingestSecret.value()) {
+    const providedSecret = String(req.headers["x-ingest-secret"] ?? "");
+    const expectedSecret = ingestSecret.value();
+    const providedBuf = Buffer.from(providedSecret);
+    const expectedBuf = Buffer.from(expectedSecret);
+    if (providedBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(providedBuf, expectedBuf)) {
       res.status(401).send("unauthorized");
       return;
     }
@@ -409,12 +431,26 @@ export const ingestFacultyEmail = onRequest(
     const db = admin.firestore();
     const fromEmail = body.from.toLowerCase().trim();
 
+    // Reject forged senders BEFORE anything else: without this, anyone who
+    // can email the inbox could pose as a faculty member (or club lead) and
+    // have notices auto-published to every student.
+    if (!senderIsAuthenticated(body.authResults, fromEmail)) {
+      logger.warn("ingestFacultyEmail: sender could not be authenticated", {fromEmail});
+      await db.collection("emailImportAlerts").doc(body.messageId).set({
+        reason: "sender could not be authenticated (no passing SPF/DKIM/DMARC for the From domain)",
+        from: fromEmail,
+        subject: body.subject,
+        flaggedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      res.status(200).send("ok");
+      return;
+    }
+
     // Sender must be a real, currently-allowlisted faculty member — this
     // is the actual security boundary here, independent of whatever the
     // Apps Script side already filtered. An unrecognized sender never
-    // reaches pendingImports; it's flagged instead, same pattern as
-    // razorpayWebhook's "payment with no uid" case: return 200 so nothing
-    // retries forever, but leave a clear trail for staff.
+    // reaches pendingImports; it's flagged instead: return 200 so
+    // nothing retries forever, but leave a clear trail for staff.
     const allowlistSnap = await db.collection("allowlist").doc(fromEmail).get();
     if (!allowlistSnap.exists || allowlistSnap.data()?.role !== "faculty") {
       // Not faculty — but before rejecting outright, check whether this
@@ -484,8 +520,7 @@ export const ingestFacultyEmail = onRequest(
       // Neither faculty nor a club lead — this is the actual security
       // boundary here, independent of whatever the Apps Script side
       // already filtered. An unrecognized sender never reaches
-      // pendingImports; it's flagged instead, same pattern as
-      // razorpayWebhook's "payment with no uid" case: return 200 so
+      // pendingImports; it's flagged instead: return 200 so
       // nothing retries forever, but leave a clear trail for staff.
       logger.warn("ingestFacultyEmail: sender not an allowlisted faculty member or club lead", {fromEmail});
       await db.collection("emailImportAlerts").doc(body.messageId).set({

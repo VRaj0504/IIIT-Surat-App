@@ -1,110 +1,68 @@
 import React from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
-import {
-  colors,
-  spacing,
-  radius,
-  typography,
-  clayShadowSoft,
-} from "../theme/theme";
+import { colors, spacing } from "../theme/theme";
 import appJson from "../../app.json";
 
 const APP_VERSION = appJson.expo?.version ?? "1.0.0";
 
 export default function AboutScreen() {
   return (
-    <LinearGradient
-      colors={[colors.gradientStart, colors.gradientEnd]}
-      style={{ flex: 1 }}
-    >
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <ScrollView contentContainerStyle={styles.content}>
-          <View style={styles.iconWrap}>
-            <Ionicons name="school-outline" size={32} color={colors.primary} />
+    <View style={styles.page}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.hero}>
+          <View style={styles.mark}>
+            <Text style={styles.markText}>CG</Text>
           </View>
-
-          <Text style={styles.title}>IIIT Surat App</Text>
-          <Text style={styles.version}>Version {APP_VERSION}</Text>
-
+          <Text style={styles.title}>CollegeGo</Text>
+          <View style={styles.version}>
+            <Text style={styles.versionText}>Version {APP_VERSION}</Text>
+          </View>
           <Text style={styles.paragraph}>
-            Built to bring everyday campus life — attendance, notices, clubs,
-            resources, and more — into one place, so getting through the day at
-            IIIT Surat takes less digging around and fewer scattered links.
+            Everyday campus life in one place — so getting through the day at IIIT Surat takes less digging around
+            and fewer scattered links.
           </Text>
+        </View>
 
-          <View style={styles.creditCard}>
-            <Text style={styles.creditLabel}>Made by</Text>
-            <Text style={styles.creditName}>Vaibhav Raj</Text>
-            <Text style={styles.creditMeta}>CSE, Batch of 2029</Text>
-          </View>
+        <View style={styles.credit}>
+          <Text style={styles.creditLabel}>Made by</Text>
+          <Text style={styles.creditName}>Vaibhav Raj</Text>
+          <Text style={styles.creditMeta}>CSE · Batch of 2029</Text>
+        </View>
 
-          <Text style={styles.footer}>
-            For the students and faculty of IIIT Surat.
-          </Text>
-        </ScrollView>
-      </SafeAreaView>
-    </LinearGradient>
+        <Text style={styles.footer}>For the students and faculty of IIIT Surat.</Text>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  content: {
-    padding: spacing.lg,
-    alignItems: "center",
-    paddingTop: spacing.xl,
-  },
-  iconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: radius.full,
-    backgroundColor: "#EAF0FB",
+  page: { flex: 1, backgroundColor: colors.background },
+  content: { padding: 18, paddingBottom: spacing.xl * 2 },
+  hero: { backgroundColor: colors.surface, borderRadius: 26, padding: 22, alignItems: "center" },
+  mark: {
+    width: 72,
+    height: 72,
+    borderRadius: 22,
+    backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: spacing.md,
+    marginBottom: 14,
   },
-  title: { ...typography.h1, color: colors.textPrimary, textAlign: "center" },
-  version: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-    marginBottom: spacing.lg,
-  },
+  markText: { color: colors.onPrimary, fontSize: 26, fontWeight: "800", letterSpacing: 0.5 },
+  title: { fontSize: 24, fontWeight: "800", letterSpacing: -0.5, color: colors.textPrimary },
+  version: { backgroundColor: colors.background, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, marginTop: 8 },
+  versionText: { fontSize: 12, fontWeight: "800", color: colors.textSecondary },
   paragraph: {
-    ...typography.body,
+    fontSize: 14,
+    fontWeight: "500",
     color: colors.textSecondary,
     textAlign: "center",
-    lineHeight: 22,
-    marginBottom: spacing.xl,
+    lineHeight: 21,
+    marginTop: 14,
   },
-  creditCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    ...clayShadowSoft,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.xl,
-    alignItems: "center",
-    width: "100%",
-  },
-  creditLabel: { ...typography.caption, color: colors.textSecondary },
-  creditName: {
-    ...typography.h2,
-    color: colors.primary,
-    fontWeight: "700",
-    marginTop: 2,
-  },
-  creditMeta: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  footer: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.xl,
-    textAlign: "center",
-  },
+  credit: { backgroundColor: colors.ink, borderRadius: 24, padding: 20, alignItems: "center", marginTop: 20 },
+  creditLabel: { fontSize: 12, fontWeight: "700", color: colors.inkMuted },
+  creditName: { fontSize: 22, fontWeight: "800", letterSpacing: -0.4, color: colors.onInk, marginTop: 2 },
+  creditMeta: { fontSize: 13, fontWeight: "600", color: colors.inkMuted, marginTop: 2 },
+  footer: { fontSize: 12, fontWeight: "600", color: colors.textSecondary, marginTop: 20, textAlign: "center" },
 });

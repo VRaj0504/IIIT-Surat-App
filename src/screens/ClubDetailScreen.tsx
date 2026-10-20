@@ -41,6 +41,7 @@ import {
   deleteNotice,
   Notice,
 } from "../firebase/noticesService";
+import { openSafeUrl } from "../utils/safeLink";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 type DetailRoute = RouteProp<RootStackParamList, "ClubDetail">;
@@ -124,7 +125,7 @@ export default function ClubDetailScreen() {
   const isFaculty = profile?.role === "faculty";
 
   const openLink = (url: string) => {
-    Linking.openURL(url).catch(() => {});
+    openSafeUrl(url).catch(() => {});
   };
 
   const handleDeleteEvent = (event: ClubEvent) => {
@@ -247,7 +248,7 @@ export default function ClubDetailScreen() {
                 navigation.navigate("PostEvent", { clubId, clubName })
               }
             >
-              <Ionicons name="add-circle" size={20} color="#fff" />
+              <Ionicons name="add-circle" size={20} color={colors.onPrimary} />
               <Text style={styles.postBtnText}>Post an Event</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -326,7 +327,7 @@ export default function ClubDetailScreen() {
                   disabled={saving}
                 >
                   {saving ? (
-                    <ActivityIndicator color="#fff" />
+                    <ActivityIndicator color={colors.onPrimary} />
                   ) : (
                     <Text style={styles.linkSubmitText}>Save Changes</Text>
                   )}
@@ -540,7 +541,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: radius.full,
-    backgroundColor: "#EAF0FB",
+    backgroundColor: colors.badge.blue.bg,
     alignItems: "center",
     justifyContent: "center",
     marginRight: spacing.md,
@@ -578,7 +579,7 @@ const styles = StyleSheet.create({
   },
   postBtnText: {
     ...typography.body,
-    color: "#fff",
+    color: colors.onPrimary,
     fontWeight: "700" as const,
   },
   postBtnTextSecondary: { color: colors.primary },
@@ -624,7 +625,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     ...clayShadowSoft,
     borderWidth: 1,
-    borderColor: "rgba(11,61,145,0.12)",
+    borderColor: colors.border,
     borderRadius: radius.sm,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -640,7 +641,7 @@ const styles = StyleSheet.create({
   },
   linkSubmitText: {
     ...typography.caption,
-    color: "#fff",
+    color: colors.onPrimary,
     fontWeight: "700" as const,
   },
   revokeBtn: {
@@ -658,7 +659,7 @@ const styles = StyleSheet.create({
   },
   error: {
     color: colors.danger,
-    backgroundColor: "#FCEAEB",
+    backgroundColor: colors.dangerBg,
     padding: spacing.sm,
     borderRadius: radius.sm,
     marginBottom: spacing.sm,

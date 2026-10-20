@@ -2,6 +2,7 @@ import { collection, addDoc, query, where, orderBy, limit as fsLimit, onSnapshot
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db } from './firestore';
 import { storage } from './storage';
+import { isResourceVisibleThisYear } from '../utils/academicYear';
 
 // This is the "shape" of one resource's metadata, stored in Firestore.
 // Note: this does NOT include the actual file bytes — just information
@@ -19,8 +20,15 @@ export type Resource = {
   // also what every resource created before section targeting existed
   // implicitly is, so those keep reaching everyone exactly as before.
   section?: string | null;
-  type: 'Notes' | 'PYQ' | 'Slides';
+  type: 'Notes' | 'PYQ' | 'Slides' | 'Assignment';
   examYear?: number | null;
+  // Which cohort's material this is, e.g. "2026-27". Notes/Slides are
+  // only shown to students in that same academic year, so next year's
+  // juniors start from a clean shelf instead of inheriting every batch's
+  // files; PYQs ignore this and carry forward deliberately. Optional
+  // because resources predating this field exist — utils/academicYear.ts
+  // derives their year from createdAt instead.
+  academicYear?: string | null;
   fileUrl: string;      // download URL from Firebase Storage
   storagePath: string;
   uploadedBy: string;
@@ -145,9 +153,16 @@ export function subscribeToResources(
       // needs no new composite index, and costs nothing at these sizes
       // (already narrowed to one branch+semester by the query above).
       const viewerSection = scope?.section ?? null;
-      const resources = viewerSection
+      const sectionMatched = viewerSection
         ? all.filter((r) => !r.section || r.section === viewerSection)
         : all;
+      // Cohort rule, applied only to the scoped (student) view: a
+      // previous year's Notes/Slides are not this student's material, so
+      // they're dropped here rather than piling up in the list forever.
+      // PYQs pass through untouched — see isResourceVisibleThisYear.
+      // The unscoped faculty view deliberately skips this: faculty need
+      // to see, and be able to delete, what they uploaded in past years.
+      const resources = scope ? sectionMatched.filter((r) => isResourceVisibleThisYear(r)) : sectionMatched;
       onUpdate(resources);
     },
     // Previously no error callback at all — a failed query (missing

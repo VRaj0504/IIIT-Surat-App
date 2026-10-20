@@ -133,7 +133,7 @@ export default function ThaliPassScreen() {
                 <Text style={styles.qrName}>{profile?.name}</Text>
                 <Text style={styles.qrEnrollment}>{profile?.enrollmentNumber}</Text>
                 <View style={styles.qrWrap}>
-                  <QRCode value={profile?.enrollmentNumber ?? ""} size={180} color={colors.textPrimary} backgroundColor="#fff" />
+                  <QRCode value={profile?.enrollmentNumber ?? ""} size={180} color="#0E1A33" backgroundColor="#fff" />
                 </View>
                 <Text style={styles.qrHelper}>Show this at the canteen door — one scan per meal.</Text>
               </View>

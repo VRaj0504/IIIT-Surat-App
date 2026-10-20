@@ -66,10 +66,13 @@ export async function getClassOptionsForYear(admissionYear: number): Promise<Cla
   );
   const seen = new Map<string, ClassOption>();
   snap.docs.forEach((d) => {
-    const data = d.data() as { branch?: string; section?: string; specialization?: string };
+    const data = d.data() as { branch?: string; section?: string; specialization?: string; program?: string };
     if (!data.branch) return;
     const section = data.section ?? null;
     const key = `${data.branch}||${section ?? ""}`;
+    // M.Tech students share admission years with B.Tech, so mark their
+    // classes clearly instead of mixing them into "1st Year" B.Tech ones.
+    const pg = data.program === "PG" || /^PG/i.test(d.id);
     const existing = seen.get(key);
     if (existing) {
       if (data.specialization && !existing.specializations.includes(data.specialization)) {
@@ -79,14 +82,24 @@ export async function getClassOptionsForYear(admissionYear: number): Promise<Cla
       seen.set(key, {
         branch: data.branch,
         section,
-        label: section ? `${data.branch} ${section}` : data.branch,
+        label: classLabel(data.branch, section, pg),
         specializations: data.specialization ? [data.specialization] : [],
       });
     }
   });
   const options = Array.from(seen.values());
   options.forEach((o) => o.specializations.sort());
-  return options.sort((a, b) => a.label.localeCompare(b.label));
+  // B.Tech classes first, M.Tech after.
+  const isPgLabel = (l: string) => l.startsWith("M.Tech");
+  return options.sort((a, b) => Number(isPgLabel(a.label)) - Number(isPgLabel(b.label)) || a.label.localeCompare(b.label));
+}
+
+// "CSE D" not "CSE CSE D"; MNC students sitting in CSE D show as
+// "CSE D (MNC)"; M.Tech classes get an "M.Tech" prefix.
+function classLabel(branch: string, section: string | null, pg: boolean): string {
+  let label = !section ? branch : /\b(CSE|ECE|MNC)\b/i.test(section) ? section : `${branch} ${section}`;
+  if (section && !new RegExp(`\\b${branch}\\b`, "i").test(label)) label += ` (${branch})`;
+  return pg ? `M.Tech ${label}` : label;
 }
 
 // Distinct admission years present in the roster, newest first — powers the

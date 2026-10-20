@@ -1,15 +1,11 @@
 import * as admin from "firebase-admin";
 admin.initializeApp();
 
-export {placeOrderFn} from "./placeOrder";
 
-export {razorpayWebhook} from "./razorpayWebhook";
-export {dailyReconcile} from "./reconcile";
 export {sendAnnouncementPush} from "./sendAnnouncementPush";
 export {sendLostFoundContactPush} from "./sendLostFoundContactPush";
 export {extractPosterInfo} from "./extractPosterInfo";
 export {extractTimetableInfo} from "./extractTimetableInfo";
-export {createRechargeOrder} from "./createRechargeOrder";
 export {ingestFacultyEmail} from "./ingestFacultyEmail";
 export {sendClassReminderPush} from "./sendClassReminderPush";
 export {sendInboxImportPush} from "./sendInboxImportPush";
@@ -20,6 +16,7 @@ export {sendResourcePush} from "./sendResourcePush";
 export {sendTimetableUpdatePush} from "./sendTimetableUpdatePush";
 export {sendClubEventPush} from "./sendClubEventPush";
 export {sendLeaveResolutionPush} from "./sendLeaveResolutionPush";
+export {medicalLeaveWorkflow, medicalLeaveTeacherConfirmed} from "./medicalLeaveWorkflow";
 export {sendExcusalResolutionPush} from "./sendExcusalResolutionPush";
 export {sendComplaintResolutionPush} from "./sendComplaintResolutionPush";
 
@@ -33,3 +30,7 @@ export {syncRoleClaim} from "./syncRoleClaim";
 export {backfillRoleClaims} from "./backfillRoleClaims";
 
 export {sendCounsellingRequestPush} from "./sendCounsellingRequestPush";
+
+export {cleanupResolvedDoubts} from "./cleanupResolvedDoubts";
+export {sendSosPush} from "./sendSosPush";
+export {deleteMyAccount} from "./deleteMyAccount";

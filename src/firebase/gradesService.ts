@@ -116,7 +116,8 @@ export async function getClassRoster(
 ): Promise<RosterStudent[]> {
   const snap = await getDocs(query(collection(db, "roster"), where("admissionYear", "==", admissionYear)));
   return snap.docs
-    .map((d) => ({ regNo: d.id, ...(d.data() as { name: string; branch: string; section?: string; specialization?: string }) }))
+    .map((d) => ({ regNo: d.id, ...(d.data() as { name: string; branch: string; section?: string; specialization?: string; reviewer?: boolean }) }))
+    .filter((r) => !r.reviewer) // app-store review account
     .filter((r) => r.branch === branch && (section ? r.section === section : true))
     .filter((r) => (specialization ? r.specialization === specialization : true))
     .map((r) => ({ enrollmentNumber: r.regNo, name: r.name, specialization: r.specialization }))

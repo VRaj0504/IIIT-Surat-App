@@ -1,7 +1,8 @@
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as admin from "firebase-admin";
 import {getNoClassReason} from "./holidays";
-import {loadExamDocs, examDayMessage, currentSemester, sheetBranch} from "./examPeriod";
+import {loadHolidayOverrides} from "./holidayOverrides";
+import {loadExamDocs, examDayMessage, currentSemester, sheetBranchFor} from "./examPeriod";
 import {sendExpoPush} from "./expoPush";
 
 // The replacement for "Class in 3 minutes" on days there ARE no classes.
@@ -28,6 +29,7 @@ type NotifiableUser = {
   role?: string;
   branch?: string;
   admissionYear?: number;
+  program?: 'UG' | 'PG';
   expoPushToken?: string;
   notificationPreferences?: {classReminders?: boolean};
 };
@@ -35,20 +37,33 @@ type NotifiableUser = {
 export const sendDayStatusPush = onSchedule(
   {
     // 7:30 AM IST, Monday to Friday.
-    schedule: "30 7 * * 1-5",
+    // Runs every day, not just Mon-Fri — exams (unlike regular classes,
+    // which really are Mon-Fri only in this data) sometimes land on a
+    // Saturday or Sunday, and a weekday-only schedule would silently
+    // never announce one. The function's own holiday/no-class checks
+    // below already handle a genuine day off correctly either way.
+    schedule: "30 7 * * *",
     timeZone: "Asia/Kolkata",
     region: "asia-south1",
   },
   async () => {
     const db = admin.firestore();
     const todayIso = istDateIso();
-    const holiday = getNoClassReason(todayIso);
+    const holidayOverrides = await loadHolidayOverrides(db);
+    // A fixed-calendar holiday and an ad-hoc one should never both be
+    // set for the same date in practice, but if they somehow were, the
+    // fixed calendar's name wins — it's the one that went through
+    // review when the year's dates were first entered, not a same-day
+    // manual add.
+    const holiday = getNoClassReason(todayIso) ?? holidayOverrides.get(todayIso) ?? null;
 
     const snap = await db.collection("users").where("role", "in", ["student", "faculty"]).get();
     const users = snap.docs
       .map((d) => d.data() as NotifiableUser)
       .filter((u) => u.expoPushToken && u.notificationPreferences?.classReminders !== false);
 
+    // eslint-disable-next-line no-console
+    console.log(`[sendDayStatusPush] ${todayIso}: holiday=${holiday ?? "none"}, ${snap.size} users, ${users.length} with push token`);
     if (holiday) {
       await sendExpoPush(
         users.map((u) => u.expoPushToken as string),
@@ -66,8 +81,8 @@ export const sendDayStatusPush = onSchedule(
     const byClass = new Map<string, {title: string; body: string; tokens: string[]}>();
     for (const u of users) {
       if (u.role !== "student" || !u.branch || !u.admissionYear) continue;
-      const branch = sheetBranch(u.branch);
-      const semester = currentSemester(u.admissionYear);
+      const semester = currentSemester(u.admissionYear, undefined, u.program);
+      const branch = sheetBranchFor(docs, u.branch, semester);
       const key = `${branch}|${semester}`;
       let entry = byClass.get(key);
       if (!entry) {

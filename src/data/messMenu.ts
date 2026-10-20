@@ -40,5 +40,14 @@ export const messMenu: DayMenu[] = [
 
 export function getTodayIndex(): number {
   const jsDay = new Date().getDay();
-  return jsDay === 0 ? 6 : jsDay - 1;
+  // Saturday (6) and Sunday (0) have no entry in messMenu above — it's
+  // Monday-Friday only. Returning -1 for a weekend is a deliberate
+  // sentinel ("no day selected"), not a bug: MessMenuScreen.tsx checks
+  // for exactly this and shows a "no menu on weekends" message instead
+  // of indexing into the array with it. Previously this returned 5/6
+  // directly, which is out of bounds for a 5-item array and crashed
+  // the whole screen with "Cannot read property 'meals' of undefined"
+  // every Saturday and Sunday, with no weekend tab to tap back out of.
+  if (jsDay === 0 || jsDay === 6) return -1;
+  return jsDay - 1;
 }

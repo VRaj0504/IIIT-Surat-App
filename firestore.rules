@@ -15,16 +15,66 @@ service cloud.firestore {
     // so this can never lock anyone out mid-rollout. Once every
     // account has a fresh token, the fallback simply never runs —
     // safe to remove later, never required to.
+    // Admin = role 'admin', or the isAdmin flag (set only with the Admin SDK
+    // by scripts/make-admin.js — never self-editable, see the users rule) so
+    // a student who runs the app can be admin and keep their student profile.
     function isAdmin() {
       return request.auth != null &&
         (request.auth.token.role == 'admin' ||
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true);
     }
 
     function isFaculty() {
       return request.auth != null &&
         (request.auth.token.role == 'faculty' ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
+    }
+
+    // A sign-in whose institute address has been VERIFIED by the identity
+    // provider (Google). Typing an email into Firebase's email/password
+    // signup proves nothing — anyone can call that API with the public key
+    // and claim someone else's address — so profile creation (below) is
+    // only allowed for tokens that pass this.
+    function verifiedInstituteEmail() {
+      return request.auth != null &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.email.lower().matches('.*@iiitsurat[.]ac[.]in');
+    }
+
+    // Anyone who already has a profile. Uses the role claim first (free),
+    // then falls back to the users doc, same pattern as isAdmin().
+    function isMember() {
+      return request.auth != null &&
+        (request.auth.token.get('role', '') in ['student', 'faculty', 'admin'] ||
+         exists(/databases/$(database)/documents/users/$(request.auth.uid)));
+    }
+
+    // Who may read directory-style data (users, roster, claims): existing
+    // members, plus a verified institute account that is mid-signup and has
+    // no profile yet (signup itself has to read roster/claims first).
+    function canReadDirectory() {
+      return isMember() || verifiedInstituteEmail();
+    }
+
+    // The signed-in user's email as recorded on their PROFILE. Profile
+    // creation (users rule below) requires a verified institute address, so
+    // unlike request.auth.token.email — which for an email/password account
+    // is just whatever was typed at signup — this can be trusted for
+    // "is this person the counsellor / the addressed faculty / the club
+    // lead". Anyone without a profile gets an error here, i.e. no access.
+    function myEmail() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email.lower();
+    }
+
+    // Shared by grades create/update below.
+    function validGradeWrite() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty' &&
+        request.resource.data.enteredBy == request.auth.uid &&
+        request.resource.data.grade in ['AA', 'AB', 'BB', 'BC', 'CC', 'CD', 'DD', 'FF'] &&
+        request.resource.data.credits is number &&
+        request.resource.data.credits > 0;
     }
     
     // One doc per enrollment number ever claimed by a student account, id
@@ -41,27 +91,61 @@ service cloud.firestore {
     // updates or deletes one through the app — that permanence is the
     // whole point, same as walletTxnRefs.
     match /enrollmentClaims/{enrollmentNumber} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      allow read: if canReadDirectory();
+      // Only a verified institute account can claim, only for a number that
+      // really exists on the roster (stops pre-claiming made-up or
+      // not-yet-admitted numbers to lock real students out).
+      allow create: if verifiedInstituteEmail() &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.keys().hasOnly(['uid', 'claimedAt']) &&
+        exists(/databases/$(database)/documents/roster/$(enrollmentNumber));
       allow update: if false;
       allow delete: if false;
     }
 
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.auth.uid == userId &&
+      allow read: if (request.auth != null && request.auth.uid == userId) || canReadDirectory();
+      // Profile creation: verified institute email only, and a student's
+      // identity fields must match their roster row and be backed by a
+      // claim written in the SAME transaction (getAfter) — so a modified
+      // client can't skip the claim step or invent its own branch/section.
+      // The key list is deliberately closed: add a key here if
+      // buildGatedProfile() in AuthContext.tsx ever starts writing a new one.
+      allow create: if verifiedInstituteEmail() &&
+        request.auth.uid == userId &&
+        request.resource.data.uid == userId &&
         request.resource.data.email == request.auth.token.email.lower() &&
+        request.resource.data.keys().hasOnly([
+          'uid', 'name', 'email', 'role', 'enrollmentNumber', 'branch', 'section',
+          'specialization', 'admissionYear', 'program', 'department',
+          'designation', 'roleEmail', 'shortForm'
+        ]) &&
         (
           (request.resource.data.role == 'faculty' &&
            get(/databases/$(database)/documents/allowlist/$(request.resource.data.email)).data.role == 'faculty') ||
           (request.resource.data.role == 'student' &&
-           exists(/databases/$(database)/documents/roster/$(request.resource.data.enrollmentNumber)))
+           exists(/databases/$(database)/documents/roster/$(request.resource.data.enrollmentNumber)) &&
+           request.resource.data.branch ==
+             get(/databases/$(database)/documents/roster/$(request.resource.data.enrollmentNumber)).data.get('branch', null) &&
+           request.resource.data.get('section', null) ==
+             get(/databases/$(database)/documents/roster/$(request.resource.data.enrollmentNumber)).data.get('section', null) &&
+           request.resource.data.admissionYear ==
+             get(/databases/$(database)/documents/roster/$(request.resource.data.enrollmentNumber)).data.get('admissionYear', null) &&
+           getAfter(/databases/$(database)/documents/enrollmentClaims/$(request.resource.data.enrollmentNumber)).data.uid == request.auth.uid)
         );
-      // role and email are fixed at signup — no self-promotion afterward.
+      // Self-edits are limited to a fixed set of fields. role, email,
+      // enrollmentNumber, branch, section, admissionYear, program,
+      // specialization, roleEmail and shortForm can never be changed by the
+      // account owner — every other rule that trusts "my profile's
+      // enrollment number" relies on that.
       allow update: if isAdmin() || (
         request.auth != null && request.auth.uid == userId &&
-        request.resource.data.role == resource.data.role &&
-        request.resource.data.email == resource.data.email
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'phone', 'photoUrl', 'inCabin', 'expoPushToken',
+          'notificationPreferences', 'officeLocation', 'officeHours',
+          'researchAreas', 'publicationsCount', 'aboutMe', 'department',
+          'designation', 'emergencyContacts'
+        ])
       );
       allow delete: if isAdmin();
     }
@@ -79,8 +163,11 @@ service cloud.firestore {
       // once they do sign up; student roster entries and any other
       // allowlist role stay locked to admin/self as before.
       allow read: if isAdmin() ||
-        (request.auth != null && request.auth.token.email.lower() == email) ||
-        (request.auth != null && resource.data.role == 'faculty');
+        // Own entry: only once the address is VERIFIED (an unverified
+        // email/password account can claim any address).
+        (verifiedInstituteEmail() && request.auth.token.email.lower() == email) ||
+        // Faculty entries: members only, not any random Firebase account.
+        (isMember() && resource.data.role == 'faculty');
       allow write: if false;
     }
 
@@ -91,7 +178,7 @@ service cloud.firestore {
     // (scripts/seed-tnp-coordinators.js); the app itself never writes
     // here.
     match /tnpCoordinators/{docId} {
-      allow read: if request.auth != null;
+      allow read: if isMember();
       allow write: if false;
     }
 
@@ -109,8 +196,20 @@ service cloud.firestore {
     // needs it to decide whether to show the counselling queue screen
     // at all, and a counsellor's name/email isn't sensitive on its own
     // — it's the REQUESTS below that need real protection.
+    // Ad-hoc holidays a real person adds after reading an actual email
+    // circular (see AddHoliday.tsx in the faculty web portal, and
+    // holidayOverrides.ts in functions/ which reads this to silence
+    // class reminders / send the day's holiday push). Doc id is the
+    // date itself ("YYYY-MM-DD"). Read is broad since the mobile app's
+    // Home screen checks this directly to show "Off · Holiday" —
+    // same reasoning as counsellors below being broadly readable.
+    match /holidayOverrides/{dateId} {
+      allow read: if isMember();
+      allow write: if isAdmin() || isFaculty();
+    }
+
     match /counsellors/{email} {
-      allow read: if request.auth != null;
+      allow read: if isMember();
       allow write: if false;
     }
 
@@ -123,13 +222,13 @@ service cloud.firestore {
     // anyone but admin, so a closed request stays as a record.
     function isCounsellor() {
       return request.auth != null &&
-        exists(/databases/$(database)/documents/counsellors/$(request.auth.token.email.lower()));
+        exists(/databases/$(database)/documents/counsellors/$(myEmail()));
     }
 
     match /counsellingRequests/{requestId} {
       allow read: if isAdmin() || isCounsellor() ||
         (request.auth != null && resource.data.studentUid == request.auth.uid);
-      allow create: if request.auth != null &&
+      allow create: if isMember() &&
         request.resource.data.studentUid == request.auth.uid &&
         request.resource.data.status == 'pending' &&
         request.resource.data.urgent is bool &&
@@ -140,7 +239,7 @@ service cloud.firestore {
     }
 
     match /eventCoordinators/{docId} {
-      allow read: if request.auth != null;
+      allow read: if isMember();
       allow write: if false;
     }
 
@@ -150,12 +249,17 @@ service cloud.firestore {
     // (their own attendance percentage calculation checks this
     // directly, client-side). Nobody else has any reason to see it.
     match /eventExcusals/{docId} {
+      // Faculty can read APPROVED excusals so the portal's semester
+      // attendance export counts them the same way the app does.
       allow read: if isAdmin() ||
+        (isFaculty() && resource.data.status == 'approved') ||
         (request.auth != null && resource.data.submittedBy == request.auth.uid) ||
         (request.auth != null && resource.data.facultyCoordinatorUid == request.auth.uid) ||
         (request.auth != null &&
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrollmentNumber in resource.data.studentEnrollmentNumbers);
-      allow create: if request.auth != null && request.resource.data.submittedBy == request.auth.uid;
+      allow create: if isMember() &&
+        request.resource.data.submittedBy == request.auth.uid &&
+        request.resource.data.status == 'pending';
       // Only the assigned faculty coordinator can respond, and only the
       // response fields — the original submission (student list, dates,
       // event name) stays exactly as the coordinator submitted it.
@@ -182,7 +286,7 @@ service cloud.firestore {
     // now that the portal does this through a signed-in faculty session
     // instead of the local seed-roster.js script.)
     match /roster/{regNo} {
-      allow read: if request.auth != null;
+      allow read: if canReadDirectory();
       allow write: if isAdmin() || (request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
     }
@@ -206,7 +310,7 @@ service cloud.firestore {
 }
     
     match /clubs/{clubId} {
-      allow read: if request.auth != null;
+      allow read: if isMember();
       allow create: if isAdmin() || (request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
       allow update: if isAdmin() || (request.auth != null &&
@@ -218,7 +322,7 @@ service cloud.firestore {
             // account the moment they sign up, as long as their auth email
             // matches leadEmail exactly and nothing else on the club changes.
             resource.data.leadUid == null &&
-            resource.data.leadEmail == request.auth.token.email &&
+            resource.data.leadEmail.lower() == myEmail() &&
             request.resource.data.leadUid == request.auth.uid &&
             request.resource.data.leadEmail == resource.data.leadEmail &&
             request.resource.data.leadName == resource.data.leadName &&
@@ -231,7 +335,7 @@ service cloud.firestore {
     }
     
     match /clubEvents/{eventId} {
-      allow read: if request.auth != null;
+      allow read: if isMember();
       allow create: if isAdmin() || (request.auth != null &&
         request.resource.data.createdBy == request.auth.uid &&
         (
@@ -247,7 +351,7 @@ service cloud.firestore {
     }
 
     match /resources/{resourceId} {
-      allow read: if request.auth != null;
+      allow read: if isMember();
       allow create: if isAdmin() || (request.auth != null &&
         request.resource.data.uploadedBy == request.auth.uid &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
@@ -281,7 +385,7 @@ service cloud.firestore {
     }
 
     match /notices/{noticeId} {
-      allow read: if request.auth != null;
+      allow read: if isMember();
       allow create: if isAdmin() || (request.auth != null &&
         request.resource.data.createdBy == request.auth.uid &&
         (
@@ -305,7 +409,7 @@ service cloud.firestore {
     }
 
     match /curriculum/{docId} {
-      allow read: if request.auth != null;
+      allow read: if isMember();
       allow write: if isAdmin() || (request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
       allow delete: if isAdmin();
@@ -315,10 +419,29 @@ service cloud.firestore {
     // seeded via scripts/seed-timetable.mjs and read by TimetableScreen /
     // HomeScreen for the logged-in student's own section.
     match /timetable/{docId} {
-      allow read: if request.auth != null;
+      allow read: if isMember();
       allow write: if isAdmin() || (request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
       allow delete: if isAdmin();
+    }
+
+    // Room-name fixes made in the web portal's Room names tool
+    // ("CR 1 DN" -> "CR 1"), remembered so every later timetable save
+    // applies them and a re-import can't bring a wrong room back.
+    // Help requests from the faculty portal's Help button. Faculty/admin
+    // can file one as themselves; only admins read and resolve them.
+    match /supportRequests/{docId} {
+      allow create: if (isAdmin() || isFaculty()) &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.status == 'open' &&
+        request.resource.data.details is string && request.resource.data.details.size() < 4000;
+      allow read, update: if isAdmin();
+    }
+
+    match /roomAliases/{docId} {
+      allow read: if isMember();
+      allow write: if isAdmin() || (request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
     }
 
     // One doc per branch+semester+exam type (docId e.g. "CSE-3-midsem"),
@@ -327,7 +450,7 @@ service cloud.firestore {
     // (a date sheet published under the wrong semester has to be
     // removable without an admin).
     match /examSchedules/{docId} {
-      allow read: if request.auth != null;
+      allow read: if isMember();
       allow create, update: if (isAdmin() || isFaculty()) &&
         request.resource.data.branch is string &&
         request.resource.data.semester is number &&
@@ -338,176 +461,6 @@ service cloud.firestore {
       allow delete: if isAdmin() || isFaculty();
     }
 
-    // Mess counter menu (thali/snacks/beverages + price). Faculty stand in
-    // as "mess staff" for now — swap for a dedicated role if the mess team
-    // ever gets their own accounts distinct from teaching faculty.
-    match /messMenuItems/{itemId} {
-      allow read: if request.auth != null;
-      // Stock decrement on order happens inside placeOrderFn (Cloud
-      // Function, Admin SDK — bypasses these rules), not as a client
-      // write anymore, so there's no student-facing update path left to
-      // scope here: staff/admin via `write` above is the only writer.
-      allow write: if isAdmin() || isFaculty();
-    }
-
-    // Legacy single-doc token counter from the pre-Cloud-Functions client
-    // transaction. placeOrderFn uses the sharded counters_messTokenShards
-    // collection below instead; this is kept only so old data doesn't 404,
-    // and is no longer written by anyone.
-    match /counters/{counterId} {
-      allow read: if request.auth != null;
-      allow write: if false;
-    }
-
-    // Sharded daily token counters (8 shards — see TOKEN_SHARD_LETTERS in
-    // functions/src/placeOrder.ts) used to hand out sequential, per-day
-    // token numbers without every order serializing on one document.
-    // Written only by placeOrderFn via the Admin SDK, which bypasses these
-    // rules — default-deny here just means no client can forge one.
-    match /counters_messTokenShards/{shardId} {
-      allow read: if isAdmin() || isFaculty();
-      allow write: if false;
-    }
-
-    // Per-(day, pickup-slot) order counters used to spread demand across
-    // the break instead of everyone converging at once (see SLOT_CAPACITY
-    // in functions/src/placeOrder.ts). Written only by placeOrderFn via
-    // the Admin SDK now — no client write path.
-    match /messSlotCounters/{slotId} {
-      allow read: if request.auth != null;
-      allow write: if false;
-    }
-
-    // A student can only ever create their own orders (never someone
-    // else's) and can never edit amounts/status after creation — only
-    // faculty/mess-staff can transition status (pending -> ready -> served).
-    // Read is a bit wider than "just your own": the live queue position
-    // feature (subscribeToQueue in messService.ts) needs every signed-in
-    // student to see all *currently active* orders, not just their own —
-    // same as a physical token board at the counter already shows
-    // everyone's number in line. Once an order is served/cancelled it
-    // drops back to owner+staff-only.
-    match /messOrders/{orderId} {
-      allow read: if isAdmin() || isFaculty() ||
-        (request.auth != null && resource.data.uid == request.auth.uid) ||
-        (request.auth != null && resource.data.status in ['pending', 'ready']);
-      // Order creation is exclusively via placeOrderFn (Cloud Function,
-      // Admin SDK — bypasses these rules): it reads real prices from
-      // messMenuItems server-side, so the client's cart can only ever say
-      // WHAT to order, never what it costs. No client create path remains.
-      allow create: if false;
-      // Staff can update anything (status transitions, etc). A student can
-      // ALSO self-cancel their own order, but only while it's still
-      // 'pending' (not yet 'ready' — once the kitchen has plated it, only
-      // staff can cancel, via staffCancelOrder in messService.ts) and only
-      // by flipping status to 'cancelled' — every other field, including
-      // totalAmount and items, must stay byte-identical. No money moves as
-      // part of this write; cancelOrder() in messService.ts files a
-      // separate refund request through the same pending-then-staff-
-      // approved path as a wallet recharge, so this rule alone can't be
-      // used to grant a refund.
-      allow update: if isAdmin() || isFaculty() || (
-        request.auth != null &&
-        resource.data.uid == request.auth.uid &&
-        resource.data.status == 'pending' &&
-        request.resource.data.status == 'cancelled' &&
-        request.resource.data.uid == resource.data.uid &&
-        request.resource.data.studentName == resource.data.studentName &&
-        request.resource.data.items == resource.data.items &&
-        request.resource.data.totalAmount == resource.data.totalAmount &&
-        request.resource.data.tokenNumber == resource.data.tokenNumber &&
-        request.resource.data.pickupSlot == resource.data.pickupSlot &&
-        request.resource.data.paymentStatus == resource.data.paymentStatus &&
-        request.resource.data.cancelledBy == request.auth.uid
-      );
-      allow delete: if isAdmin();
-    }
-
-    // One doc per student, id == their uid. Faculty/admin can freely
-    // credit/adjust (approveRecharge) and can create the doc fresh.
-    // Debiting on order now happens inside placeOrderFn via the Admin SDK
-    // (bypasses these rules), so there's no client self-write path left —
-    // a student can read their own balance but never write to it directly.
-    match /wallets/{uid} {
-      allow read: if isAdmin() || isFaculty() || (request.auth != null && request.auth.uid == uid);
-      allow write: if isAdmin() || isFaculty();
-    }
-
-    // Recharge requests (student-submitted, faculty/mess-staff-approved)
-    // and the debit record created alongside every order. A student can
-    // create their own recharge request and read their own history, but
-    // only faculty/mess-staff can approve/reject (status transitions).
-    // Every recharge request must carry a non-empty UPI reference — see
-    // walletTxnRefs below, which is what actually stops the same payment
-    // being claimed twice.
-    match /walletTransactions/{txnId} {
-      allow read: if isAdmin() || isFaculty() ||
-        (request.auth != null && resource.data.uid == request.auth.uid);
-      // Staff can create a wallet transaction doc directly for anyone —
-      // consistent with them already having unrestricted write access to
-      // `wallets` itself (see below); this is what lets staffCancelOrder()
-      // log an already-resolved refund in one step instead of a student
-      // filing a request staff would just have to approve a moment later.
-      // A student can only ever create their own, and only as a pending
-      // request (a recharge claim or cancelOrder()'s refund request) —
-      // never pre-approved, never for someone else.
-      allow create: if isAdmin() || isFaculty() || (
-        request.auth != null &&
-        request.resource.data.uid == request.auth.uid &&
-        request.resource.data.status == 'pending' &&
-        request.resource.data.type == 'credit' &&
-        request.resource.data.upiRefId is string &&
-        request.resource.data.upiRefId.size() > 0
-      );
-      allow update: if isAdmin() || isFaculty();
-      allow delete: if isAdmin();
-    }
-
-    // One doc per UPI reference ID ever submitted for a recharge, id ==
-    // the reference itself. requestRecharge() creates this in the same
-    // transaction as the walletTransactions doc — once it exists, Firestore
-    // itself refuses a second create() at that path, which is what makes
-    // "the same UPI payment claimed for two wallet credits" structurally
-    // impossible rather than just discouraged. Nobody, including staff,
-    // can update or delete one — that permanence is the whole point.
-    match /walletTxnRefs/{refId} {
-      // Needs to be readable by the student submitting it too, not just
-      // staff: requestRecharge() and cancelOrder() in messService.ts both
-      // do a tx.get() on this exact path to check "has this UPI ref /
-      // order already been claimed" before creating it, and that read has
-      // to succeed for the transaction to work at all. `resource == null`
-      // covers the "doesn't exist yet" case (the common one — first-time
-      // recharge or cancel); the uid check covers re-reading a ref that
-      // already exists.
-      allow read: if isAdmin() || isFaculty() ||
-        (request.auth != null && (resource == null || resource.data.uid == request.auth.uid));
-      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
-      allow update: if false;
-      allow delete: if false;
-    }
-
-    // Written only by Cloud Functions (Admin SDK, bypasses these rules):
-    // dailyReconcile's daily run-log, and razorpayWebhook's flag for a
-    // captured payment that arrived with no student uid attached (so it
-    // couldn't be auto-credited and needs a manual wallet top-up). No
-    // client ever writes either — read-only here so staff tooling can
-    // eventually surface them.
-    match /reconciliationAlerts/{alertId} {
-      allow read: if isAdmin() || isFaculty();
-      allow write: if false;
-    }
-    match /paymentAlerts/{alertId} {
-      allow read: if isAdmin() || isFaculty();
-      allow write: if false;
-    }
-
-    // Idempotency keys for placeOrderFn. Written and read only by the
-    // Cloud Function itself via the Admin SDK, which bypasses these rules
-    // — default-deny here just means no client can read or forge one.
-    match /orderRequests/{requestId} {
-      allow read, write: if false;
-    }
-
     // Quick class-targeted announcements ("class cancelled today") — kept
     // separate from notices: any faculty can post, only the poster (or
     // admin) can delete, nobody can edit after the fact (a stale edited
@@ -515,8 +468,8 @@ service cloud.firestore {
     // targetBranch is required; reads are open to any signed-in user and
     // the per-student filtering happens client-side (same as notices).
     match /announcements/{announcementId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null &&
+      allow read: if isMember();
+      allow create: if (isFaculty() || isAdmin()) &&
         request.resource.data.createdBy == request.auth.uid &&
         request.resource.data.message is string &&
         request.resource.data.message.size() > 0 &&
@@ -541,14 +494,11 @@ service cloud.firestore {
         (request.auth != null &&
           resource.data.studentEnrollmentNumber ==
             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrollmentNumber);
-      allow create, update: if isAdmin() || (
-        request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty' &&
-        request.resource.data.enteredBy == request.auth.uid &&
-        request.resource.data.grade in ['AA', 'AB', 'BB', 'BC', 'CC', 'CD', 'DD', 'FF'] &&
-        request.resource.data.credits is number &&
-        request.resource.data.credits > 0
-      );
+      allow create: if isAdmin() || validGradeWrite();
+      // Re-grading is limited to whoever entered the grade (or an admin);
+      // another faculty member can no longer silently overwrite it.
+      allow update: if isAdmin() ||
+        (validGradeWrite() && resource.data.enteredBy == request.auth.uid);
       allow delete: if isAdmin() ||
         (request.auth != null && resource.data.enteredBy == request.auth.uid);
     }
@@ -564,31 +514,159 @@ service cloud.firestore {
     // on resolve, so approving a request can't be used to quietly rewrite
     // its dates or reason.
     match /leaveApplications/{appId} {
+      // MEDICAL leave is a chain: doctor -> HOD (of the student's branch)
+      // -> every teacher whose class the student missed. `stage` says
+      // whose turn it is. The doctor and the HOD are NOT chosen by the
+      // student: both must match config/medicalLeave (admin-seeded by
+      // scripts/seed-medical-leave.js), so a student can't route their
+      // leave to a friendly faculty member. Teacher confirmations live in
+      // the teacherAcks subcollection below and are created only by the
+      // medicalLeaveWorkflow Cloud Function (Admin SDK).
+      //
+      // CASUAL leave is unchanged: one faculty member picked by the
+      // student approves or rejects it.
       allow read: if isAdmin() ||
         (request.auth != null && resource.data.studentUid == request.auth.uid) ||
-        (request.auth != null && resource.data.facultyEmail == request.auth.token.email.lower());
-      allow create: if request.auth != null &&
+        (request.auth != null && resource.data.facultyEmail == myEmail()) ||
+        (request.auth != null && resource.data.doctorEmail == myEmail()) ||
+        (request.auth != null && resource.data.hodEmail == myEmail());
+
+      allow create: if isMember() &&
         request.resource.data.studentUid == request.auth.uid &&
         request.resource.data.status == 'pending' &&
-        request.resource.data.type in ['medical', 'casual'] &&
+        request.resource.data.reason is string &&
+        request.resource.data.reason.size() > 0 &&
         request.resource.data.facultyEmail is string &&
         request.resource.data.facultyEmail.size() > 0 &&
-        request.resource.data.reason is string &&
-        request.resource.data.reason.size() > 0;
+        (
+          (request.resource.data.type == 'casual' &&
+           !request.resource.data.keys().hasAny(['stage', 'doctorEmail', 'hodEmail'])) ||
+          (request.resource.data.type == 'medical' &&
+           request.resource.data.stage == 'doctor' &&
+           // A real, uploaded report (this app's own Storage upload —
+           // storage.rules protects the path) is required.
+           request.resource.data.medicalReportUrl is string &&
+           request.resource.data.medicalReportUrl.matches('^https://firebasestorage[.]googleapis[.]com/.*') &&
+           request.resource.data.doctorEmail ==
+             get(/databases/$(database)/documents/config/medicalLeave).data.doctor.email &&
+           request.resource.data.facultyEmail == request.resource.data.doctorEmail &&
+           request.resource.data.hodEmail ==
+             get(/databases/$(database)/documents/config/medicalLeave).data.hodByBranch[
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.branch
+             ].email &&
+           // Fields the workflow itself fills in can't be pre-set.
+           !request.resource.data.keys().hasAny([
+             'doctorDecision', 'hodDecision', 'teacherEmails', 'teachersTotal',
+             'teachersConfirmed', 'excusedSessions', 'unmatchedFaculty'
+           ]))
+        );
+
+      // Casual: the addressed faculty member resolves it.
       allow update: if isAdmin() || (
         request.auth != null &&
-        resource.data.facultyEmail == request.auth.token.email.lower() &&
+        resource.data.type == 'casual' &&
+        resource.data.facultyEmail == myEmail() &&
         resource.data.status == 'pending' &&
         request.resource.data.status in ['approved', 'rejected'] &&
-        request.resource.data.studentUid == resource.data.studentUid &&
-        request.resource.data.facultyEmail == resource.data.facultyEmail &&
-        request.resource.data.type == resource.data.type &&
-        request.resource.data.fromDate == resource.data.fromDate &&
-        request.resource.data.toDate == resource.data.toDate &&
-        request.resource.data.reason == resource.data.reason &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'facultyRemark', 'resolvedAt', 'resolvedBy']) &&
         request.resource.data.resolvedBy == request.auth.uid
       );
+
+      // Medical, step 1: the doctor approves (-> HOD) or rejects.
+      allow update: if request.auth != null &&
+        resource.data.type == 'medical' &&
+        resource.data.stage == 'doctor' &&
+        resource.data.doctorEmail == myEmail() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['stage', 'status', 'doctorDecision', 'facultyRemark', 'resolvedAt', 'resolvedBy']) &&
+        request.resource.data.doctorDecision.by == request.auth.uid &&
+        (
+          (request.resource.data.stage == 'hod' && request.resource.data.status == 'pending' &&
+           request.resource.data.doctorDecision.decision == 'approved') ||
+          (request.resource.data.stage == 'rejected' && request.resource.data.status == 'rejected' &&
+           request.resource.data.doctorDecision.decision == 'rejected')
+        );
+
+      // Medical, step 2: the HOD approves (-> teachers) or rejects.
+      allow update: if request.auth != null &&
+        resource.data.type == 'medical' &&
+        resource.data.stage == 'hod' &&
+        resource.data.hodEmail == myEmail() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['stage', 'status', 'hodDecision', 'facultyRemark', 'resolvedAt', 'resolvedBy']) &&
+        request.resource.data.hodDecision.by == request.auth.uid &&
+        (
+          (request.resource.data.stage == 'teachers' && request.resource.data.status == 'approved' &&
+           request.resource.data.hodDecision.decision == 'approved') ||
+          (request.resource.data.stage == 'rejected' && request.resource.data.status == 'rejected' &&
+           request.resource.data.hodDecision.decision == 'rejected')
+        );
+
       allow delete: if isAdmin();
+
+      // Medical, step 3: one doc per teacher (doc id = teacher's email),
+      // created by the Cloud Function after HOD approval. A teacher sees
+      // ONLY their own doc — the student's name, dates and the classes of
+      // theirs that were missed, never the medical report or reason.
+      match /teacherAcks/{teacherEmail} {
+        allow read: if isAdmin() ||
+          (request.auth != null && resource.data.email == myEmail()) ||
+          (request.auth != null && resource.data.studentUid == request.auth.uid);
+        allow update: if request.auth != null &&
+          resource.data.email == myEmail() &&
+          resource.data.status == 'pending' &&
+          request.resource.data.status == 'confirmed' &&
+          request.resource.data.confirmedBy == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'confirmedAt', 'confirmedBy', 'remark']);
+        allow create, delete: if false;
+      }
+    }
+
+    // Collection-group view of the same teacherAcks docs, so a teacher's
+    // queue can be one query across every leave ("all acks where email ==
+    // me"). Same read rule as the nested match above; no writes here.
+    match /{path=**}/teacherAcks/{teacherEmail} {
+      allow read: if isAdmin() ||
+        (request.auth != null && resource.data.email == myEmail()) ||
+        (request.auth != null && resource.data.studentUid == request.auth.uid);
+    }
+
+    // SOS alerts. A student raises one for themselves; the doctor and
+    // wardens named in config/sos (scripts/seed-sos-config.js) and admins
+    // see every alert and mark it "on my way" / resolved. The student can
+    // keep their location fresh and cancel ("I'm safe") — nothing else.
+    function isSosResponder() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/config/sos) &&
+        myEmail() in get(/databases/$(database)/documents/config/sos).data.get('responderEmails', []);
+    }
+    match /sosAlerts/{alertId} {
+      allow create: if request.auth != null &&
+        request.resource.data.studentUid == request.auth.uid &&
+        request.resource.data.status == 'open' &&
+        request.resource.data.type in ['medical', 'safety', 'other'] &&
+        request.resource.data.ackBy == null &&
+        request.resource.data.resolvedBy == null;
+      allow read: if isAdmin() || isSosResponder() ||
+        (request.auth != null && resource.data.studentUid == request.auth.uid);
+      allow update: if
+        (request.auth != null && resource.data.studentUid == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['location', 'status', 'updatedAt']) &&
+          request.resource.data.status in ['open', 'acknowledged', 'cancelled'] &&
+          (request.resource.data.status == resource.data.status || request.resource.data.status == 'cancelled')) ||
+        ((isAdmin() || isSosResponder()) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'ackBy', 'resolvedBy', 'updatedAt']) &&
+          request.resource.data.status in ['acknowledged', 'resolved']);
+      allow delete: if isAdmin();
+    }
+
+    // Admin-seeded app configuration (scripts/seed-medical-leave.js):
+    // config/medicalLeave names the doctor and the HOD for each branch.
+    match /config/{docId} {
+      allow read: if isMember();
+      allow write: if false;
     }
 
     // Unlike leaveApplications, a complaint isn't addressed to one
@@ -607,8 +685,8 @@ service cloud.firestore {
       allow read: if isAdmin() ||
         (request.auth != null && resource.data.studentUid == request.auth.uid) ||
         (isFaculty() && resource.data.get('facultyEmail', null) == null) ||
-        (request.auth != null && resource.data.get('facultyEmail', null) == request.auth.token.email.lower());
-      allow create: if request.auth != null &&
+        (request.auth != null && resource.data.get('facultyEmail', null) == myEmail());
+      allow create: if isMember() &&
         request.resource.data.studentUid == request.auth.uid &&
         request.resource.data.status == 'pending' &&
         request.resource.data.type in ['complaint', 'doubt'] &&
@@ -624,7 +702,7 @@ service cloud.firestore {
         resource.data.status == 'pending' &&
         (
           (isFaculty() && resource.data.get('facultyEmail', null) == null) ||
-          resource.data.get('facultyEmail', null) == request.auth.token.email.lower()
+          resource.data.get('facultyEmail', null) == myEmail()
         ) &&
         request.resource.data.status in ['resolved', 'rejected'] &&
         request.resource.data.studentUid == resource.data.studentUid &&
@@ -636,10 +714,6 @@ service cloud.firestore {
       );
       allow delete: if isAdmin();
     }
-    // student once their order is served. Doc id is deterministic
-    // (`${orderId}_${itemId}`) so a resubmission overwrites their own
-    // rating rather than spamming duplicates — enforced here by requiring
-    // the order to belong to them and to already be served.
     // Lost & Found: any signed-in student or faculty can post and browse.
     // "Contact" is done via the poster's own institute email (already
     // verified at signup — see AuthContext's @iiitsurat.ac.in gate), not a
@@ -648,8 +722,8 @@ service cloud.firestore {
     // their own post resolved or delete it; nobody can edit someone
     // else's post at all.
     match /lostFoundItems/{itemId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null &&
+      allow read: if isMember();
+      allow create: if isMember() &&
         request.resource.data.postedBy == request.auth.uid &&
         request.resource.data.status == 'open' &&
         request.resource.data.title is string && request.resource.data.title.size() > 0 &&
@@ -663,7 +737,19 @@ service cloud.firestore {
         request.resource.data.description == resource.data.description &&
         request.resource.data.postedBy == resource.data.postedBy
       );
-      allow delete: if isAdmin() || (request.auth != null && resource.data.postedBy == request.auth.uid);
+      // Faculty can remove a post that was reported (see `reports`).
+      allow delete: if isAdmin() || isFaculty() || (request.auth != null && resource.data.postedBy == request.auth.uid);
+    }
+
+    // Reports on student-posted content. Any member can file one (as
+    // themselves); only faculty/admin read and close them.
+    match /reports/{reportId} {
+      allow create: if isMember() &&
+        request.resource.data.reporterUid == request.auth.uid &&
+        request.resource.data.status == 'open' &&
+        request.resource.data.reason is string;
+      allow read, update: if isAdmin() || isFaculty();
+      allow delete: if isAdmin();
     }
 
     // Fired when someone taps Email/Call/WhatsApp on a Lost & Found post
@@ -676,7 +762,7 @@ service cloud.firestore {
       allow read: if isAdmin() ||
         (request.auth != null && resource.data.contactedByUid == request.auth.uid) ||
         (request.auth != null && resource.data.posterUid == request.auth.uid);
-      allow create: if request.auth != null &&
+      allow create: if isMember() &&
         request.resource.data.contactedByUid == request.auth.uid &&
         request.resource.data.method in ['email', 'call', 'whatsapp'];
       allow update: if false;
@@ -739,18 +825,6 @@ service cloud.firestore {
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrollmentNumber == docId.split('_')[0]);
       allow create: if (isAdmin() || isFaculty()) && request.resource.data.scannedBy == request.auth.uid;
       allow update, delete: if false;
-    }
-
-    match /messFeedback/{feedbackId} {
-      allow read: if isAdmin() || isFaculty() ||
-        (request.auth != null && resource.data.uid == request.auth.uid);
-      allow create, update: if request.auth != null &&
-        request.resource.data.uid == request.auth.uid &&
-        request.resource.data.rating is int &&
-        request.resource.data.rating >= 1 && request.resource.data.rating <= 5 &&
-        get(/databases/$(database)/documents/messOrders/$(request.resource.data.orderId)).data.uid == request.auth.uid &&
-        get(/databases/$(database)/documents/messOrders/$(request.resource.data.orderId)).data.status == 'served';
-      allow delete: if isAdmin();
     }
   }
 }

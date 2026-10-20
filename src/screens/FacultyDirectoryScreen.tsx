@@ -8,6 +8,9 @@ import {
   TextInput,
   Linking,
   BackHandler,
+  Modal,
+  ScrollView,
+  Image,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -28,6 +31,7 @@ const DEPARTMENT_LABELS: Record<string, string> = {
   UGPAS: "Applied Sciences",
   UGMCS: "Mathematics and Computing Sciences",
   TNP: "Training and Placement",
+  ADMIN: "Administration",
 };
 
 function departmentLabel(code?: string): string | undefined {
@@ -37,12 +41,16 @@ function departmentLabel(code?: string): string | undefined {
 
 // The 3 folders explicitly asked for, plus a TnP Cell folder (a separate
 // administrative unit, not an academic department — shouldn't be lumped
-// in with Applied Sciences) and a PAS Department catch-all for Applied
-// Sciences faculty and anyone else whose department code doesn't match
-// one of the others, so nobody silently disappears from the directory.
-type FolderId = "UGCSE" | "UGECE" | "UGMCS" | "TNP" | "OTHER";
+// in with Applied Sciences), an Administration folder for the Director/
+// Registrar's office (not an academic department either, and shouldn't
+// fall into the PAS catch-all just for having no department code), and
+// a PAS Department catch-all for Applied Sciences faculty and anyone
+// else whose department code doesn't match one of the others, so
+// nobody silently disappears from the directory.
+type FolderId = "UGCSE" | "UGECE" | "UGMCS" | "TNP" | "ADMIN" | "OTHER";
 
 const FOLDERS: { id: FolderId; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { id: "ADMIN", label: "Administration", icon: "shield-checkmark-outline" },
   { id: "UGCSE", label: "CSE Department", icon: "hardware-chip-outline" },
   { id: "UGECE", label: "ECE Department", icon: "radio-outline" },
   { id: "UGMCS", label: "MCS Department", icon: "calculator-outline" },
@@ -51,7 +59,13 @@ const FOLDERS: { id: FolderId; label: string; icon: keyof typeof Ionicons.glyphM
 ];
 
 function folderFor(department?: string): FolderId {
-  if (department === "UGCSE" || department === "UGECE" || department === "UGMCS" || department === "TNP") {
+  if (
+    department === "UGCSE" ||
+    department === "UGECE" ||
+    department === "UGMCS" ||
+    department === "TNP" ||
+    department === "ADMIN"
+  ) {
     return department;
   }
   return "OTHER";
@@ -74,6 +88,7 @@ function isInFolder(member: FacultyMember, folder: FolderId): boolean {
 function designationRank(designation?: string): number {
   if (!designation) return 3;
   const d = designation.toLowerCase();
+  if (d.includes("director")) return -1;
   if (d.includes("head") || d.includes("dean")) return 0;
   if (d.includes("contractual")) return 2;
   return 1;
@@ -85,9 +100,34 @@ function compareFacultyForDisplay(a: FacultyMember, b: FacultyMember): number {
   return a.name.localeCompare(b.name);
 }
 
-const FacultyCard = memo(function FacultyCard({ member }: { member: FacultyMember }) {
+// A photo when the person has one (self-uploaded via Edit Profile, or
+// set on their allowlist entry) — the same initials circle as before
+// otherwise. Used in both the card and the detail modal so a photo
+// (or the in-cabin dot below) added later shows up in both places
+// automatically.
+function FacultyAvatar({ member, style, textStyle }: { member: FacultyMember; style: object; textStyle: object }) {
   const initial = member.name?.trim()?.[0]?.toUpperCase() ?? "?";
-  const isLeadership = designationRank(member.designation) === 0;
+  return (
+    <View style={{ position: "relative" }}>
+      {member.photoUrl ? (
+        <Image source={{ uri: member.photoUrl }} style={style} />
+      ) : (
+        <View style={style}>
+          <Text style={textStyle}>{initial}</Text>
+        </View>
+      )}
+      {/* Only ever true from the faculty member's own live toggle on
+          Home (see AuthContext's setInCabin) — never set for an
+          allowlist-only entry that hasn't signed up, so this can't
+          show for someone who's never even opened the app. */}
+      {member.inCabin && <View style={styles.inCabinDot} />}
+    </View>
+  );
+}
+
+const FacultyCard = memo(function FacultyCard({ member }: { member: FacultyMember }) {
+  const isLeadership = designationRank(member.designation) <= 0;
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const handleEmail = () => {
     Linking.openURL(`mailto:${member.email}`).catch(() => {});
@@ -101,18 +141,31 @@ const FacultyCard = memo(function FacultyCard({ member }: { member: FacultyMembe
     if (member.roleEmail) Linking.openURL(`mailto:${member.roleEmail}`).catch(() => {});
   };
 
+  const hasResearch = member.researchAreas || member.publicationsCount;
+  const researchLine = [
+    member.publicationsCount
+      ? `${member.publicationsCount} publication${member.publicationsCount === 1 ? "" : "s"}`
+      : null,
+    member.researchAreas || null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <View style={styles.card}>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{initial}</Text>
-      </View>
+    <>
+    <TouchableOpacity style={styles.card} onPress={() => setDetailOpen(true)} activeOpacity={0.85}>
+      <FacultyAvatar member={member} style={styles.avatar} textStyle={styles.avatarText} />
       <View style={styles.cardBody}>
         <View style={styles.nameRow}>
           <Text style={styles.name}>{member.name}</Text>
           {isLeadership && (
             <View style={styles.leadershipBadge}>
               <Text style={styles.leadershipBadgeText}>
-                {member.designation?.toLowerCase().includes("dean") ? "DEAN" : "HOD"}
+                {member.designation?.toLowerCase().includes("director")
+                  ? "DIRECTOR"
+                  : member.designation?.toLowerCase().includes("dean")
+                    ? "DEAN"
+                    : "HOD"}
               </Text>
             </View>
           )}
@@ -140,19 +193,10 @@ const FacultyCard = memo(function FacultyCard({ member }: { member: FacultyMembe
             <Text style={styles.metaText}>{member.officeHours}</Text>
           </View>
         )}
-        {(member.researchAreas || member.publicationsCount) && (
+        {hasResearch && (
           <View style={styles.metaRow}>
             <Ionicons name="document-text-outline" size={13} color={colors.textSecondary} />
-            <Text style={styles.metaText} numberOfLines={2}>
-              {[
-                member.publicationsCount
-                  ? `${member.publicationsCount} publication${member.publicationsCount === 1 ? "" : "s"}`
-                  : null,
-                member.researchAreas || null,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </Text>
+            <Text style={styles.metaText} numberOfLines={2}>{researchLine}</Text>
           </View>
         )}
         <View style={styles.actionRow}>
@@ -174,7 +218,92 @@ const FacultyCard = memo(function FacultyCard({ member }: { member: FacultyMembe
           )}
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
+
+    {/* Tapping the card opens this — the card itself stays a flat list
+        item (fast to scroll through, shows contact buttons at a
+        glance); this is for the two things that don't fit in a
+        two-line card: a real bio, and the research summary given room
+        to breathe instead of getting cut off at 2 lines. */}
+    <Modal visible={detailOpen} animationType="slide" transparent onRequestClose={() => setDetailOpen(false)}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <FacultyAvatar member={member} style={styles.avatar} textStyle={styles.avatarText} />
+            <View style={{ flex: 1, marginLeft: spacing.sm }}>
+              <Text style={styles.modalName}>{member.name}</Text>
+              {(member.designation || member.department) && (
+                <Text style={styles.subtitle}>
+                  {[member.designation, departmentLabel(member.department)].filter(Boolean).join(" · ")}
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity onPress={() => setDetailOpen(false)} hitSlop={8}>
+              <Ionicons name="close" size={22} color={colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalScroll}>
+            {member.aboutMe && (
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>About</Text>
+                <Text style={styles.modalBodyText}>{member.aboutMe}</Text>
+              </View>
+            )}
+
+            {hasResearch && (
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Research & Publications</Text>
+                {member.publicationsCount ? (
+                  <Text style={styles.modalBodyText}>
+                    {member.publicationsCount} publication{member.publicationsCount === 1 ? "" : "s"}
+                  </Text>
+                ) : null}
+                {member.researchAreas ? (
+                  <Text style={[styles.modalBodyText, { marginTop: member.publicationsCount ? 4 : 0 }]}>
+                    {member.researchAreas}
+                  </Text>
+                ) : null}
+              </View>
+            )}
+
+            {!member.aboutMe && !hasResearch && (
+              <Text style={styles.modalEmptyText}>
+                {member.name} hasn't added a bio or research summary yet.
+              </Text>
+            )}
+
+            {(member.officeLocation || member.officeHours) && (
+              <View style={styles.modalSection}>
+                <Text style={styles.modalSectionTitle}>Office</Text>
+                {member.officeLocation && <Text style={styles.modalBodyText}>{member.officeLocation}</Text>}
+                {member.officeHours && <Text style={styles.modalBodyText}>{member.officeHours}</Text>}
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={styles.actionRow}>
+            <TouchableOpacity style={styles.actionButton} onPress={handleEmail}>
+              <Ionicons name="mail-outline" size={14} color={colors.primary} />
+              <Text style={styles.actionText}>Email</Text>
+            </TouchableOpacity>
+            {member.phone && (
+              <TouchableOpacity style={styles.actionButton} onPress={handleCall}>
+                <Ionicons name="call-outline" size={14} color={colors.primary} />
+                <Text style={styles.actionText}>Call</Text>
+              </TouchableOpacity>
+            )}
+            {member.roleEmail && (
+              <TouchableOpacity style={styles.actionButton} onPress={handleOfficeEmail}>
+                <Ionicons name="business-outline" size={14} color={colors.primary} />
+                <Text style={styles.actionText}>Office</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 });
 
@@ -403,8 +532,7 @@ const styles = StyleSheet.create({
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.xl },
   emptyText: { ...typography.body, color: colors.textSecondary, textAlign: "center" },
-  card: {
-    flexDirection: "row",
+  card: {    flexDirection: "row",
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     padding: spacing.md,
@@ -421,6 +549,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   avatarText: { ...typography.h3, color: colors.primary },
+  inCabinDot: {
+    position: "absolute",
+    right: -2,
+    bottom: -2,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: "#22C55E",
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
   cardBody: { flex: 1, gap: 2 },
   nameRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
   leadershipBadge: {
@@ -483,4 +622,19 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
   },
   folderHeaderTitle: { ...typography.h2, color: colors.textPrimary },
+  modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: "flex-end" },
+  modalSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: spacing.lg,
+    maxHeight: "82%",
+  },
+  modalHeader: { flexDirection: "row", alignItems: "center", marginBottom: spacing.md },
+  modalName: { ...typography.h3, color: colors.textPrimary },
+  modalScroll: { marginBottom: spacing.sm },
+  modalSection: { marginBottom: spacing.md },
+  modalSectionTitle: { ...typography.caption, fontWeight: "700", color: colors.textSecondary, marginBottom: spacing.xs, textTransform: "uppercase" },
+  modalBodyText: { ...typography.body, color: colors.textPrimary, lineHeight: 20 },
+  modalEmptyText: { ...typography.body, color: colors.textSecondary, fontStyle: "italic", marginBottom: spacing.md },
 });

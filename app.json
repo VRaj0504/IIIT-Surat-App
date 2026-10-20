@@ -1,21 +1,21 @@
 {
   "expo": {
-    "name": "iiit-surat-app",
+    "name": "CollegeGo",
     "slug": "iiit-surat-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.vaibhav.iiitsuratapp"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#2F6BFA",
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "monochromeImage": "./assets/android-icon-monochrome.png",
+        "backgroundImage": "./assets/android-icon-background.png"
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.vaibhav.iiitsuratapp",
@@ -23,7 +23,9 @@
       "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single"
     },
     "extra": {
       "eas": {
@@ -41,7 +43,32 @@
         }
       ],
       "expo-status-bar",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "CollegeGo shares your location with the warden and doctor only when you press SOS, so help can find you."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "CollegeGo uses the camera to scan your mess thali pass QR code."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "CollegeGo needs your photos so you can set a profile picture, scan event posters and attach pictures to lost & found posts.",
+          "cameraPermission": "CollegeGo uses the camera to take a photo for lost & found posts and to scan event posters."
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "CollegeGo adds events you choose from posters to your calendar."
+        }
+      ]
     ]
   }
 }

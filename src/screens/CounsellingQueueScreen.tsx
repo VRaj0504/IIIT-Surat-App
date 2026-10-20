@@ -170,7 +170,7 @@ const styles = StyleSheet.create({
   urgentBadge: {
     fontSize: 11,
     fontWeight: "800",
-    color: "#fff",
+    color: colors.onPrimary,
     backgroundColor: colors.danger,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,

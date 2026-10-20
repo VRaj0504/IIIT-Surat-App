@@ -1,92 +1,104 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Notes/PYQs/slides filed by faculty (see src/firebase/resourceService.ts
-    // and faculty-upload-web/src/Upload.tsx, which both write here). Any
-    // signed-in user can read (students need to open these); only faculty
-    // can upload or delete, mirroring the /resources Firestore rule for the
-    // metadata doc that points at each file. firestore.get() here is a
-    // cross-service rule read of the SAME project's Firestore — no separate
-    // config needed, just enable Firestore's API if it isn't already.
+
+    // ---- helpers -------------------------------------------------------
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Signed in AND has a profile in Firestore. Any Firebase account counts
+    // as "signedIn" — including one made by calling the public sign-up API
+    // with a personal Gmail — but a users/{uid} profile can only be created
+    // with a verified @iiitsurat.ac.in address (see firestore.rules). So
+    // this is what actually means "a member of the college".
+    function isMember() {
+      return signedIn() &&
+        firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
+    function userRole() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isFaculty() {
+      return signedIn() && userRole() == 'faculty';
+    }
+
+    function isStaff() {
+      return signedIn() && (userRole() == 'faculty' || userRole() == 'admin');
+    }
+
+    // NOTE: request.resource is null on delete, so every size/type check
+    // below lives on `create, update` only — delete rules are separate.
+    function smallImage(maxMb) {
+      return request.resource.size < maxMb * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+    }
+
+    function underMb(maxMb) {
+      return request.resource.size < maxMb * 1024 * 1024;
+    }
+
+    // ---- resources: notes / PYQs / slides filed by faculty ---------------
     match /resources/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'faculty';
+      allow read: if isMember();
+      allow create, update: if isFaculty() && underMb(50);
+      allow delete: if isFaculty();
     }
 
-    // Lost & Found photos — any signed-in user can read (browsing the
-    // feed) or write (posting their own item); a matching delete on
-    // Firestore is what actually removes the item, this just needs to not
-    // block that. No faculty-only gate here since anyone can post.
+    // ---- Lost & Found photos ---------------------------------------------
+    // Anyone signed in can browse; you can only write/delete inside your OWN
+    // folder (the app uploads to lostFound/{postedBy}/...). Faculty/admin can
+    // delete for moderation.
     match /lostFound/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read: if isMember();
+    }
+    match /lostFound/{uid}/{allPaths=**} {
+      allow create, update: if isMember() && request.auth.uid == uid && smallImage(5);
+      allow delete: if isMember() && (request.auth.uid == uid || isStaff());
     }
 
-    // Event poster photos uploaded for OCR scanning (see
-    // posterScanService.ts) — a temporary working file for
-    // extractPosterInfo to read, not a permanent record like Resources or
-    // Lost & Found. Only the uploader can read/write/delete their own scan;
-    // nobody else has any reason to see someone else's poster photo.
+    // ---- temporary OCR inputs ---------------------------------------------
     match /posterScans/{uid}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, delete: if isMember() && request.auth.uid == uid;
+      allow create, update: if isMember() && request.auth.uid == uid && smallImage(8);
     }
 
-    // Timetable photos uploaded via the faculty web portal's OCR-assist
-    // import (see extractTimetableInfo) — a temporary working file for
-    // that Cloud Function to read, same lifecycle/access pattern as
-    // posterScans above: only the uploader ever needs to see their own
-    // scan.
+    // Only faculty/admin import timetables, so only they may stage scans.
     match /timetableScans/{uid}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, delete: if isMember() && request.auth.uid == uid;
+      allow create, update: if isStaff() && request.auth.uid == uid && smallImage(10);
     }
 
-    // Leave application supporting documents (medical certificates, etc.)
-    // — only the student who applied can upload/delete their own; read is
-    // open to any signed-in user rather than narrowly scoped to "the one
-    // faculty this was addressed to", since Storage rules can't easily
-    // cross-reference the leaveApplications Firestore doc to check that
-    // without real added complexity. In practice this is no looser than
-    // it sounds: the download URL only ever surfaces through the
-    // Firestore leaveApplications doc itself, which firestore.rules
-    // already restricts to the student, the addressed faculty, and
-    // admins — nobody else has a path to ever obtain this URL to begin
-    // with.
-    match /leaveDocuments/{uid}/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
-    }
-
-    // Attachments from ingestFacultyEmail's inbound-email pipeline,
-    // staged for review in faculty-upload-web's Inbox Imports tab (see
-    // pendingImports in firestore.rules). Only the Admin SDK ever writes
-    // here; faculty/admin can read while reviewing.
+    // ---- inbound-email attachments (written only by the Admin SDK) -------
     match /pendingImports/{allPaths=**} {
-      allow read: if request.auth != null &&
-        (firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'faculty' ||
-         firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin');
-      // Only the Admin SDK (ingestFacultyEmail.ts) ever writes a NEW file
-      // here — that's the real security boundary, unaffected by this.
-      // Delete is separate: once an email's attachment has been
-      // auto-published or reviewed, a faculty/admin should be able to
-      // delete the underlying file the same way they can delete any
-      // other resource's file, rather than it being permanently stuck
-      // because it happens to still live under this path.
+      allow read: if isStaff();
       allow create, update: if false;
-      allow delete: if request.auth != null &&
-        (firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'faculty' ||
-         firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      allow delete: if isStaff();
     }
 
-    // Profile photos — read is open to any signed-in user (same
-    // broad-read pattern already used for Lost & Found and Resources
-    // elsewhere in this app), since a photo shown on someone's own
-    // Thali Pass card, or potentially in Faculty Directory later, isn't
-    // meaningfully more sensitive than a name is. Only the owner can
-    // upload/replace their own.
+    // ---- profile photos ----------------------------------------------------
     match /profilePhotos/{uid}/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      allow read: if isMember();
+      allow create, update: if isMember() && request.auth.uid == uid && smallImage(5);
+      allow delete: if isMember() && request.auth.uid == uid;
+    }
+
+    // ---- medical leave attachments (sensitive) -----------------------------
+    // Readable only by the student and faculty/admin. The old broad-read
+    // `leaveDocuments/` rule was removed: the app only ever uses this path.
+    match /medicalReports/{uid}/{allPaths=**} {
+      allow read: if isMember() && (request.auth.uid == uid || isStaff());
+      allow create, update: if isMember() && request.auth.uid == uid && underMb(10);
+      allow delete: if isMember() && request.auth.uid == uid;
+    }
+
+    // ---- exam date sheet originals -----------------------------------------
+    match /examSheets/{uid}/{allPaths=**} {
+      allow read: if isMember();
+      allow create, update: if isStaff() && request.auth.uid == uid && underMb(10);
+      allow delete: if isStaff() && request.auth.uid == uid;
     }
   }
 }

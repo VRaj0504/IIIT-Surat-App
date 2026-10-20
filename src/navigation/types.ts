@@ -2,7 +2,6 @@
 // then it gets full type-checking + autocomplete everywhere else.
 import type { ClubEvent } from "../firebase/clubsService";
 import type { Notice } from "../firebase/noticesService";
-import type { CartLine } from "../firebase/messService";
 
 export type RootTabParamList = {
   Home: undefined;
@@ -17,11 +16,6 @@ export type RootStackParamList = {
   MessMenu: undefined;
   // reorderItems, when present, prefills the cart with a past order's
   // items (quantities capped to whatever's actually in stock right now).
-  MessOrder: { reorderItems?: CartLine[] } | undefined;
-  MessToken: { orderId: string };
-  MessWallet: undefined;
-  MessOrderHistory: undefined;
-  MessStaff: undefined;
   ThaliPass: undefined;
   ScanThaliPass: undefined;
   
@@ -36,7 +30,6 @@ Complaints: undefined;
   ExamSchedule: undefined;
   GradeEntry: undefined;
   ScanPoster: undefined;
-  RechargeCheckout: { amount: number };
   MarkAttendance: undefined;
   MyAttendance: undefined;
   SubmitEventExcusal: undefined;
@@ -49,6 +42,7 @@ Complaints: undefined;
   ClubDetail: { clubId: string; clubName: string };
   Events: undefined;
   Counselling: undefined;
+  RoomAvailability: undefined;
   CounsellingQueue: undefined;
   CreateClub: undefined;
   PostEvent: { clubId: string; clubName: string; editingEvent?: ClubEvent };
@@ -61,4 +55,6 @@ Complaints: undefined;
   MyDownloads: undefined;
   FileViewer: { uri: string; name: string };
   About: undefined;
+  SOS: undefined;
+  SosAlerts: undefined;
 };

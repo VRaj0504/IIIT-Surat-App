@@ -9,6 +9,7 @@ import { colors, spacing, typography } from "../theme/theme";
 import ScreenHeader from "../components/ScreenHeader";
 import { guessMimeType } from "../utils/fileType";
 import type { RootStackParamList } from "../navigation/types";
+import LoadingSpinner from "../components/LoadingSpinner";
 
 type ViewerRoute = RouteProp<RootStackParamList, "FileViewer">;
 
@@ -64,7 +65,7 @@ export default function FileViewerScreen() {
         </View>
       ) : !dataUri ? (
         <View style={styles.errorBox}>
-          <ActivityIndicator color={colors.primary} />
+          <LoadingSpinner label="Opening file…" />
         </View>
       ) : (
         <WebView

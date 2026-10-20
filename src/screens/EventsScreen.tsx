@@ -10,6 +10,7 @@ import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/th
 import { subscribeToAllUpcomingEvents, ClubEvent } from "../firebase/clubsService";
 import { getClubIcon } from "../data/clubIcons";
 import GlassCard from "../components/GlassCard";
+import LoadingSpinner from "../components/LoadingSpinner";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -117,7 +118,7 @@ export default function EventsScreen() {
         )}
 
         {loading ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xl }} />
+          <LoadingSpinner style={{ marginTop: spacing.xl }} />
         ) : (
           <SectionList
             sections={sections}

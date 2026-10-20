@@ -17,6 +17,13 @@ export type FacultyMember = {
   // research.
   researchAreas?: string;
   publicationsCount?: number | null;
+  aboutMe?: string;
+  photoUrl?: string;
+  // Only ever comes from a signed-up account's own live toggle (see
+  // AuthContext's setInCabin) — deliberately never set from the
+  // allowlist mapping below, since an account that hasn't signed up
+  // yet has no session to have toggled anything with.
+  inCabin?: boolean;
   
   roleEmail?: string;
   shortForm?: string;
@@ -80,6 +87,9 @@ export function subscribeToFacultyDirectory(
           phone: data.phone,
           researchAreas: data.researchAreas,
           publicationsCount: data.publicationsCount,
+          aboutMe: data.aboutMe,
+          photoUrl: data.photoUrl,
+          inCabin: data.inCabin,
           roleEmail: data.roleEmail,
           shortForm: data.shortForm,
           additionalDepartments: data.additionalDepartments,
@@ -109,6 +119,8 @@ export function subscribeToFacultyDirectory(
         shortForm: docSnap.data().shortForm,
         additionalDepartments: docSnap.data().additionalDepartments,
         tnpInCharge: docSnap.data().tnpInCharge,
+        aboutMe: docSnap.data().aboutMe,
+        photoUrl: docSnap.data().photoUrl,
         signedUp: false,
       }));
       emit();

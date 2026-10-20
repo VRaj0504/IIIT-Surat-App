@@ -1,8 +1,10 @@
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as admin from "firebase-admin";
 import {isNoClassDay} from "./holidays";
+import {loadHolidayOverrides} from "./holidayOverrides";
 
 import {loadExamDocs, isInExamPeriod} from "./examPeriod";
+import {expandFaculty, slotTaughtBy} from "./facultyLegend";
 
 // Students (and faculty) can each pick their own lead time instead of a
 // single fixed 3 minutes — this is the fixed menu of choices offered in
@@ -17,33 +19,41 @@ const DEFAULT_REMINDER_MINUTES = 3;
 // right for comparing/matching against the current time, wrong for
 // putting in front of a person, so only the notification text converts.
 function to12Hour(time: string): string {
-  const [hourStr, minute] = time.split(":");
-  const hour = parseInt(hourStr, 10);
+  const mins = toMinutes(time);
+  if (mins < 0) return time;
+  const hour = Math.floor(mins / 60);
+  const minute = String(mins % 60).padStart(2, "0");
   const period = hour >= 12 ? "PM" : "AM";
   const hour12 = hour % 12 === 0 ? 12 : hour % 12;
   return `${hour12}:${minute} ${period}`;
 }
 
-// Mirrors src/data/facultyLegend.ts on the client — timetable slots store
-// faculty as the initials printed on the official PDFs (e.g. "RRP",
-// "DN/PJM" for a two-instructor lab), not full names, so this map is what
-// turns those into something matchable against a `users` doc's `name`.
-// KEEP THIS IN SYNC with src/data/facultyLegend.ts by hand — functions/
-// is a separate TypeScript project with its own build, so it can't import
-// straight from src/. Until real initials are filled in here (same as
-// that file), no faculty member will match a slot, so this function's
-// faculty-side reminders silently send to nobody — the student-side
-// reminders work today regardless, since section/branch/semester are
-// already exact.
-const FACULTY_LEGEND: Record<string, string> = {
-  // 'RRP': 'Full Name Here',
-};
+// Timetable times are stored in several shapes depending on the upload
+// path — "9:00" (seed/CSV), "09:00" (AI import), "9:00 AM" (typed), "2:00"
+// meaning 2 PM. This function used to compare them as TEXT against a
+// zero-padded "09:00", so every 9 AM class (stored "9:00") never matched
+// and nobody — student or faculty — got a reminder for it. Same parsing
+// rules as the app's src/utils/roomAvailability.ts toMinutes: an hour of
+// 1–7 with no AM/PM is the afternoon. -1 if unparseable.
+function toMinutes(time: string): number {
+  const match = String(time ?? "")
+    .trim()
+    .match(/^(\d{1,2})(?:[:.](\d{2}))?\s*([AaPp])?\.?\s*[Mm]?\.?$/);
+  if (!match) return -1;
+  let h = parseInt(match[1], 10);
+  const m = match[2] ? parseInt(match[2], 10) : 0;
+  if (h > 23 || m > 59) return -1;
+  const mer = match[3]?.toUpperCase();
+  if (mer === "P" && h < 12) h += 12;
+  else if (mer === "A" && h === 12) h = 0;
+  else if (!mer && h >= 1 && h <= 7) h += 12;
+  return h * 60 + m;
+}
 
-function expandFacultyInitials(faculty: string): string {
-  return faculty
-    .split("/")
-    .map((part) => FACULTY_LEGEND[part.trim()] ?? part.trim())
-    .join(" / ");
+// "Mon" / "monday" / "Monday" all match.
+function sameDay(a: string, b: string): boolean {
+  const norm = (s: string) => String(s ?? "").trim().slice(0, 3).toLowerCase();
+  return norm(a) !== "" && norm(a) === norm(b);
 }
 
 // Mirrors src/utils/academicInfo.ts's getCurrentSemester — duplicated for
@@ -52,9 +62,9 @@ function getCurrentSemester(admissionYear: number, today: Date): number {
   const currentMonth = today.getMonth() + 1;
   const currentYear = today.getFullYear();
   const isOddSemesterPeriod = currentMonth >= 7;
-  const academicYearIndex = isOddSemesterPeriod
-    ? currentYear - admissionYear
-    : currentYear - admissionYear - 1;
+  const academicYearIndex = isOddSemesterPeriod ?
+    currentYear - admissionYear :
+    currentYear - admissionYear - 1;
   return academicYearIndex * 2 + 1 + (isOddSemesterPeriod ? 0 : 1);
 }
 
@@ -140,7 +150,9 @@ function normalize(s: string): string {
 // hours merges against itself regardless of what interleaves between
 // them in sorted order.
 function mergeContiguousSessions(slots: TimetableSlot[]): TimetableSlot[] {
-  const sorted = [...slots].sort((a, b) => a.startTime.localeCompare(b.startTime));
+  // Sorted and chained by real time, not text ("9:00" sorts AFTER
+  // "10:00" as text, and "11:00" vs "11:00 AM" never chained).
+  const sorted = [...slots].sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
   const merged: TimetableSlot[] = [];
   const openByKey = new Map<string, TimetableSlot>();
 
@@ -150,7 +162,7 @@ function mergeContiguousSessions(slots: TimetableSlot[]): TimetableSlot[] {
   for (const slot of sorted) {
     const key = keyOf(slot);
     const open = openByKey.get(key);
-    if (open && open.endTime === slot.startTime) {
+    if (open && toMinutes(open.endTime) >= 0 && toMinutes(open.endTime) === toMinutes(slot.startTime)) {
       open.endTime = slot.endTime; // extend the existing session for this track
     } else {
       const copy = {...slot};
@@ -176,7 +188,7 @@ async function pushToTokens(tokens: string[], title: string, body: string): Prom
       fetch("https://exp.host/--/api/v2/push/send", {
         method: "POST",
         headers: {
-          Accept: "application/json",
+          "Accept": "application/json",
           "Accept-Encoding": "gzip, deflate",
           "Content-Type": "application/json",
         },
@@ -246,6 +258,7 @@ async function notifyForSlot(
   offsetMinutes: number,
   facultyUsers: NotifiableUser[],
   studentCache: Map<string, Promise<FirebaseFirestore.QuerySnapshot>>,
+  facultyQueue: Map<string, FacultyQueueEntry>,
 ): Promise<void> {
   const title = `Class in ${offsetMinutes} minutes`;
   // Every student in the section gets BOTH a Group 1 and a Group 2
@@ -280,29 +293,75 @@ async function notifyForSlot(
     studentTokens.push(student.expoPushToken);
   });
 
-  // Faculty: matched by expanded name against the slot's initials — see
-  // the FACULTY_LEGEND comment at the top of this file for why this is
-  // currently a no-op until that map is filled in. facultyUsers is
-  // fetched once per function run (see the scheduled handler below), not
-  // re-queried per slot — the whole faculty collection is the same
-  // regardless of which slot/offset is being checked.
-  const expandedNames = expandFacultyInitials(slot.faculty)
-    .split(" / ")
-    .map((n) => n.trim().toLowerCase());
-  const facultyTokens: string[] = [];
+  // Faculty: the slot stores initials ("DN/PJM"); slotTaughtBy expands
+  // them through facultyLegend.ts and compares against the profile name.
+  // This used to use an EMPTY legend here, so no faculty member ever
+  // matched and faculty never got a reminder. Faculty aren't pushed per
+  // slot here — they're queued and sent once per class after every slot
+  // is scanned (see sendFacultyReminders), because one faculty member can
+  // teach a combined class to several sections at once and should get
+  // ONE "go to CR 4 for CSE1 + CSE2" message, not one per section.
   facultyUsers.forEach((faculty) => {
     if (!faculty.expoPushToken || !faculty.name) return;
     if (faculty.notificationPreferences?.classReminders === false) return;
-    if (!expandedNames.includes(faculty.name.trim().toLowerCase())) return;
     const wantsMinutes = faculty.notificationPreferences?.classReminderMinutes ?? DEFAULT_REMINDER_MINUTES;
     if (wantsMinutes !== offsetMinutes) return;
-    facultyTokens.push(faculty.expoPushToken);
+    if (!slotTaughtBy(slot.faculty, faculty.name)) return;
+    const key = `${faculty.expoPushToken}|${offsetMinutes}`;
+    let entry = facultyQueue.get(key);
+    if (!entry) {
+      entry = {token: faculty.expoPushToken, name: faculty.name, offsetMinutes, classes: []};
+      facultyQueue.set(key, entry);
+    }
+    entry.classes.push({timetable, slot});
   });
 
-  await Promise.all([
-    pushToTokens(studentTokens, title, body),
-    pushToTokens(facultyTokens, title, body),
-  ]);
+  await pushToTokens(studentTokens, title, body);
+}
+
+type FacultyClass = {timetable: Timetable; slot: TimetableSlot};
+type FacultyQueueEntry = {token: string; name: string; offsetMinutes: number; classes: FacultyClass[]};
+
+function classLabel(tt: Timetable): string {
+  const section = String(tt.section ?? "").trim();
+  // Single-section branches store the branch name as the section ("ECE").
+  const showSection = section && section.toUpperCase() !== String(tt.branch).toUpperCase();
+  return `${tt.branch} Sem ${tt.semester}${showSection ? ` ${section}` : ""}`;
+}
+
+// One push per faculty member per class: WHERE to go (room, in the
+// title so it's visible even in a collapsed notification), and WHICH
+// class it is — subject, branch/semester/section(s), group, time.
+async function sendFacultyReminders(queue: Map<string, FacultyQueueEntry>): Promise<void> {
+  const sends: Promise<void>[] = [];
+  queue.forEach((entry) => {
+    // Group this person's classes at this time by subject + room, so a
+    // combined lecture (same subject, same room, several sections)
+    // becomes one line listing every section.
+    const groups = new Map<string, FacultyClass[]>();
+    for (const c of entry.classes) {
+      const key = [c.slot.subjectCode || c.slot.subjectName, c.slot.room, c.slot.group ?? ""]
+        .map((s) => String(s ?? "").replace(/\s+/g, "").toUpperCase())
+        .join("|");
+      groups.set(key, [...(groups.get(key) ?? []), c]);
+    }
+    const lines = Array.from(groups.values()).map((cs) => {
+      const s = cs[0].slot;
+      const subject = s.subjectCode ? `${s.subjectName || s.subjectCode} (${s.subjectCode})` : s.subjectName;
+      const classes = Array.from(new Set(cs.map((c) => classLabel(c.timetable)))).join(" + ");
+      const group = s.group ? ` · ${s.group}` : "";
+      const others = expandFaculty(s.faculty)
+        .split(" / ")
+        .filter((n) => n && !slotTaughtBy(n, entry.name));
+      const withWhom = others.length > 0 ? ` · with ${others.join(", ")}` : "";
+      return `${subject} — ${classes}${group} · ${to12Hour(s.startTime)}–${to12Hour(s.endTime)}${withWhom}`;
+    });
+    const rooms = Array.from(new Set(entry.classes.map((c) => String(c.slot.room ?? "").trim()).filter(Boolean)));
+    const where = rooms.length > 0 ? ` — go to ${rooms.join(" / ")}` : "";
+    const title = `Your class in ${entry.offsetMinutes} min${where}`;
+    sends.push(pushToTokens([entry.token], title, lines.join("\n")));
+  });
+  await Promise.all(sends);
 }
 
 export const sendClassReminderPush = onSchedule(
@@ -326,7 +385,13 @@ export const sendClassReminderPush = onSchedule(
     // ever got a chance to bail out. This way it isn't even invoked
     // during the ~15 hours a day (and every weekend) it could never
     // have anything to send.
-    schedule: "*/1 9-17 * * 1-5",
+    // Starts at 8, not 9: the timetable DOES have 9:00 classes, and their
+    // reminders go out at 8:45–8:57 (up to 15 min early) — with a 9am
+    // start those were never sent.
+    schedule: "*/1 8-17 * * 1-5",
+    // Without this the cron runs in UTC, i.e. 14:30-23:30 IST, and morning
+    // classes never get a reminder.
+    timeZone: "Asia/Kolkata",
     region: "asia-south1",
   },
   async () => {
@@ -338,9 +403,11 @@ export const sendClassReminderPush = onSchedule(
     // then), so a single run with, say, 8 sections all having a 9am start
     // used to issue the same "every faculty member" read 8 separate times.
     const examDocs = await loadExamDocs(db);
+    const holidayOverrides = await loadHolidayOverrides(db);
     const facultySnap = await db.collection("users").where("role", "==", "faculty").get();
     const facultyUsers = facultySnap.docs.map((doc) => doc.data() as NotifiableUser);
     const studentCache = new Map<string, Promise<FirebaseFirestore.QuerySnapshot>>();
+    const facultyQueue = new Map<string, FacultyQueueEntry>();
     const tasks: Promise<void>[] = [];
 
     // One Firestore read of the timetable collection is reused across all
@@ -348,6 +415,7 @@ export const sendClassReminderPush = onSchedule(
     // not the read.
     for (const offsetMinutes of REMINDER_OFFSETS) {
       const {weekday, time: reminderTime, dateIso} = istWeekdayAndTimePlusMinutes(offsetMinutes);
+      const reminderMinutes = toMinutes(reminderTime);
       // The weekly timetable has no concept of holidays at all — it's
       // just "every Monday, this section has DBMS at 9am" — so without
       // this check, a public holiday or the Diwali/semester break that
@@ -356,22 +424,27 @@ export const sendClassReminderPush = onSchedule(
       // checked per-offset (not once for "today") since the reminder
       // target time is `now + offsetMinutes`, which in a rare
       // near-midnight edge case could land on a different calendar date
-      // than right now.
-      if (isNoClassDay(dateIso)) continue;
+      // than right now. holidayOverrides covers the same idea for a
+      // holiday nobody could have known about when the fixed calendar
+      // was written — an ad-hoc one added through the portal.
+      if (isNoClassDay(dateIso) || holidayOverrides.has(dateIso)) continue;
 
       timetablesSnap.docs.forEach((doc) => {
         const timetable = doc.data() as Timetable;
         if (isInExamPeriod(examDocs, timetable.branch, timetable.semester, dateIso)) return;
-        const todayEntry = timetable.days?.find((d) => d.day === weekday);
+        const todayEntry = timetable.days?.find((d) => sameDay(d.day, weekday));
         if (!todayEntry) return;
-        mergeContiguousSessions(todayEntry.slots)
-          .filter((slot) => slot.startTime === reminderTime)
+        mergeContiguousSessions(todayEntry.slots ?? [])
+          .filter((slot) => toMinutes(slot.startTime) === reminderMinutes)
           .forEach((slot) =>
-            tasks.push(notifyForSlot(db, timetable, slot, offsetMinutes, facultyUsers, studentCache)),
+            tasks.push(notifyForSlot(db, timetable, slot, offsetMinutes, facultyUsers, studentCache, facultyQueue)),
           );
       });
     }
 
     await Promise.all(tasks);
+    // Every slot has been scanned, so each faculty member's queue entry
+    // now holds ALL their classes at this time — send one message each.
+    await sendFacultyReminders(facultyQueue);
   },
 );

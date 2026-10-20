@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback, memo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, memo } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  SectionList,
+  FlatList,
+  BackHandler,
   TouchableOpacity,
   Linking,
   Alert,
@@ -15,7 +16,7 @@ import { addToWebDownloadHistory } from "../utils/webDownloadHistory";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   colors,
@@ -38,17 +39,29 @@ import {
 import type { RootStackParamList } from "../navigation/types";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ScreenHeader from "../components/ScreenHeader";
+import {
+  ROOT_PATH,
+  countLabel,
+  describeLocation,
+  groupBySubject,
+  type Folder,
+  type FolderPath,
+  type ResourceType,
+} from "../utils/resourceFolders";
+import { openSafeUrl } from "../utils/safeLink";
 
 const typeColors: Record<Resource["type"], string> = {
   Notes: colors.primary,
   PYQ: colors.danger,
   Slides: colors.warning,
+  Assignment: colors.success,
 };
 
 const typeIcons: Record<Resource["type"], keyof typeof Ionicons.glyphMap> = {
   Notes: "document-text-outline",
   PYQ: "clipboard-outline",
   Slides: "easel-outline",
+  Assignment: "create-outline",
 };
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -114,6 +127,37 @@ const ResourceRow = memo(function ResourceRow({
   );
 });
 
+// One folder in the browser — a subject, a type (Notes / Slides /
+// Assignments / Papers) or a year. Same card shape at every level so
+// drilling down feels like one consistent thing rather than three screens.
+const FolderCard = memo(function FolderCard({
+  folder,
+  icon,
+  color,
+  onPress,
+}: {
+  folder: Folder;
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.itemCard} onPress={onPress} activeOpacity={0.7}>
+      <View style={[styles.iconWrap, { backgroundColor: color + "20" }]}>
+        <Ionicons name={icon} size={18} color={color} />
+      </View>
+      <View style={styles.itemInfo}>
+        <Text style={styles.itemTitle}>{folder.label}</Text>
+        <Text style={[styles.folderMeta, folder.count === 0 && styles.folderMetaEmpty]}>
+          {folder.sublabel ? `${folder.sublabel} · ` : ""}
+          {countLabel(folder.count)}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+    </TouchableOpacity>
+  );
+});
+
 export default function ResourcesScreen() {
   const { profile, previewRole } = useAuth();
   const effectiveRole = previewRole ?? profile?.role;
@@ -137,7 +181,7 @@ export default function ResourcesScreen() {
       effectiveRole !== "faculty" && profile?.branch && profile?.admissionYear
         ? {
             branch: profile.branch,
-            semester: getCurrentSemester(profile.admissionYear),
+            semester: getCurrentSemester(profile.admissionYear, undefined, profile.program),
             section: profile.section ?? null,
           }
         : undefined;
@@ -162,7 +206,7 @@ export default function ResourcesScreen() {
       setCurriculumLoading(false);
       return;
     }
-    const semester = getCurrentSemester(profile.admissionYear);
+    const semester = getCurrentSemester(profile.admissionYear, undefined, profile.program);
     const unsubscribe = subscribeToCurriculum(
       profile.branch,
       semester,
@@ -175,7 +219,7 @@ export default function ResourcesScreen() {
   }, [profile?.branch, profile?.admissionYear]);
 
   const openLink = useCallback((url: string) => {
-    Linking.openURL(url).catch(() => {});
+    openSafeUrl(url).catch(() => {});
   }, []);
 
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
@@ -201,7 +245,9 @@ export default function ResourcesScreen() {
       }
       const extMatch = item.fileUrl.match(/\.([a-zA-Z0-9]{2,5})(?:\?|$)/);
       const ext = extMatch ? `.${extMatch[1]}` : "";
-      const safeName = item.title.replace(/[^a-zA-Z0-9 _-]/g, "").trim() || "resource";
+      // No spaces in the file name — Android stores them encoded and reading
+      // the file back later failed with "NoSuchFileException".
+      const safeName = item.title.replace(/[^a-zA-Z0-9 _-]/g, "").trim().replace(/\s+/g, "_") || "resource";
       const destination = new File(Paths.document, `${safeName}${ext}`);
       const downloaded = await File.downloadFileAsync(item.fileUrl, destination, {
         idempotent: true, // overwrite rather than fail if downloaded before
@@ -248,6 +294,55 @@ export default function ResourcesScreen() {
     );
   }, []);
 
+  // ---- Folder navigation --------------------------------------------
+  // Faculty see the whole library; students only their own branch +
+  // semester (already scoped by the subscription above, filtered again
+  // here as a safety net against a stale profile).
+  const mode = effectiveRole === "faculty" ? "faculty" : "student";
+  const studentBranch = profile?.branch ?? null;
+  const studentSemester = profile?.admissionYear
+    ? getCurrentSemester(profile.admissionYear, undefined, profile.program)
+    : null;
+
+  const groups = useMemo(() => {
+    if (mode === "faculty") return groupBySubject(resources, [], "faculty");
+    if (!studentBranch || studentSemester === null) return [];
+    const mine = resources.filter(
+      (r) => r.branch === studentBranch && r.semester === studentSemester,
+    );
+    return groupBySubject(mine, semesterSubjects, "student");
+  }, [mode, resources, semesterSubjects, studentBranch, studentSemester]);
+
+  const [path, setPath] = useState<FolderPath>(ROOT_PATH);
+  // What to actually show. If the requested folder has since emptied out
+  // or vanished, this quietly falls back to the nearest one that exists.
+  const loc = useMemo(() => describeLocation(path, groups, mode), [path, groups, mode]);
+
+  // Android's hardware back button steps up one folder instead of leaving
+  // the whole screen — but ONLY while this screen is focused, otherwise
+  // this listener would swallow back presses on every other screen.
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+        if (loc.parent) {
+          setPath(loc.parent);
+          return true;
+        }
+        return false;
+      });
+      return () => subscription.remove();
+    }, [loc.parent]),
+  );
+
+  const openFolder = useCallback(
+    (folder: Folder) => {
+      if (loc.level === "subjects") setPath({ subject: folder.key, type: null, year: null });
+      else if (loc.level === "types") setPath({ ...loc.path, type: folder.key as ResourceType, year: null });
+      else if (loc.level === "years") setPath({ ...loc.path, year: folder.key });
+    },
+    [loc.level, loc.path],
+  );
+
   if (loading || curriculumLoading) {
     return (
       <LinearGradient
@@ -267,70 +362,7 @@ export default function ResourcesScreen() {
   // subject names appear in the data — same as before. This is the one
   // truly unbounded list on this screen (whole college's resource library,
   // forever), so it's the one worth virtualizing.
-  if (effectiveRole === "faculty") {
-    const groupedBySubject = resources.reduce<Record<string, Resource[]>>(
-      (acc, item) => {
-        if (!acc[item.subject]) acc[item.subject] = [];
-        acc[item.subject].push(item);
-        return acc;
-      },
-      {},
-    );
-    const sections = Object.entries(groupedBySubject).map(
-      ([subject, items]) => ({ title: subject, data: items }),
-    );
-
-    return (
-      <LinearGradient
-        colors={[colors.gradientStart, colors.gradientEnd]}
-        style={{ flex: 1 }}
-      >
-        <SafeAreaView style={styles.container} edges={["top"]}>
-          <ScreenHeader
-            title="Resources"
-            subtitle="Everything posted, across all subjects"
-            actionIcon="download-outline"
-            onAction={() => navigation.navigate("MyDownloads")}
-          />
-          <SectionList
-            sections={sections}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.list}
-            showsVerticalScrollIndicator={false}
-            stickySectionHeadersEnabled={false}
-            windowSize={7}
-            removeClippedSubviews
-            ListEmptyComponent={
-              <Text style={styles.emptyText}>No resources uploaded yet.</Text>
-            }
-            renderSectionHeader={({ section }) => (
-              <Text style={styles.subjectName}>{section.title}</Text>
-            )}
-            renderItem={({ item }) => (
-              <ResourceRow
-                item={item}
-                canDelete={profile?.uid === item.uploadedBy}
-                downloading={downloadingIds.has(item.id)}
-                onOpen={openLink}
-                onDownload={handleDownload}
-                onDelete={handleDelete}
-              />
-            )}
-          />
-          <TouchableOpacity
-            style={styles.fab}
-            onPress={() => navigation.navigate("UploadResource")}
-          >
-            <Ionicons name="add" size={28} color={colors.surface} />
-          </TouchableOpacity>
-        </SafeAreaView>
-      </LinearGradient>
-    );
-  }
-
-  const hasAcademicInfo = profile?.branch && profile?.admissionYear;
-
-  if (!hasAcademicInfo) {
+  if (mode === "student" && !(profile?.branch && profile?.admissionYear)) {
     return (
       <LinearGradient
         colors={[colors.gradientStart, colors.gradientEnd]}
@@ -347,65 +379,30 @@ export default function ResourcesScreen() {
     );
   }
 
-  const branch = profile.branch!;
-  const semester = getCurrentSemester(profile.admissionYear!);
+  const subtitle =
+    mode === "faculty"
+      ? "Everything posted, across all subjects"
+      : profile?.section
+        ? `${studentBranch} · Semester ${studentSemester} · Section ${profile.section}`
+        : `${studentBranch} · Semester ${studentSemester}`;
 
-  // Bounded by curriculum size (a handful of subjects per semester) with a
-  // realistically small number of files per subject, so this list was never
-  // at real risk of lag — converted anyway for consistency with the faculty
-  // view above and because SectionList costs nothing extra here.
-  //
-  // Each subject becomes up to TWO sections rather than one flat list:
-  // Notes/Slides (newest first, same as before), and — only when at least
-  // one PYQ exists for this subject — a separate "Previous Year Papers"
-  // section sorted by examYear descending. Mixing every type into one
-  // undated pile was the actual complaint: a student hunting for "the
-  // 2023 DBMS paper" had to scan past every Notes/Slides upload plus every
-  // other year's PYQ in whatever order they happened to be created in.
-  const studentSections = semesterSubjects.flatMap((subject) => {
-    // Matching by name, case-insensitive, since faculty type the subject as
-    // free text when uploading — not by code.
-    const subjectResources = resources.filter(
-      (r) =>
-        r.branch === branch &&
-        r.semester === semester &&
-        r.subject.trim().toLowerCase() === subject.name.trim().toLowerCase(),
-    );
-    const materials = subjectResources.filter((r) => r.type !== "PYQ");
-    const pyqs = [...subjectResources.filter((r) => r.type === "PYQ")].sort(
-      (a, b) => (b.examYear ?? 0) - (a.examYear ?? 0),
-    );
-
-    const sections = [
-      { title: subject.name, code: subject.code, data: materials, isPyqSection: false },
-    ];
-    if (pyqs.length > 0) {
-      sections.push({
-        title: subject.name,
-        code: "Previous Year Papers",
-        data: pyqs,
-        isPyqSection: true,
-      });
+  // Icon + colour per folder level. Subjects are plain folders; type
+  // folders reuse the type's own icon/colour; year folders take their
+  // parent type's colour so the trail reads as one thread.
+  const folderStyle = (folder: Folder): { icon: keyof typeof Ionicons.glyphMap; color: string } => {
+    if (loc.level === "subjects") return { icon: "folder-outline", color: colors.primary };
+    if (loc.level === "types") {
+      const type = folder.key as ResourceType;
+      return { icon: typeIcons[type], color: typeColors[type] };
     }
-    return sections;
-  });
+    const type = loc.path.type as ResourceType;
+    return { icon: "calendar-outline", color: typeColors[type] };
+  };
 
-  // A resource whose `subject` text doesn't match any curriculum subject
-  // for this semester — most often something auto-published from the
-  // faculty email pipeline, where the subject line comes from free text
-  // (an email subject, or nothing at all) rather than a curriculum pick —
-  // used to simply vanish here: correctly branch/semester-scoped, but
-  // silently excluded from every section above since none of them claimed
-  // it. Surfacing it under "Other" means a resource is never invisible
-  // just because its subject text doesn't line up with the curriculum.
-  const matchedIds = new Set(studentSections.flatMap((s) => s.data.map((r) => r.id)));
-  const unmatched = resources.filter(
-    (r) => r.branch === branch && r.semester === semester && !matchedIds.has(r.id),
-  );
-  const allSections =
-    unmatched.length > 0
-      ? [...studentSections, { title: "Other", code: "", data: unmatched, isPyqSection: false }]
-      : studentSections;
+  const emptyText =
+    loc.emptyMessage ??
+    (mode === "faculty" ? "No resources uploaded yet." : "No curriculum data for this semester yet.");
+  const listKey = [loc.path.subject, loc.path.type, loc.path.year].join("|");
 
   return (
     <LinearGradient
@@ -415,11 +412,7 @@ export default function ResourcesScreen() {
       <SafeAreaView style={styles.container} edges={["top"]}>
         <ScreenHeader
           title="Resources"
-          subtitle={
-            profile?.section
-              ? `${branch} · Semester ${semester} · Section ${profile.section}`
-              : `${branch} · Semester ${semester}`
-          }
+          subtitle={subtitle}
           actionIcon="download-outline"
           onAction={() => navigation.navigate("MyDownloads")}
         />
@@ -427,45 +420,74 @@ export default function ResourcesScreen() {
           <Text style={styles.errorText}>Couldn't load resources: {loadError}</Text>
         )}
 
-        <SectionList
-          sections={allSections}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          showsVerticalScrollIndicator={false}
-          stickySectionHeadersEnabled={false}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>
-              No curriculum data for this semester yet.
+        {loc.parent && (
+          <TouchableOpacity
+            style={styles.crumbBar}
+            onPress={() => setPath(loc.parent!)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="chevron-back" size={18} color={colors.primary} />
+            <Text style={styles.crumbText} numberOfLines={1}>
+              {loc.crumbs.join("  ›  ")}
             </Text>
-          }
-          renderSectionHeader={({ section }) => (
-            <View>
-              {!section.isPyqSection && (
-                <Text style={styles.subjectName}>{section.title}</Text>
-              )}
-              <Text style={section.isPyqSection ? styles.pyqSectionLabel : styles.subjectCode}>
-                {section.code}
-              </Text>
-            </View>
-          )}
-          renderSectionFooter={({ section }) =>
-            section.data.length === 0 ? (
-              <Text style={styles.emptySubjectText}>
-                No materials posted yet.
-              </Text>
-            ) : null
-          }
-          renderItem={({ item }) => (
-            <ResourceRow
-              item={item}
-              canDelete={profile?.uid === item.uploadedBy}
-              downloading={downloadingIds.has(item.id)}
-              onOpen={openLink}
-              onDownload={handleDownload}
-              onDelete={handleDelete}
-            />
-          )}
-        />
+          </TouchableOpacity>
+        )}
+
+        {/* key = the current path, so opening a folder always starts at
+            the top instead of inheriting the previous list's scroll. */}
+        {loc.level === "files" ? (
+          <FlatList
+            key={listKey}
+            data={loc.files}
+            keyExtractor={(item) => item.id}
+            style={styles.listContainer}
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={false}
+            windowSize={7}
+            removeClippedSubviews
+            ListEmptyComponent={<Text style={styles.emptyText}>No files here.</Text>}
+            renderItem={({ item }) => (
+              <ResourceRow
+                item={item}
+                canDelete={profile?.uid === item.uploadedBy}
+                downloading={downloadingIds.has(item.id)}
+                onOpen={openLink}
+                onDownload={handleDownload}
+                onDelete={handleDelete}
+              />
+            )}
+          />
+        ) : (
+          <FlatList
+            key={listKey}
+            data={loc.folders}
+            keyExtractor={(folder) => folder.key}
+            style={styles.listContainer}
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={<Text style={styles.emptyText}>{emptyText}</Text>}
+            renderItem={({ item }) => {
+              const { icon, color } = folderStyle(item);
+              return (
+                <FolderCard
+                  folder={item}
+                  icon={icon}
+                  color={color}
+                  onPress={() => openFolder(item)}
+                />
+              );
+            }}
+          />
+        )}
+
+        {mode === "faculty" && (
+          <TouchableOpacity
+            style={styles.fab}
+            onPress={() => navigation.navigate("UploadResource")}
+          >
+            <Ionicons name="add" size={28} color={colors.surface} />
+          </TouchableOpacity>
+        )}
       </SafeAreaView>
     </LinearGradient>
   );
@@ -480,6 +502,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.md,
   },
+  listContainer: { flex: 1 },
   list: { paddingBottom: spacing.xl },
   emptyText: {
     ...typography.body,
@@ -535,6 +558,21 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   itemType: { ...typography.caption, fontWeight: "700", marginTop: 2 },
+  folderMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  folderMetaEmpty: { fontStyle: "italic" },
+  crumbBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  crumbText: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: "700",
+    flex: 1,
+  },
   fab: {
     position: "absolute",
     right: spacing.md,
