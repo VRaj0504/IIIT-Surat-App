@@ -20,6 +20,7 @@ import { subscribeToCurriculum, CurriculumSubject } from "../firebase/curriculum
 import { getClassRoster, RosterStudent } from "../firebase/gradesService";
 import { markAttendance, getExistingSession } from "../firebase/attendanceService";
 import LoadingSpinner from "../components/LoadingSpinner";
+import DateField, { todayIso } from "../components/DateField";
 
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
@@ -356,15 +357,7 @@ export default function MarkAttendanceScreen() {
         {selectedSubject && (
           <>
             <Text style={styles.label}>Date</Text>
-            <TextInput
-              style={styles.input}
-              value={date}
-              onChangeText={setDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.textSecondary}
-              autoCapitalize="none"
-              keyboardType="numbers-and-punctuation"
-            />
+            <DateField value={date} onChange={setDate} max={todayIso()} placeholder="Class date" />
             {!!dateError && <Text style={[styles.emptyNote, { color: colors.danger, paddingHorizontal: 0 }]}>{dateError}</Text>}
           </>
         )}

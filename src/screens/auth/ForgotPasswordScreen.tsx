@@ -1,193 +1,103 @@
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  ActivityIndicator,
-} from "react-native";
+import { View, Text, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
+import Animated, { FadeIn } from "react-native-reanimated";
+import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
-import {
-  colors,
-  spacing,
-  radius,
-  typography,
-  clayShadowSoft,
-} from "../../theme/theme";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth, isAllowedEmailDomain, isReviewerEmail, ALLOWED_EMAIL_DOMAIN } from "../../context/AuthContext";
+import { ErrorBox } from "./authUi";
+import { toInstituteEmail } from "./LoginScreen";
+import { GlassScreen, Glass, Reveal, Heading, HintRow, GlassInput, PrimaryButton, RoundBack, g, TEXT, MUTED, EASE } from "./glassUi";
 
-type Props = {
-  onNavigateToLogin: () => void;
-};
+type Props = { onNavigateToLogin: () => void };
 
-function friendlyError(code: string): string {
-  switch (code) {
-    case "auth/invalid-email":
-      return "That email address looks invalid.";
-    case "auth/too-many-requests":
-      return "Too many attempts. Try again in a bit.";
-    default:
-      return "Something went wrong. Please try again.";
-  }
-}
-
+// Sends Firebase's password-reset email to the institute inbox.
 export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
   const { sendPasswordReset } = useAuth();
-  const [email, setEmail] = useState("");
+  const [id, setId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
+  const [sentTo, setSentTo] = useState<string | null>(null);
 
-  const handleSend = async () => {
+  const send = async () => {
     setError(null);
-    if (!email.trim()) {
-      setError("Enter your email.");
-      return;
+    if (!id.trim()) return setError("Enter your institute ID.");
+    const email = toInstituteEmail(id);
+    if (!isAllowedEmailDomain(email) && !isReviewerEmail(email)) {
+      return setError(`Use your institute account (${ALLOWED_EMAIL_DOMAIN}).`);
     }
     setLoading(true);
     try {
-      await sendPasswordReset(email.trim());
-      // Deliberately shown regardless of whether the address exists — this
-      // is Firebase's own default behavior (it doesn't error on unknown
-      // emails), and matching it here avoids leaking which emails have
-      // accounts.
-      setSent(true);
+      await sendPasswordReset(email);
+      // Shown whether or not the address has an account, so this can't be
+      // used to find out who is registered.
+      setSentTo(email);
     } catch (e: any) {
-      setError(friendlyError(e?.code ?? ""));
+      setError(e?.code === "auth/network-request-failed" ? "No internet connection right now — try again." : "Couldn't send the email. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <LinearGradient
-      colors={[colors.gradientStart, colors.gradientEnd]}
-      style={{ flex: 1 }}
-    >
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1 }}
-        >
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            <Text style={styles.brand}>CollegeGo</Text>
-            <Text style={styles.title}>Reset your password</Text>
-            <Text style={styles.subtitle}>
-              Enter your account email and we'll send a reset link.
-            </Text>
+    <GlassScreen>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+        <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1 }}>
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={g.scroll} showsVerticalScrollIndicator={false}>
+            <View style={{ flex: 1, minHeight: 36 }} />
 
-            {error && <Text style={styles.error}>{error}</Text>}
-            {sent && (
-              <Text style={styles.success}>
-                If that email has an account, a reset link is on its way. Check
-                your inbox.
-              </Text>
+            <Reveal delay={100} style={{ gap: 18 }}>
+              <Heading icon="key-outline" title={"Reset\npassword"} subtitle="We'll email a reset link to your institute inbox." />
+              <HintRow text="Remembered it?" link="Log in" onPress={onNavigateToLogin} />
+            </Reveal>
+
+            {error && (
+              <Animated.View entering={FadeIn.duration(300)}>
+                <ErrorBox message={error} />
+              </Animated.View>
             )}
 
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="you@iiitsurat.ac.in"
-              placeholderTextColor={colors.textSecondary}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              value={email}
-              onChangeText={setEmail}
-            />
-
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={handleSend}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color={colors.onPrimary} />
+            <Reveal delay={250}>
+              {sentTo ? (
+                <Animated.View entering={FadeIn.duration(400).easing(EASE)}>
+                  <Glass style={[g.panel, { alignItems: "center", paddingVertical: 24 }]}>
+                    <Ionicons name="mail-open-outline" size={36} color={TEXT} />
+                    <Text style={{ fontSize: 18, fontWeight: "800", color: TEXT }}>Check your inbox</Text>
+                    <Text style={{ fontSize: 14, color: MUTED, textAlign: "center", lineHeight: 20 }}>
+                      If {sentTo} has a password account, a reset link is on its way. Check Spam too, then log in with the new password.
+                    </Text>
+                    <View style={{ alignSelf: "stretch", marginTop: 6 }}>
+                      <PrimaryButton label="Back to log in" onPress={onNavigateToLogin} />
+                    </View>
+                  </Glass>
+                </Animated.View>
               ) : (
-                <Text style={styles.primaryBtnText}>Send reset link</Text>
+                <Glass style={g.panel}>
+                  <GlassInput
+                    icon="at-outline"
+                    placeholder="Institute ID"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                    textContentType="username"
+                    value={id}
+                    onChangeText={setId}
+                    onSubmitEditing={send}
+                    suffix={id.includes("@") ? undefined : ALLOWED_EMAIL_DOMAIN}
+                  />
+                  <PrimaryButton label="Send reset link" onPress={send} loading={loading} />
+                  <Text style={{ fontSize: 12.5, color: MUTED, textAlign: "center", lineHeight: 18 }}>
+                    Signed up with Google? You don't have a password — just use Continue with Google.
+                  </Text>
+                </Glass>
               )}
-            </TouchableOpacity>
+            </Reveal>
 
-            <TouchableOpacity
-              onPress={onNavigateToLogin}
-              style={styles.linkBtn}
-            >
-              <Text style={styles.linkText}>
-                Back to <Text style={styles.linkTextBold}>log in</Text>
-              </Text>
-            </TouchableOpacity>
+            <Reveal delay={400}>
+              <RoundBack onPress={onNavigateToLogin} />
+            </Reveal>
           </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </LinearGradient>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
+    </GlassScreen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scrollContent: { flexGrow: 1, padding: spacing.lg, justifyContent: "center" },
-  brand: {
-    ...typography.caption,
-    color: colors.primary,
-    fontWeight: "700",
-    letterSpacing: 1,
-    marginBottom: spacing.xs,
-  },
-  title: { ...typography.h1, color: colors.textPrimary },
-  subtitle: {
-    ...typography.body,
-    color: colors.textSecondary,
-    marginBottom: spacing.lg,
-  },
-  error: {
-    color: colors.danger,
-    backgroundColor: colors.dangerBg,
-    padding: spacing.sm,
-    borderRadius: radius.sm,
-    marginBottom: spacing.md,
-    ...typography.caption,
-  },
-  success: {
-    color: colors.success,
-    backgroundColor: colors.successBg,
-    padding: spacing.sm,
-    borderRadius: radius.sm,
-    marginBottom: spacing.md,
-    ...typography.caption,
-  },
-  label: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-    marginTop: spacing.sm,
-  },
-  input: {
-    backgroundColor: colors.surface,
-    ...clayShadowSoft,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    color: colors.textPrimary,
-    ...typography.body,
-  },
-  primaryBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    alignItems: "center",
-    marginTop: spacing.lg,
-  },
-  primaryBtnText: { color: colors.onPrimary, fontWeight: "700", fontSize: 16 },
-  linkBtn: { marginTop: spacing.lg, alignItems: "center" },
-  linkText: { ...typography.body, color: colors.textSecondary },
-  linkTextBold: { color: colors.primary, fontWeight: "700" },
-});

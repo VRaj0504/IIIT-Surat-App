@@ -11,6 +11,7 @@ import {
   updateCounsellingRequest,
 } from "../firebase/counsellingService";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { KeyboardAwareFlatList } from "../components/KeyboardAware";
 
 function RequestCard({
   item,
@@ -131,7 +132,7 @@ export default function CounsellingQueueScreen() {
         ) : requests.length === 0 ? (
           <Text style={styles.emptyText}>Nothing here right now.</Text>
         ) : (
-          <FlatList
+          <KeyboardAwareFlatList
             data={requests}
             keyExtractor={(item) => item.id}
             style={{ flex: 1 }}

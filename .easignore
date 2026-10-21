@@ -60,3 +60,6 @@ build.log
 
 scripts/serviceAccountKey.json.env
 .firebase/
+__MACOSX/
+._*
+.DS_Store

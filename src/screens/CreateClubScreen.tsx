@@ -23,6 +23,7 @@ import {
   clayShadowSoft,
 } from "../theme/theme";
 import { createClub, subscribeToClubs, Club } from "../firebase/clubsService";
+import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -82,10 +83,10 @@ export default function CreateClubScreen() {
     >
       <SafeAreaView style={styles.container} edges={["top"]}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior={undefined}
           style={{ flex: 1 }}
         >
-          <ScrollView
+          <KeyboardAwareScrollView
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
@@ -206,7 +207,7 @@ export default function CreateClubScreen() {
                 <Text style={styles.primaryBtnText}>Create Club</Text>
               )}
             </TouchableOpacity>
-          </ScrollView>
+          </KeyboardAwareScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </LinearGradient>

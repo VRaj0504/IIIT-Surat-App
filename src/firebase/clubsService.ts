@@ -13,6 +13,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from './firestore';
+import { persisted } from './liveCache';
 
 export type Club = {
   id: string;
@@ -156,13 +157,13 @@ export async function claimPendingClubLead(uid: string, email: string): Promise<
 // Live subscription to every club, alphabetical by name.
 export function subscribeToClubs(onUpdate: (clubs: Club[]) => void): () => void {
   const q = query(collection(db, CLUBS_COLLECTION), orderBy('name'));
-  return onSnapshot(q, (snapshot) => {
+  return persisted('clubs', (onUpdate) => onSnapshot(q, (snapshot) => {
     const clubs: Club[] = snapshot.docs.map((docSnap) => ({
       id: docSnap.id,
       ...(docSnap.data() as Omit<Club, 'id'>),
     }));
     onUpdate(clubs);
-  });
+  }), onUpdate);
 }
 
 // The club's lead posts a new event.
@@ -220,13 +221,13 @@ export function subscribeToClubEvents(clubId: string, onUpdate: (events: ClubEve
     where('dateTime', '>=', Timestamp.fromDate(new Date())),
     orderBy('dateTime', 'asc')
   );
-  return onSnapshot(q, (snapshot) => {
+  return persisted(`clubev:${clubId}`, (onUpdate) => onSnapshot(q, (snapshot) => {
     const events: ClubEvent[] = snapshot.docs.map((docSnap) => ({
       id: docSnap.id,
       ...(docSnap.data() as Omit<ClubEvent, 'id'>),
     }));
     onUpdate(events);
-  });
+  }), onUpdate);
 }
 
 // Live subscription to every upcoming event across all clubs — the global feed.
@@ -237,11 +238,11 @@ export function subscribeToAllUpcomingEvents(onUpdate: (events: ClubEvent[]) => 
     where('dateTime', '>=', now),
     orderBy('dateTime', 'asc')
   );
-  return onSnapshot(q, (snapshot) => {
+  return persisted('events:upcoming', (onUpdate) => onSnapshot(q, (snapshot) => {
     const events: ClubEvent[] = snapshot.docs.map((docSnap) => ({
       id: docSnap.id,
       ...(docSnap.data() as Omit<ClubEvent, 'id'>),
     }));
     onUpdate(events);
-  });
+  }), onUpdate);
 }

@@ -6,6 +6,7 @@ import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/th
 import { useAuth } from "../context/AuthContext";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { subscribeToAllComplaints, resolveComplaint, Complaint } from "../firebase/complaintService";
+import { KeyboardAwareFlatList } from "../components/KeyboardAware";
 
 const statusColors: Record<Complaint["status"], string> = {
   pending: colors.warning,
@@ -140,7 +141,7 @@ export default function ComplaintsScreen() {
             {typeFilter === "all" ? "Nothing submitted yet." : `No ${typeFilter}s submitted yet.`}
           </Text>
         ) : (
-          <FlatList
+          <KeyboardAwareFlatList
             data={[...pending, ...resolved]}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}

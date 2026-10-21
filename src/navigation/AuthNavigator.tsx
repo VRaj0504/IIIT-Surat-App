@@ -4,16 +4,12 @@ import LoginScreen from '../screens/auth/LoginScreen';
 import SignUpScreen from '../screens/auth/SignUpScreen';
 import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
 
+// Plain conditional render (not React Navigation), so give it a gentle
+// crossfade between the three sign-in screens.
 export default function AuthNavigator() {
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
-
-  // Previously an instant, jarring swap between these three screens —
-  // this is a plain conditional render, not React Navigation, so it
-  // never got the same transition treatment as the rest of the app. A
-  // simple crossfade here matters disproportionately since login/signup
-  // is the very first thing any new user experiences.
   return (
-    <Animated.View key={mode} entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)} style={{ flex: 1 }}>
+    <Animated.View key={mode} entering={FadeIn.duration(260)} exiting={FadeOut.duration(160)} style={{ flex: 1 }}>
       {mode === 'signup' ? (
         <SignUpScreen onNavigateToLogin={() => setMode('login')} />
       ) : mode === 'forgot' ? (

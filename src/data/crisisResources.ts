@@ -2,12 +2,10 @@
 // gated behind the request form. Kept in their own tiny file so
 // there's exactly one obvious place to fix a number.
 //
-// !! PLACEHOLDER !! CAMPUS_CONTACT below is not real yet — replace name
-// and phone with the actual IIIT Surat Wellness Centre / warden-on-duty
-// contact before this ships. Everything else here (KIRAN, iCall) is a
-// real, national, government/established helpline as of this writing —
-// double-check both numbers are still current before relying on them,
-// since helpline numbers do occasionally change.
+// Tele-MANAS (14416, also 1800-891-4416) is the Government of India's
+// current 24x7 national mental-health helpline; it replaced the older
+// KIRAN number in this list. iCall is run by TISS. Re-check the numbers
+// once a year — helpline numbers do change.
 export type CrisisResource = {
   name: string;
   description: string;
@@ -21,9 +19,9 @@ export const NATIONAL_HELPLINES: CrisisResource[] = [
     phone: "108",
   },
   {
-    name: "KIRAN Mental Health Helpline",
-    description: "Govt. of India, toll-free, 24/7, multilingual",
-    phone: "18005990019",
+    name: "Tele-MANAS Mental Health Helpline",
+    description: "Govt. of India, toll-free, 24/7, about 20 languages",
+    phone: "14416",
   },
   {
     name: "iCall (TISS)",

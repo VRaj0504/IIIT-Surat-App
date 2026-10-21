@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import LoadingSpinner from "../components/LoadingSpinner";
 import {
   View,
   Text,
@@ -33,6 +34,8 @@ import {
   MedicalLeaveConfig,
   MedicalStage,
 } from "../firebase/leaveService";
+import { KeyboardAwareScrollView } from "../components/KeyboardAware";
+import DateField from "../components/DateField";
 
 const statusColors: Record<LeaveApplication["status"], string> = {
   pending: colors.warning,
@@ -320,8 +323,8 @@ export default function ApplyLeaveScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <KeyboardAvoidingView behavior={undefined} style={{ flex: 1 }}>
+        <KeyboardAwareScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           <Text style={styles.header}>Apply for Leave</Text>
 
           <Text style={styles.label}>Type</Text>
@@ -377,7 +380,7 @@ export default function ApplyLeaveScreen() {
             transparent
             onRequestClose={() => setPickerOpen(false)}
           >
-            <View style={styles.modalOverlay}>
+            <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
               <View style={styles.modalSheet}>
                 <View style={styles.modalHeader}>
                   <Text style={styles.modalTitle}>Select faculty</Text>
@@ -415,30 +418,21 @@ export default function ApplyLeaveScreen() {
                   )}
                 />
               </View>
-            </View>
+            </KeyboardAvoidingView>
           </Modal>
 
           <Text style={styles.label}>From</Text>
-          <TextInput
-            style={styles.input}
+          <DateField
             value={fromDate}
-            onChangeText={(text) => setFromDate(maskDateInput(text))}
-            placeholder="2026-09-15"
-            placeholderTextColor={colors.textSecondary}
-            keyboardType="number-pad"
-            maxLength={10}
+            onChange={(d) => {
+              setFromDate(d);
+              if (toDate && toDate < d) setToDate(d);
+            }}
+            placeholder="First day of leave"
           />
 
           <Text style={styles.label}>To</Text>
-          <TextInput
-            style={styles.input}
-            value={toDate}
-            onChangeText={(text) => setToDate(maskDateInput(text))}
-            placeholder="2026-09-17"
-            placeholderTextColor={colors.textSecondary}
-            keyboardType="number-pad"
-            maxLength={10}
-          />
+          <DateField value={toDate} onChange={setToDate} min={fromDate || undefined} placeholder="Last day of leave" />
 
           {type === "medical" && (
             <>
@@ -490,7 +484,7 @@ export default function ApplyLeaveScreen() {
 
           <Text style={styles.historyHeader}>Your Requests</Text>
           {historyLoading ? (
-            <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.md }} />
+            <LoadingSpinner style={{ marginTop: spacing.md }} />
           ) : myApplications.length === 0 ? (
             <Text style={styles.emptyText}>No leave requests yet.</Text>
           ) : (
@@ -521,7 +515,7 @@ export default function ApplyLeaveScreen() {
               </View>
             ))
           )}
-        </ScrollView>
+        </KeyboardAwareScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </LinearGradient>

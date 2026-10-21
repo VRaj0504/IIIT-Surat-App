@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },
   chipTextActive: { color: colors.onInk },
 
-  list: { paddingBottom: spacing.xl * 2, gap: 10 },
+  list: { paddingBottom: 110, gap: 10 },
   card: { backgroundColor: colors.surface, borderRadius: 22, padding: 16 },
   cardTop: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
   catIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },

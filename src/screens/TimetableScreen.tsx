@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
   dayTextActive: { color: colors.onPrimary },
   todayDot: { position: "absolute", bottom: 6, width: 5, height: 5, borderRadius: 3, backgroundColor: colors.accent },
 
-  list: { paddingBottom: spacing.xl * 2, gap: 8 },
+  list: { paddingBottom: 110, gap: 8 },
   row: { flexDirection: "row", alignItems: "stretch", gap: 10 },
   timeCol: { width: 62, fontSize: 12, fontWeight: "700", color: colors.textSecondary, paddingTop: 12 },
 

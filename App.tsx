@@ -6,12 +6,31 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import RootNavigator from './src/navigation/RootNavigator';
 import AuthNavigator from './src/navigation/AuthNavigator';
 import CompleteProfileScreen from './src/screens/auth/CompleteProfileScreen';
+import VerifyEmailScreen from './src/screens/auth/VerifyEmailScreen';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { colors, isDark } from './src/theme/theme';
 import WebShell from './src/components/WebShell';
 import { linking, formatDocumentTitle } from './src/navigation/linking';
 import LoadingSpinner from "./src/components/LoadingSpinner";
+import { PortalHost } from './src/components/Portal';
 import Constants from 'expo-constants';
+import * as SplashScreen from 'expo-splash-screen';
+
+// Keep the launch screen (logo) up until we know who is signed in, so a
+// returning user goes straight from the logo to Home — no loader in between.
+if (Platform.OS !== 'web') {
+  SplashScreen.preventAutoHideAsync().catch(() => {});
+  // A soft fade into the app. Expo Go can't do this (it only warns), so skip it there.
+  if (Constants.executionEnvironment !== 'storeClient') SplashScreen.setOptions({ duration: 220, fade: true });
+}
+let splashHidden = false;
+function hideSplash() {
+  if (splashHidden || Platform.OS === 'web') return;
+  splashHidden = true;
+  SplashScreen.hideAsync().catch(() => {});
+}
+// Safety net: never keep the logo up for more than a few seconds.
+setTimeout(hideSplash, 4000);
 
 const navigationRef = createNavigationContainerRef<any>();
 
@@ -32,9 +51,16 @@ const navTheme = {
 };
 
 function Gate() {
-  const { user, profile, initializing, profileLoading, profileLoadFailed, retryProfileLoad, logOut } = useAuth();
+  const { user, profile, initializing, profileLoading, profileLoadFailed, retryProfileLoad, logOut, needsEmailVerification } = useAuth();
 
-  if (initializing || (user && profileLoading)) {
+  const booting = initializing || (user && profileLoading);
+  // Hide the launch screen once the first real screen is ready. (A first
+  // sign-in that still has to fetch the profile shows the loader instead.)
+  React.useEffect(() => {
+    if (!initializing) hideSplash();
+  }, [initializing]);
+
+  if (booting) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
         <LoadingSpinner large label="Opening CollegeGo…" />
@@ -76,6 +102,8 @@ function Gate() {
 
   // Signed in (via Google) but no Firestore profile doc yet — this only
   // happens on a first-time Google sign-in.
+  // Created with email + password and not verified yet.
+  if (!profile && needsEmailVerification) return <VerifyEmailScreen />;
   if (!profile) return <CompleteProfileScreen />;
   return <RootNavigator/>;
 }
@@ -118,7 +146,9 @@ export default function App() {
             onReady={syncRoute}
             onStateChange={syncRoute}
           >
-            <Gate />
+            <PortalHost>
+              <Gate />
+            </PortalHost>
             <StatusBar style={isDark ? "light" : "dark"} />
           </NavigationContainer>
         </WebShell>

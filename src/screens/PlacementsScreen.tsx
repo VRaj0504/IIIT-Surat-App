@@ -25,7 +25,6 @@ import {
 
 export default function PlacementsScreen() {
   const openTnp = () => {
-    console.log("Button pressed!");
     Linking.openURL("https://tnp.iiitsurat.ac.in").catch(() => {});
   };
   return (

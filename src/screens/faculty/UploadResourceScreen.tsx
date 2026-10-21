@@ -27,6 +27,7 @@ import {
   subscribeToCurriculum,
   CurriculumSubject,
 } from "../../firebase/curriculumService";
+import { KeyboardAwareScrollView } from "../../components/KeyboardAware";
 
 const BRANCHES = ["CSE", "ECE", "MNC"] as const;
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
@@ -129,7 +130,7 @@ export default function UploadResourceScreen() {
       style={{ flex: 1 }}
     >
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <ScrollView contentContainerStyle={styles.content}>
+        <KeyboardAwareScrollView contentContainerStyle={styles.content}>
           <Text style={styles.title}>Upload Resource</Text>
 
           {/* --- File picker --- */}
@@ -313,7 +314,7 @@ export default function UploadResourceScreen() {
               <Text style={styles.uploadButtonText}>Upload</Text>
             )}
           </TouchableOpacity>
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </SafeAreaView>
     </LinearGradient>
   );

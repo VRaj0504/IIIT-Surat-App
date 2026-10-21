@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
 import { View, Text, StyleSheet, ViewStyle, StyleProp } from "react-native";
+import BrandMark, { BRAND, DOT_CENTER, DOT_RADIUS } from "./BrandMark";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -17,11 +18,11 @@ type Props = {
   style?: StyleProp<ViewStyle>;
   // Dot size for the "dots" variant (kept for older call sites).
   size?: number;
-  // "brand" (default): the IIIT Surat "IS" mark breathing inside a
-  // spinning arc. "dots": three pulsing dots, for tight spots.
+  // "brand" (default): the CollegeGo logo with a pinging "go" dot. "dots": three
+  // pulsing dots, for tight spots.
   variant?: "brand" | "dots";
   label?: string;
-  // Bigger mark + caption, for full-screen loading (app start).
+  // Bigger logo + caption, for full-screen loading.
   large?: boolean;
 };
 
@@ -67,36 +68,37 @@ function Dots({ size = 8, color = colors.primary }: { size?: number; color?: str
   );
 }
 
-// The app-wide loader: the "IS" mark gently breathing inside a spinning
-// arc — the same loader as the faculty web portal, so both feel like one
-// product. Only transform/opacity animate (UI thread, no re-renders).
+// The app-wide loader: the CollegeGo logo floating gently while its mint
+// "go" dot sends out a soft ping — like a live location dot. Only
+// transform/opacity animate (UI thread, no re-renders), so it stays smooth
+// even while the screen behind it is busy.
 export default function LoadingSpinner({ style, size, variant = "brand", label, large }: Props) {
-  const spin = useSharedValue(0);
-  const breathe = useSharedValue(0);
+  const t = useSharedValue(0);
 
   useEffect(() => {
     if (variant !== "brand") return;
-    spin.value = withRepeat(withTiming(1, { duration: 1100, easing: Easing.linear }), -1, false);
-    breathe.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 700, easing: Easing.inOut(Easing.quad) }),
-        withTiming(0, { duration: 700, easing: Easing.inOut(Easing.quad) }),
-      ),
-      -1,
-      false,
-    );
-    return () => {
-      cancelAnimation(spin);
-      cancelAnimation(breathe);
-    };
+    t.value = withRepeat(withTiming(1, { duration: 1400, easing: Easing.linear }), -1, false);
+    return () => cancelAnimation(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [variant]);
 
-  const ringStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.value * 360}deg` }] }));
-  const markStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 0.94 + breathe.value * 0.08 }],
-    opacity: 0.85 + breathe.value * 0.15,
-  }));
+  const w = large ? 64 : 40;
+  const dotR = DOT_RADIUS * w;
+  const dotX = DOT_CENTER.x * w;
+  const dotY = DOT_CENTER.y * w;
+
+  const markStyle = useAnimatedStyle(() => {
+    const p = Math.sin(t.value * Math.PI * 2); // -1 … 1, one slow float per cycle
+    return { transform: [{ translateY: -2.5 * p }] };
+  });
+  const pingStyle = useAnimatedStyle(() => {
+    const e = 1 - Math.pow(1 - t.value, 3); // ease-out
+    return { opacity: 0.75 * (1 - t.value), transform: [{ scale: 1 + e * 2.6 }] };
+  });
+  const dotStyle = useAnimatedStyle(() => {
+    const k = t.value < 0.15 ? t.value / 0.15 : 1 - (t.value - 0.15) / 0.85;
+    return { transform: [{ scale: 1 + 0.22 * k }] };
+  });
 
   if (variant === "dots") {
     return (
@@ -106,25 +108,18 @@ export default function LoadingSpinner({ style, size, variant = "brand", label, 
     );
   }
 
-  const box = large ? 84 : 52;
-  const mark = large ? 52 : 32;
-  const ring = { width: box, height: box, borderRadius: box / 2, borderWidth: large ? 4 : 3 };
+  const ring = { position: "absolute" as const, left: dotX - dotR, top: dotY - dotR, width: dotR * 2, height: dotR * 2, borderRadius: dotR };
 
   return (
     <View style={[styles.center, style]} accessibilityRole="progressbar" accessibilityLabel={label ?? "Loading"}>
-      <View style={{ width: box, height: box, alignItems: "center", justifyContent: "center" }}>
-        <View style={[styles.track, ring]} />
-        <Animated.View style={[styles.arc, ring, ringStyle]} />
-        <Animated.View style={[styles.mark, { width: mark, height: mark, borderRadius: mark * 0.28 }, markStyle]}>
-          <Text style={[styles.markText, { fontSize: mark * 0.4 }]}>CG</Text>
-        </Animated.View>
-      </View>
-      {(label || large) && <Text style={styles.label}>{label ?? "Loading…"}</Text>}
-      {large && (
-        <View style={{ marginTop: 10 }}>
-          <Dots size={6} color={colors.textSecondary} />
+      <Animated.View style={[{ width: w, height: w }, markStyle]}>
+        <View style={[styles.tileShadow, { width: w, height: w, borderRadius: w * 0.235 }]}>
+          <BrandMark size={w} dot={false} />
         </View>
-      )}
+        <Animated.View pointerEvents="none" style={[ring, styles.ping, pingStyle]} />
+        <Animated.View pointerEvents="none" style={[ring, styles.dot, dotStyle]} />
+      </Animated.View>
+      {(label || large) && <Text style={[styles.label, large && styles.labelLg]}>{label ?? "Loading…"}</Text>}
     </View>
   );
 }
@@ -132,14 +127,9 @@ export default function LoadingSpinner({ style, size, variant = "brand", label, 
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   row: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 7 },
-  track: { position: "absolute", borderColor: colors.badge.blue.bg },
-  arc: {
-    position: "absolute",
-    borderColor: "transparent",
-    borderTopColor: colors.primary,
-    borderRightColor: colors.primary,
-  },
-  mark: { backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
-  markText: { color: colors.onPrimary, fontWeight: "800", letterSpacing: 0.5 },
-  label: { marginTop: 14, fontSize: 13, fontWeight: "600", color: colors.textSecondary },
+  tileShadow: { shadowColor: BRAND.indigo, shadowOpacity: 0.28, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 5, backgroundColor: BRAND.indigo },
+  ping: { borderWidth: 2, borderColor: BRAND.mint, backgroundColor: "rgba(108,240,216,0.25)" },
+  dot: { backgroundColor: BRAND.mint },
+  label: { marginTop: 12, fontSize: 13, fontWeight: "600", color: colors.textSecondary, letterSpacing: 0.2 },
+  labelLg: { marginTop: 16, fontSize: 14 },
 });

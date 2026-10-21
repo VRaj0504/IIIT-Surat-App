@@ -1,5 +1,6 @@
 import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "./firestore";
+import { persisted } from "./liveCache";
 
 export type FacultyMember = {
   
@@ -49,6 +50,12 @@ export type FacultyMember = {
 
 
 export function subscribeToFacultyDirectory(
+  onUpdate: (faculty: FacultyMember[]) => void,
+): () => void {
+  return persisted("faculty:directory", liveFacultyDirectory, onUpdate);
+}
+
+function liveFacultyDirectory(
   onUpdate: (faculty: FacultyMember[]) => void,
 ): () => void {
   let fromUsers: FacultyMember[] = [];

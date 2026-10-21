@@ -36,8 +36,8 @@ export default function WebShell({ navigationRef, currentRoute, children }: Prop
           <Pressable style={[styles.brand, pointer]} onPress={() => signedIn && go("Home")}>
             <Image source={require("../../assets/icon.png")} style={styles.logo} />
             <View>
-              <Text style={styles.brandTitle}>IIIT Surat</Text>
-              <Text style={styles.brandSub}>Campus Portal</Text>
+              <Image source={require("../../assets/wordmark.png")} style={styles.wordmark} resizeMode="contain" accessibilityLabel="CollegeGo" />
+              <Text style={styles.brandSub}>IIIT Surat</Text>
             </View>
           </Pressable>
 
@@ -84,7 +84,7 @@ export default function WebShell({ navigationRef, currentRoute, children }: Prop
 
       <View style={styles.footer}>
         <Text style={styles.footerText}>
-          © {new Date().getFullYear()} IIIT Surat App ·{" "}
+          © {new Date().getFullYear()} CollegeGo ·{" "}
           <Text
             style={[styles.footerLink, pointer]}
             onPress={() => Linking.openURL("https://iiitsurat.ac.in").catch(() => {})}
@@ -117,6 +117,7 @@ const styles = StyleSheet.create({
   },
   brand: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   logo: { width: 38, height: 38, borderRadius: 10 },
+  wordmark: { width: 90, height: 20 },
   brandTitle: { ...typography.h3, color: colors.primary, lineHeight: 20 },
   brandSub: { ...typography.caption, color: colors.textSecondary },
   nav: { flexDirection: "row", gap: spacing.xs, flex: 1, justifyContent: "center" },

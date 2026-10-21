@@ -13,6 +13,7 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { db } from './firestore';
+import { persisted } from './liveCache';
 
 export type Notice = {
   id: string;
@@ -131,7 +132,7 @@ export function subscribeToNotices(
           orderBy('createdAt', 'desc'),
         )
       : query(collection(db, NOTICES_COLLECTION), orderBy('createdAt', 'desc'), fsLimit(NOTICE_STAFF_VIEW_LIMIT));
-  return onSnapshot(q, (snapshot) => {
+  return persisted(`notices:${viewer === undefined ? 'staff' : JSON.stringify(viewer)}`, (onUpdate) => onSnapshot(q, (snapshot) => {
     const notices: Notice[] = snapshot.docs
       .map((docSnap) => ({
         id: docSnap.id,
@@ -146,5 +147,5 @@ export function subscribeToNotices(
         return true;
       });
     onUpdate(notices);
-  });
+  }), onUpdate);
 }

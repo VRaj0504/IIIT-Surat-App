@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, Pressable, Alert } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, Pressable, Alert, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, isDark } from "../../theme/theme";
 import { ALLOWED_EMAIL_DOMAIN } from "../../context/AuthContext";
@@ -7,15 +7,11 @@ import { ALLOWED_EMAIL_DOMAIN } from "../../context/AuthContext";
 // Shared pieces of the sign-in screens (UI canvas: "Login · light" and
 // "Wrong account").
 
+// Calm, light header: the app icon, a title and one line under it.
 export function AuthHero({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <View style={styles.hero}>
-      <View style={styles.brandRow}>
-        <View style={styles.mark}>
-          <Text style={styles.markText}>CG</Text>
-        </View>
-        <Text style={styles.brand}>CollegeGo</Text>
-      </View>
+      <Image source={require("../../../assets/icon.png")} style={styles.heroIcon} accessibilityIgnoresInvertColors />
       <Text style={styles.heroTitle}>{title}</Text>
       <Text style={styles.heroSub}>{subtitle}</Text>
     </View>
@@ -179,28 +175,10 @@ export const authStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  hero: {
-    backgroundColor: colors.heroBg,
-    borderBottomLeftRadius: 36,
-    borderBottomRightRadius: 36,
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 64,
-    gap: 12,
-  },
-  brandRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  mark: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: isDark ? colors.primary : "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  markText: { color: isDark ? colors.onPrimary : colors.heroBg, fontWeight: "800", fontSize: 16, letterSpacing: -0.5 },
-  brand: { color: colors.heroText, fontSize: 16, fontWeight: "800", letterSpacing: 0.3 },
-  heroTitle: { color: colors.heroText, fontSize: 30, fontWeight: "800", letterSpacing: -0.8, lineHeight: 34 },
-  heroSub: { color: colors.heroMuted, fontSize: 14, fontWeight: "500" },
+  hero: { alignItems: "center", paddingHorizontal: 28, paddingTop: 36, gap: 10 },
+  heroIcon: { width: 76, height: 76, borderRadius: 22, marginBottom: 8 },
+  heroTitle: { color: colors.textPrimary, fontSize: 26, fontWeight: "800", letterSpacing: -0.6, textAlign: "center" },
+  heroSub: { color: colors.textSecondary, fontSize: 15, fontWeight: "500", lineHeight: 21, textAlign: "center" },
 
   strip: {
     marginHorizontal: 24,

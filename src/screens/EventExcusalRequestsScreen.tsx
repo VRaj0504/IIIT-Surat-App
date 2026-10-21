@@ -6,6 +6,7 @@ import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/th
 import { useAuth } from "../context/AuthContext";
 import { subscribeToAssignedExcusals, respondToExcusal, EventExcusal } from "../firebase/eventExcusalService";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { KeyboardAwareFlatList } from "../components/KeyboardAware";
 
 export default function EventExcusalRequestsScreen() {
   const { profile } = useAuth();
@@ -51,7 +52,7 @@ export default function EventExcusalRequestsScreen() {
         ) : excusals.length === 0 ? (
           <Text style={styles.emptyNote}>No requests assigned to you.</Text>
         ) : (
-          <FlatList
+          <KeyboardAwareFlatList
             data={[...pending, ...resolved]}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}

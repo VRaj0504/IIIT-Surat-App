@@ -13,6 +13,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { db } from "./firestore";
+import { persisted } from './liveCache';
 
 export type LeaveType = "medical" | "casual";
 
@@ -309,7 +310,7 @@ export function subscribeToMyLeaveApplications(
     where("studentUid", "==", studentUid),
     orderBy("createdAt", "desc"),
   );
-  return onSnapshot(
+  return persisted(`myleaves:${studentUid}`, (onUpdate) => onSnapshot(
     q,
     (snapshot) => {
       onUpdate(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LeaveApplication, "id">) })));
@@ -318,7 +319,7 @@ export function subscribeToMyLeaveApplications(
       // eslint-disable-next-line no-console
       console.error("[leaveService] subscribeToMyLeaveApplications error:", err);
     },
-  );
+  ), onUpdate);
 }
 
 // Every leave request addressed to this specific faculty member, newest

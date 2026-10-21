@@ -20,6 +20,7 @@ import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/th
 import { useAuth } from "../context/AuthContext";
 import { postLostFoundItem, LostFoundCategory, LostFoundType } from "../firebase/lostFoundService";
 import type { RootStackParamList } from "../navigation/types";
+import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 
 const CATEGORIES: LostFoundCategory[] = [
   "Electronics",
@@ -97,7 +98,7 @@ export default function PostLostFoundScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <KeyboardAwareScrollView contentContainerStyle={styles.scrollContent}>
           <Text style={styles.header}>Post an item</Text>
 
           <View style={styles.toggleRow}>
@@ -184,7 +185,7 @@ export default function PostLostFoundScreen() {
               <Text style={styles.submitButtonText}>Post</Text>
             )}
           </TouchableOpacity>
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </SafeAreaView>
     </LinearGradient>
   );

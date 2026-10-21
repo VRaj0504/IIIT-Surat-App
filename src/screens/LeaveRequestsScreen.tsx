@@ -27,6 +27,7 @@ import {
   LeaveApplication,
   TeacherAck,
 } from "../firebase/leaveService";
+import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 
 // One desk for every kind of leave work a faculty member can have:
 //   • Doctor     — medical leaves waiting for a report check (step 1)
@@ -359,13 +360,13 @@ export default function LeaveRequestsScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+        <KeyboardAvoidingView behavior={undefined} style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Leave Requests</Text>
 
           {loading ? (
             <LoadingSpinner style={{ marginTop: spacing.xl }} />
           ) : (
-            <ScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
+            <KeyboardAwareScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
               {pendingDoctor.length > 0 && (
                 <>
                   <SectionTitle icon="medkit-outline" title="Medical leaves to check" count={pendingDoctor.length} />
@@ -415,7 +416,7 @@ export default function LeaveRequestsScreen() {
                     </View>
                   </View>
                 ))}
-            </ScrollView>
+            </KeyboardAwareScrollView>
           )}
         </KeyboardAvoidingView>
       </SafeAreaView>

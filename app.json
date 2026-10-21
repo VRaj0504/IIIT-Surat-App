@@ -12,7 +12,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#2F6BFA",
+        "backgroundColor": "#3D5CFF",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "monochromeImage": "./assets/android-icon-monochrome.png",
         "backgroundImage": "./assets/android-icon-background.png"
@@ -34,12 +34,21 @@
     },
     "plugins": [
       "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 240,
+          "resizeMode": "contain",
+          "backgroundColor": "#F3F5F9"
+        }
+      ],
       "@react-native-google-signin/google-signin",
       [
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
-          "color": "#0B3D91"
+          "color": "#3D5CFF"
         }
       ],
       "expo-status-bar",
@@ -47,26 +56,36 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "CollegeGo shares your location with the warden and doctor only when you press SOS, so help can find you."
+          "locationWhenInUsePermission": "CollegeGo shares your location with the warden and doctor only when you press SOS, so help can find you.",
+          "locationAlwaysAndWhenInUsePermission": "CollegeGo shares your location with the warden and doctor only when you press SOS, so help can find you.",
+          "locationAlwaysPermission": "CollegeGo shares your location with the warden and doctor only when you press SOS, so help can find you.",
+          "isAndroidBackgroundLocationEnabled": false,
+          "isIosBackgroundLocationEnabled": false,
+          "motionUsagePermission": false
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "CollegeGo uses the camera to scan your mess thali pass QR code."
+          "cameraPermission": "CollegeGo uses the camera to scan your mess thali pass QR code.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
         }
       ],
       [
         "expo-image-picker",
         {
           "photosPermission": "CollegeGo needs your photos so you can set a profile picture, scan event posters and attach pictures to lost & found posts.",
-          "cameraPermission": "CollegeGo uses the camera to take a photo for lost & found posts and to scan event posters."
+          "cameraPermission": "CollegeGo uses the camera to take a photo for lost & found posts and to scan event posters.",
+          "microphonePermission": false
         }
       ],
       [
         "expo-calendar",
         {
-          "calendarPermission": "CollegeGo adds events you choose from posters to your calendar."
+          "calendarPermission": "CollegeGo adds events you choose from posters to your calendar.",
+          "remindersPermission": false
         }
       ]
     ]

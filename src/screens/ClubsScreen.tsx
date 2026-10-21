@@ -243,7 +243,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   addText: { color: colors.onPrimary, fontWeight: '800', fontSize: 13 },
-  scroll: { paddingBottom: spacing.xl * 2 },
+  scroll: { paddingBottom: 110 },
 
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   sectionTitle: { fontSize: 18, fontWeight: '800', letterSpacing: -0.3, color: colors.textPrimary },

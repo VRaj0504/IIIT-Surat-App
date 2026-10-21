@@ -17,6 +17,7 @@ import { db } from "../../firebase/firestore";
 import { colors } from "../../theme/theme";
 import { useAuth, Role } from "../../context/AuthContext";
 import { ErrorBox, authStyles as s } from "./authUi";
+import { KeyboardAwareScrollView } from "../../components/KeyboardAware";
 
 type RosterMatch =
   | { state: "idle" }
@@ -35,8 +36,13 @@ function looksComplete(n: string): boolean {
 
 export default function CompleteProfileScreen() {
   const { user, completeGoogleProfile, logOut } = useAuth();
-  const [role, setRole] = useState<Role>("student");
-  const [enrollmentNumber, setEnrollmentNumber] = useState("");
+  // Student institute emails are the enrollment number (ug25cse114@…), so
+  // pre-pick Student and fill it in; anything else (name.surname@…) starts
+  // on Faculty. Both are still checked against the roster / faculty list.
+  const emailLocal = (user?.email ?? "").split("@")[0].toUpperCase();
+  const emailIsRegNo = /^(UG|PG|RS|PH)\d{2}[A-Z]{2,4}\d{2,4}$/.test(emailLocal);
+  const [role, setRole] = useState<Role>(emailIsRegNo || !user?.email ? "student" : "faculty");
+  const [enrollmentNumber, setEnrollmentNumber] = useState(emailIsRegNo ? emailLocal : "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [match, setMatch] = useState<RosterMatch>({ state: "idle" });
@@ -95,8 +101,8 @@ export default function CompleteProfileScreen() {
   return (
     <View style={s.page}>
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-          <ScrollView contentContainerStyle={[s.form, { paddingTop: 16, paddingBottom: 40, gap: 18 }]} keyboardShouldPersistTaps="handled">
+        <KeyboardAvoidingView behavior={undefined} style={{ flex: 1 }}>
+          <KeyboardAwareScrollView contentContainerStyle={[s.form, { paddingTop: 16, paddingBottom: 40, gap: 18 }]} keyboardShouldPersistTaps="handled">
             <View style={styles.topRow}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <View style={styles.stepOn} />
@@ -218,7 +224,7 @@ export default function CompleteProfileScreen() {
             >
               {loading ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.primaryBtnText}>Continue to the app</Text>}
             </TouchableOpacity>
-          </ScrollView>
+          </KeyboardAwareScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </View>

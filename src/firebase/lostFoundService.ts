@@ -14,6 +14,7 @@ import {
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { db } from "./firestore";
 import { storage } from "./storage";
+import { persisted } from './liveCache';
 
 export type LostFoundType = "lost" | "found";
 export type LostFoundCategory =
@@ -106,7 +107,7 @@ export function subscribeToLostFoundItems(
     where("status", "==", "open"),
     orderBy("createdAt", "desc"),
   );
-  return onSnapshot(
+  return persisted(`lf:${type}`, (onUpdate) => onSnapshot(
     q,
     (snapshot) => {
       const items: LostFoundItem[] = snapshot.docs.map((docSnap) => ({
@@ -119,7 +120,7 @@ export function subscribeToLostFoundItems(
       // eslint-disable-next-line no-console
       console.error("[lostFoundService] subscribeToLostFoundItems error:", err);
     },
-  );
+  ), onUpdate);
 }
 
 // Only the original poster can resolve their own post (see firestore.rules).

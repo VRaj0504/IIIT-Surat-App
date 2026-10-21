@@ -29,6 +29,7 @@ import {
 } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { getCurrentSemester } from "../utils/academicInfo";
+import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 
 export default function EditProfileScreen() {
   const navigation = useNavigation();
@@ -181,8 +182,8 @@ export default function EditProfileScreen() {
     <View style={styles.page}>
       {/* behavior="height" on Android, not undefined — the OS-level resize
           is unreliable on newer Android with edge-to-edge display on. */}
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-        <ScrollView
+      <KeyboardAvoidingView behavior={undefined} style={{ flex: 1 }}>
+        <KeyboardAwareScrollView
           style={{ flex: 1 }}
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
@@ -322,7 +323,7 @@ export default function EditProfileScreen() {
               </Section>
 
               <Modal visible={lookupOpen} animationType="slide" transparent onRequestClose={() => setLookupOpen(false)}>
-                <View style={styles.modalOverlay}>
+                <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
                   <View style={styles.modalSheet}>
                     <View style={styles.modalHeader}>
                       <Text style={styles.modalTitle}>Look up publications</Text>
@@ -369,7 +370,7 @@ export default function EditProfileScreen() {
                       )}
                     />
                   </View>
-                </View>
+                </KeyboardAvoidingView>
               </Modal>
             </>
           )}
@@ -378,7 +379,7 @@ export default function EditProfileScreen() {
           {!isStudent && !isFaculty && <Section title="Contact">{phoneField("Optional — used for Lost & Found contact.")}</Section>}
 
           {error && <Text style={styles.error}>{error}</Text>}
-        </ScrollView>
+        </KeyboardAwareScrollView>
 
         {/* Save stays put at the bottom while you scroll */}
         <View style={styles.saveBar}>

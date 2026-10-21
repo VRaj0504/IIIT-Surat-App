@@ -1,5 +1,6 @@
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "./firestore";
+import { persisted } from './liveCache';
 
 // Ad-hoc holidays a real faculty/admin adds after reading an actual
 // email circular — e.g. Ganesh Visarjan, an unplanned closure — which
@@ -9,7 +10,7 @@ import { db } from "./firestore";
 export function subscribeToHolidayOverrides(
   onUpdate: (overrides: Record<string, string>) => void,
 ): () => void {
-  return onSnapshot(
+  return persisted("holidays", (onUpdate) => onSnapshot(
     collection(db, "holidayOverrides"),
     (snapshot) => {
       const overrides: Record<string, string> = {};
@@ -24,5 +25,5 @@ export function subscribeToHolidayOverrides(
       console.error("[holidayOverridesService] subscribeToHolidayOverrides error:", err);
       onUpdate({});
     },
-  );
+  ), onUpdate);
 }

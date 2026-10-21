@@ -1,27 +1,11 @@
-import React, { useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  ActivityIndicator,
-} from "react-native";
+import React, { useRef, useState } from "react";
+import { View, Text, TouchableOpacity, KeyboardAvoidingView, ScrollView } from "react-native";
+import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { colors } from "../../theme/theme";
 import { useAuth, isAllowedEmailDomain, isReviewerEmail, ALLOWED_EMAIL_DOMAIN } from "../../context/AuthContext";
-import {
-  AuthHero,
-  FeatureStrip,
-  GoogleButton,
-  WrongAccountSheet,
-  ErrorBox,
-  wrongAccountEmail,
-  authStyles as s,
-} from "./authUi";
+import { WrongAccountSheet, ErrorBox, wrongAccountEmail } from "./authUi";
+import { GlassScreen, Glass, Reveal, BrandRow, Heading, HintRow, OptionCard, GlassInput, PrimaryButton, Footer, g, ACCENT, MUTED, TEXT, EASE } from "./glassUi";
 
 type Props = {
   onNavigateToSignUp: () => void;
@@ -46,9 +30,8 @@ function friendlyError(code: string): string {
 }
 
 // The ID box takes just the part before the @ — the institute domain is
-// fixed beside it, so a personal Gmail can't be typed by mistake. Pasting
-// a full address still works (an institute one is accepted as-is).
-function toEmail(id: string): string {
+// fixed beside it. Pasting a full address still works.
+export function toInstituteEmail(id: string): string {
   const t = id.trim().toLowerCase();
   return t.includes("@") ? t : `${t}${ALLOWED_EMAIL_DOMAIN}`;
 }
@@ -58,39 +41,40 @@ export default function LoginScreen({ onNavigateToSignUp, onNavigateToForgotPass
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dismissedSheet, setDismissedSheet] = useState<string | null>(null);
+  const scroll = useRef<ScrollView>(null);
+  const pwRef = useRef<any>(null);
 
   const message = error ?? authError;
   const rejected = wrongAccountEmail(message);
   const sheetEmail = rejected && rejected !== dismissedSheet ? rejected : null;
 
+  // Keep the field being typed in above the keyboard.
+  const keepVisible = () => setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 280);
+
   const handleLogin = async () => {
     setError(null);
     clearAuthError();
-    if (!id.trim() || !password) {
-      setError("Enter your institute ID and password.");
-      return;
-    }
-    const email = toEmail(id);
+    if (!id.trim() || !password) return setError("Enter your institute ID and password.");
+    const email = toInstituteEmail(id);
     if (!isAllowedEmailDomain(email) && !isReviewerEmail(email)) {
-      setError(`Please use your institute account (${ALLOWED_EMAIL_DOMAIN}).`);
-      return;
+      return setError(`Please use your institute account (${ALLOWED_EMAIL_DOMAIN}).`);
     }
     setLoading(true);
     try {
       await logIn(email, password);
     } catch (e: any) {
-      if (__DEV__) console.log("LOGIN ERROR:", e?.code, e?.message);
       setError(friendlyError(e?.code ?? ""));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogle = async () => {
     setError(null);
     clearAuthError();
     setDismissedSheet(null);
@@ -98,7 +82,6 @@ export default function LoginScreen({ onNavigateToSignUp, onNavigateToForgotPass
     try {
       await signInWithGoogle();
     } catch (e: any) {
-      if (__DEV__) console.log("GOOGLE SIGN-IN ERROR:", e?.code, e?.message);
       setError(e?.message ?? "Google sign-in failed. Please try again.");
     } finally {
       setGoogleLoading(false);
@@ -106,88 +89,95 @@ export default function LoginScreen({ onNavigateToSignUp, onNavigateToForgotPass
   };
 
   return (
-    <View style={s.page}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 40 }}>
-          <SafeAreaView edges={["top"]} style={{ backgroundColor: colors.heroBg }} />
-          <AuthHero title={"Your campus,\nin your pocket."} subtitle="Timetable, mess, notices, resources — one app." />
-          <FeatureStrip />
+    <GlassScreen>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+        <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1 }}>
+          <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={g.scroll} showsVerticalScrollIndicator={false}>
+            <Reveal>
+              <BrandRow />
+            </Reveal>
 
-          <View style={[s.form, { marginTop: 28 }]}>
-            <View>
-              <Text style={s.h1}>Welcome back</Text>
-              <Text style={s.sub}>Sign in with your institute account</Text>
-            </View>
+            <View style={{ flex: 1, minHeight: 24 }} />
 
-            {message && !rejected && <ErrorBox message={message} />}
+            <Reveal delay={120} style={{ gap: 18 }}>
+              <Heading icon="log-in-outline" title="Sign in" subtitle="Classes, attendance, notices and the mess — everything for your day at IIIT Surat." />
+              <HintRow text="New to CollegeGo?" link="Create an account" onPress={onNavigateToSignUp} />
+            </Reveal>
 
-            <GoogleButton onPress={handleGoogleSignIn} loading={googleLoading} />
+            {message && !rejected && (
+              <Animated.View entering={FadeIn.duration(250)} exiting={FadeOut.duration(150)}>
+                <ErrorBox message={message} />
+              </Animated.View>
+            )}
 
-            <View style={s.divider}>
-              <View style={s.dividerLine} />
-              <Text style={s.dividerText}>or use email</Text>
-              <View style={s.dividerLine} />
-            </View>
+            <Reveal delay={260} style={g.options}>
+              <OptionCard label="Google" loading={googleLoading} onPress={handleGoogle} icon={<Ionicons name="logo-google" size={24} color="#EA4335" />} />
+              <OptionCard
+                label="Email"
+                selected={emailOpen}
+                onPress={() => {
+                  setEmailOpen((v) => !v);
+                  if (!emailOpen) keepVisible();
+                }}
+                icon={<Ionicons name="mail" size={22} color={ACCENT} />}
+              />
+            </Reveal>
 
-            <View>
-              <Text style={s.label}>Institute ID</Text>
-              <View style={s.field}>
-                <TextInput
-                  style={s.input}
-                  placeholder="ug25cse114"
-                  placeholderTextColor={colors.textSecondary}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="email-address"
-                  textContentType="username"
-                  value={id}
-                  onChangeText={setId}
-                  accessibilityLabel="Institute ID"
-                />
-                {!id.includes("@") && <Text style={s.suffix}>{ALLOWED_EMAIL_DOMAIN}</Text>}
-              </View>
-            </View>
+            <Animated.View layout={LinearTransition.duration(300).easing(EASE)}>
+              {emailOpen ? (
+                <Animated.View entering={FadeIn.duration(350).easing(EASE)} exiting={FadeOut.duration(150)}>
+                  <Glass style={g.panel}>
+                    <GlassInput
+                      icon="person-outline"
+                      placeholder="Institute ID"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="email-address"
+                      textContentType="username"
+                      returnKeyType="next"
+                      value={id}
+                      onChangeText={setId}
+                      onFocus={keepVisible}
+                      onSubmitEditing={() => pwRef.current?.focus()}
+                      suffix={id.includes("@") ? undefined : ALLOWED_EMAIL_DOMAIN}
+                    />
+                    <GlassInput
+                      ref={pwRef}
+                      icon="lock-closed-outline"
+                      placeholder="Password"
+                      secureTextEntry={!showPassword}
+                      textContentType="password"
+                      returnKeyType="go"
+                      value={password}
+                      onChangeText={setPassword}
+                      onFocus={keepVisible}
+                      onSubmitEditing={handleLogin}
+                      right={
+                        <TouchableOpacity onPress={() => setShowPassword((v) => !v)} hitSlop={10} accessibilityLabel={showPassword ? "Hide password" : "Show password"}>
+                          <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={19} color={MUTED} />
+                        </TouchableOpacity>
+                      }
+                    />
+                    <TouchableOpacity onPress={onNavigateToForgotPassword} style={{ alignSelf: "flex-end" }} hitSlop={8}>
+                      <Text style={g.link}>Forgot password?</Text>
+                    </TouchableOpacity>
+                    <PrimaryButton label="Log in" onPress={handleLogin} loading={loading} />
+                  </Glass>
+                </Animated.View>
+              ) : null}
+            </Animated.View>
 
-            <View>
-              <Text style={s.label}>Password</Text>
-              <View style={s.field}>
-                <TextInput
-                  style={s.input}
-                  placeholder="Your password"
-                  placeholderTextColor={colors.textSecondary}
-                  secureTextEntry={!showPassword}
-                  textContentType="password"
-                  value={password}
-                  onChangeText={setPassword}
-                  onSubmitEditing={handleLogin}
-                  accessibilityLabel="Password"
-                />
-                <TouchableOpacity
-                  onPress={() => setShowPassword((v) => !v)}
-                  style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
-                  accessibilityLabel={showPassword ? "Hide password" : "Show password"}
-                >
-                  <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textSecondary} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <TouchableOpacity onPress={onNavigateToForgotPassword} style={{ alignSelf: "flex-end", marginTop: -4, padding: 4 }}>
-              <Text style={s.link}>Forgot password?</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={s.primaryBtn} onPress={handleLogin} disabled={loading} activeOpacity={0.85}>
-              {loading ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={s.primaryBtnText}>Log in</Text>}
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={onNavigateToSignUp} style={{ paddingVertical: 4 }}>
-              <Text style={s.footnote}>
-                First time? Just tap <Text style={{ fontWeight: "800", color: colors.textPrimary }}>Continue with Google</Text> —
-                your account is set up automatically.
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
+            <Reveal delay={400}>
+              <Footer
+                text={
+                  <>
+                    Only <Text style={{ fontWeight: "700", color: TEXT }}>{ALLOWED_EMAIL_DOMAIN}</Text> accounts can sign in
+                  </>
+                }
+              />
+            </Reveal>
+          </ScrollView>
+        </SafeAreaView>
       </KeyboardAvoidingView>
 
       <WrongAccountSheet
@@ -195,9 +185,9 @@ export default function LoginScreen({ onNavigateToSignUp, onNavigateToForgotPass
         onClose={() => setDismissedSheet(rejected)}
         onRetry={() => {
           setDismissedSheet(rejected);
-          handleGoogleSignIn();
+          handleGoogle();
         }}
       />
-    </View>
+    </GlassScreen>
   );
 }

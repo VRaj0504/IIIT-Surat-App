@@ -17,7 +17,7 @@ export function downloadIcs(params: {
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//IIIT Surat App//EN",
+    "PRODID:-//CollegeGo//EN",
     "BEGIN:VEVENT",
     `UID:${Date.now()}@iiit-surat-app`,
     `DTSTAMP:${fmt(new Date())}`,

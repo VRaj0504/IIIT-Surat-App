@@ -1,6 +1,8 @@
 // src/screens/SubmitComplaintScreen.tsx
 import React, { useState, useEffect, useMemo } from "react";
+import LoadingSpinner from "../components/LoadingSpinner";
 import {
+  KeyboardAvoidingView,
   View,
   Text,
   StyleSheet,
@@ -26,6 +28,7 @@ import {
   DoubtCategory,
   IssueType,
 } from "../firebase/complaintService";
+import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 
 const statusColors: Record<Complaint["status"], string> = {
   pending: colors.warning,
@@ -134,7 +137,7 @@ export default function SubmitComplaintScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <KeyboardAwareScrollView contentContainerStyle={styles.scrollContent}>
           <Text style={styles.header}>Complaints & Doubts</Text>
           <Text style={styles.subheader}>
             Raise a facilities or conduct issue, or ask an academic question — addressed to a specific faculty
@@ -196,7 +199,7 @@ export default function SubmitComplaintScreen() {
           </Text>
 
           <Modal visible={pickerOpen} animationType="slide" transparent onRequestClose={() => setPickerOpen(false)}>
-            <View style={styles.modalOverlay}>
+            <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
               <View style={styles.modalSheet}>
                 <View style={styles.modalHeader}>
                   <Text style={styles.modalTitle}>Select faculty</Text>
@@ -232,7 +235,7 @@ export default function SubmitComplaintScreen() {
                   )}
                 />
               </View>
-            </View>
+            </KeyboardAvoidingView>
           </Modal>
 
           <Text style={styles.label}>Subject</Text>
@@ -278,7 +281,7 @@ export default function SubmitComplaintScreen() {
 
           <Text style={styles.historyHeader}>Your Submissions</Text>
           {historyLoading ? (
-            <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.md }} />
+            <LoadingSpinner style={{ marginTop: spacing.md }} />
           ) : myComplaints.length === 0 ? (
             <Text style={styles.emptyText}>Nothing submitted yet.</Text>
           ) : (
@@ -301,7 +304,7 @@ export default function SubmitComplaintScreen() {
               </View>
             ))
           )}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </SafeAreaView>
     </LinearGradient>
   );

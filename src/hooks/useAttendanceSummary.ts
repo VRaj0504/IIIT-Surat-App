@@ -1,3 +1,4 @@
+import { readCached, writeCached } from "../firebase/liveCache";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import type { UserProfile } from "../context/AuthContext";
@@ -32,6 +33,13 @@ export function useAttendanceSummary(profile: UserProfile | null, enabled: boole
 
   const excused = useMemo(() => excusedSessionSet(leaves), [leaves]);
 
+  // Home shows the last saved figure instantly, then the fresh one.
+  const cacheKey = ready ? `attsum:${profile!.enrollmentNumber}:${semester}` : "";
+  useEffect(() => {
+    if (!cacheKey) return;
+    readCached<{ overall: number | null; low: number }>(cacheKey).then((v) => v && setSummary((s) => s ?? v));
+  }, [cacheKey]);
+
   const load = useCallback(() => {
     if (!ready || subjects === null) return;
     getMyAttendance({
@@ -47,13 +55,15 @@ export function useAttendanceSummary(profile: UserProfile | null, enabled: boole
       .then((rows) => {
         const held = rows.reduce((a, r) => a + r.totalSessions, 0);
         const present = rows.reduce((a, r) => a + r.presentCount, 0);
-        setSummary({
+        const next = {
           overall: held ? Math.round((present / held) * 1000) / 10 : null,
           low: rows.filter((r) => r.percentage < ATTENDANCE_TARGET).length,
-        });
+        };
+        writeCached(cacheKey, next);
+        setSummary(next);
       })
       .catch(() => {});
-  }, [ready, subjects, excused, profile, semester]);
+  }, [ready, subjects, excused, profile, semester, cacheKey]);
 
   useFocusEffect(load);
 

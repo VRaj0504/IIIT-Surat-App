@@ -1,5 +1,6 @@
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from './firestore';
+import { persisted } from './liveCache';
 
 export type CurriculumSubject = {
   code: string;
@@ -24,11 +25,11 @@ export function subscribeToCurriculum(
     where('semester', '==', semester)
   );
 
-  return onSnapshot(q, (snapshot) => {
+  return persisted(`curr:${branch}:${semester}`, (onUpdate) => onSnapshot(q, (snapshot) => {
     const subjects: CurriculumSubject[] = snapshot.docs.map((docSnap) => {
       const data = docSnap.data();
       return { code: data.code, name: data.name, credits: data.credits };
     });
     onUpdate(subjects);
-  });
+  }), onUpdate);
 }

@@ -3,6 +3,7 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage
 import { db } from './firestore';
 import { storage } from './storage';
 import { isResourceVisibleThisYear } from '../utils/academicYear';
+import { persisted } from './liveCache';
 
 // This is the "shape" of one resource's metadata, stored in Firestore.
 // Note: this does NOT include the actual file bytes — just information
@@ -139,7 +140,7 @@ export function subscribeToResources(
         orderBy('createdAt', 'desc'),
         fsLimit(FACULTY_VIEW_LIMIT),
       );
-  return onSnapshot(
+  return persisted(`res:${scope ? JSON.stringify(scope) : 'staff'}`, (onUpdate) => onSnapshot(
     q,
     (snapshot) => {
       const all: Resource[] = snapshot.docs.map((docSnap) => ({
@@ -174,7 +175,7 @@ export function subscribeToResources(
       console.error('subscribeToResources failed:', scope, error);
       onError?.(error);
     },
-  );
+  ), onUpdate);
 }
 
 /// deleting the slides of resources function

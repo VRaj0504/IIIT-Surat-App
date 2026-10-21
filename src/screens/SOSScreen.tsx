@@ -41,6 +41,7 @@ import {
   SosType,
   EmergencyContact,
 } from "../firebase/sosService";
+import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 
 const HOLD_MS = 1800;
 const RED = "#DC2626";
@@ -230,7 +231,7 @@ export default function SOSScreen() {
 
   return (
     <View style={styles.page}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <KeyboardAwareScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {active ? (
           <View style={styles.activeCard}>
             <View style={styles.activeTop}>
@@ -395,7 +396,7 @@ export default function SOSScreen() {
         <Text style={styles.footnote}>
           Use SOS only for real emergencies. False alarms reach the warden and doctor too.
         </Text>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </View>
   );
 }

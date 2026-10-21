@@ -115,7 +115,7 @@ export default function NotificationSettingsScreen() {
       <SafeAreaView style={styles.container} edges={["top"]}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           <Text style={styles.intro}>
-            Choose which push notifications you get from IIIT Surat App. Turning something off only
+            Choose which push notifications you get from CollegeGo. Turning something off only
             stops the push — it still shows up in the app itself.
           </Text>
 

@@ -21,6 +21,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { scanPoster } from "../firebase/posterScanService";
+import { KeyboardAwareScrollView } from "../components/KeyboardAware";
+import DateField, { todayIso } from "../components/DateField";
 
 // IMPORTANT: expo-calendar is unsupported in Expo Go (per Expo's own
 // docs) — this whole screen's "Add to Calendar" step only actually works
@@ -102,7 +104,7 @@ export default function ScanPosterScreen() {
         start: startDate,
         end: endDate,
         location: location.trim() || undefined,
-        notes: "Added from a scanned poster — IIIT Surat App",
+        notes: "Added from a scanned poster — CollegeGo",
       });
       return;
     }
@@ -138,7 +140,7 @@ const writable = calendars.find(
         startDate,
         endDate,
         location: location.trim() || undefined,
-        notes: "Added from a scanned poster — IIIT Surat App",
+        notes: "Added from a scanned poster — CollegeGo",
       });
 
       Alert.alert("Added to calendar", `"${title.trim()}" was added to your calendar.`, [
@@ -154,7 +156,7 @@ const writable = calendars.find(
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <ScrollView contentContainerStyle={styles.content}>
+        <KeyboardAwareScrollView contentContainerStyle={styles.content}>
           <Text style={styles.header}>Scan Event Poster</Text>
           <Text style={styles.helper}>
             Scan or upload a poster — we'll try to pull out the title, date, and time. Always
@@ -194,14 +196,8 @@ const writable = calendars.find(
                 placeholderTextColor={colors.textSecondary}
               />
 
-              <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
-              <TextInput
-                style={styles.input}
-                value={date}
-                onChangeText={setDate}
-                placeholder="2026-08-25"
-                placeholderTextColor={colors.textSecondary}
-              />
+              <Text style={styles.label}>Date</Text>
+              <DateField value={date} onChange={setDate} placeholder="Event date" />
 
               <Text style={styles.label}>Time (24-hour, optional — defaults to 9:00 AM)</Text>
               <TextInput
@@ -263,7 +259,7 @@ const writable = calendars.find(
               </TouchableOpacity>
             </>
           )}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </SafeAreaView>
     </LinearGradient>
   );

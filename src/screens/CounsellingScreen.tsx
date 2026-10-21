@@ -23,6 +23,7 @@ import {
   submitCounsellingRequest,
   subscribeToMyCounsellingRequests,
 } from "../firebase/counsellingService";
+import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 
 function callNumber(phone: string) {
   Linking.openURL(`tel:${phone}`).catch(() =>
@@ -96,7 +97,7 @@ export default function CounsellingScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <KeyboardAwareScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Text style={styles.header}>Counselling & Wellness</Text>
 
           {/* Always here, never behind the form below — this is the one
@@ -197,7 +198,7 @@ export default function CounsellingScreen() {
               ))}
             </>
           )}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </SafeAreaView>
     </LinearGradient>
   );

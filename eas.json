@@ -9,12 +9,19 @@
       "distribution": "internal"
     },
     "preview": {
+      "environment": "production",
       "distribution": "internal",
       "android": {
         "buildType": "apk"
       }
     },
+    "ios-sim": {
+      "environment": "production",
+      "ios": { "simulator": true },
+      "distribution": "internal"
+    },
     "production": {
+      "environment": "production",
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"

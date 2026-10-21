@@ -12,6 +12,10 @@ import {
   deleteUser,
   onAuthStateChanged,
   sendPasswordResetEmail,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  updateProfile,
+  reload,
   User,
 } from 'firebase/auth';
 import { doc, getDoc, updateDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
@@ -19,6 +23,7 @@ import { auth } from '../firebase/auth';
 import { db } from '../firebase/firestore';
 import { claimPendingClubLead } from '../firebase/clubsService';
 import { registerForPushNotificationsAsync, clearPushToken } from '../firebase/pushService';
+import { readCached, writeCached, clearCache } from '../firebase/liveCache';
 
 let GoogleSignin: typeof import('@react-native-google-signin/google-signin').GoogleSignin;
 let isSuccessResponse: typeof import('@react-native-google-signin/google-signin').isSuccessResponse;
@@ -112,6 +117,12 @@ type AuthContextValue = {
   updatePhoto: (photoUrl: string) => Promise<void>;
   setInCabin: (inCabin: boolean) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
+  // Email + password sign-up: the account must verify its institute email
+  // before a profile can be created (the Firestore rules require it).
+  needsEmailVerification: boolean;
+  signUpWithEmail: (p: { name: string; email: string; password: string }) => Promise<void>;
+  resendVerificationEmail: () => Promise<void>;
+  checkEmailVerified: () => Promise<boolean>;
   previewRole: Role | null;
   setPreviewRole: (role: Role | null) => void;
 };
@@ -278,12 +289,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Loads users/{uid}. A FAILED load (offline, timeout) is reported as
   // profileLoadFailed — never as "no profile", because "no profile" sends
   // the user to CompleteProfileScreen.
+  const [needsEmailVerification, setNeedsEmailVerification] = useState(false);
+
   const loadProfile = useCallback(async (firebaseUser: User) => {
+    const cacheKey = `profile:${firebaseUser.uid}`;
+    // Returning user: open straight away with the profile saved on this
+    // phone, then refresh it quietly in the background. Before, every launch
+    // waited on the network before showing anything.
+    const cached = await readCached<UserProfile>(cacheKey);
+    if (cached && cached.uid === firebaseUser.uid) {
+      setProfile(cached);
+      setProfileLoadFailed(false);
+      setNeedsEmailVerification(false);
+      getDoc(doc(db, 'users', firebaseUser.uid))
+        .then((snap) => {
+          if (!snap.exists()) {
+            setProfile(null);
+            return;
+          }
+          const fresh = snap.data() as UserProfile;
+          writeCached(cacheKey, fresh);
+          setProfile(fresh);
+        })
+        .catch(() => {}); // offline: keep showing the saved profile
+      return;
+    }
     setProfileLoading(true);
     setProfileLoadFailed(false);
     try {
       const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
+      if (snap.exists()) writeCached(cacheKey, snap.data() as UserProfile);
       setProfile(snap.exists() ? (snap.data() as UserProfile) : null);
+      // Only a brand-new password account (no profile yet) is asked to verify;
+      // existing accounts are never locked out.
+      const passwordOnly =
+        firebaseUser.providerData.length > 0 && firebaseUser.providerData.every((p) => p.providerId === 'password');
+      setNeedsEmailVerification(!snap.exists() && passwordOnly && !firebaseUser.emailVerified);
     } catch {
       setProfileLoadFailed(true);
     } finally {
@@ -324,6 +365,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setProfile(null);
         setProfileLoadFailed(false);
+        setNeedsEmailVerification(false);
+        clearCache(); // signed out / account deleted: forget this phone's saved data
       }
       setInitializing(false);
     });
@@ -341,12 +384,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // Keep the saved copy in step with edits made in the app (name, phone, photo…).
+  useEffect(() => {
+    if (user && profile && profile.uid === user.uid) writeCached(`profile:${user.uid}`, profile);
+  }, [user, profile]);
+
   const retryProfileLoad = useCallback(async () => {
     if (auth.currentUser) await loadProfile(auth.currentUser);
   }, [loadProfile]);
 
   const logIn: AuthContextValue['logIn'] = useCallback(async (email, password) => {
     await signInWithEmailAndPassword(auth, email, password);
+  }, []);
+
+  const signUpWithEmail: AuthContextValue['signUpWithEmail'] = useCallback(async ({ name, email, password }) => {
+    const normalized = email.trim().toLowerCase();
+    if (!isAllowedEmailDomain(normalized)) {
+      throw new Error(`Use your institute email (${ALLOWED_EMAIL_DOMAIN}).`);
+    }
+    const cred = await createUserWithEmailAndPassword(auth, normalized, password);
+    await updateProfile(cred.user, { displayName: name.trim() }).catch(() => {});
+    setNeedsEmailVerification(true);
+    await sendEmailVerification(cred.user);
+  }, []);
+
+  const resendVerificationEmail = useCallback(async () => {
+    if (auth.currentUser) await sendEmailVerification(auth.currentUser);
+  }, []);
+
+  // After the person taps the link in their inbox: reload the account and
+  // refresh the sign-in token so the rules see email_verified = true.
+  const checkEmailVerified = useCallback(async () => {
+    const u = auth.currentUser;
+    if (!u) return false;
+    await reload(u);
+    if (!u.emailVerified) return false;
+    await u.getIdToken(true);
+    setNeedsEmailVerification(false);
+    return true;
   }, []);
 
   
@@ -514,6 +589,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updatePhoto,
       setInCabin,
       sendPasswordReset,
+      needsEmailVerification,
+      signUpWithEmail,
+      resendVerificationEmail,
+      checkEmailVerified,
       previewRole,
       setPreviewRole,
     }),
@@ -536,6 +615,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updatePhoto,
       setInCabin,
       sendPasswordReset,
+      needsEmailVerification,
+      signUpWithEmail,
+      resendVerificationEmail,
+      checkEmailVerified,
       previewRole,
       setPreviewRole,
     ],

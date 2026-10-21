@@ -1,9 +1,4 @@
-// Extends app.json with values that come from environment variables
-// (.env locally, or EAS environment variables for cloud builds).
-//
-// Google Sign-In on iPhone needs the iOS OAuth client from Google Cloud:
-//   EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=1234-abcd.apps.googleusercontent.com
-// Its "reversed" form becomes the URL scheme Google redirects back to.
+
 module.exports = ({ config }) => {
   const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
   const iosUrlScheme = iosClientId

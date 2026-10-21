@@ -15,6 +15,8 @@ import {
   RosterSearchResult,
   EventExcusal,
 } from "../firebase/eventExcusalService";
+import { KeyboardAwareFlatList } from "../components/KeyboardAware";
+import DateField from "../components/DateField";
 
 function todayDateString(): string {
   const now = new Date();
@@ -162,7 +164,7 @@ export default function SubmitEventExcusalScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <FlatList
+        <KeyboardAwareFlatList
           data={myExcusals}
           keyExtractor={(item) => item.id}
           style={styles.list}
@@ -188,11 +190,11 @@ export default function SubmitEventExcusalScreen() {
               <View style={{ flexDirection: "row", gap: spacing.md }}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.label}>From Date</Text>
-                  <TextInput style={styles.input} value={fromDate} onChangeText={setFromDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textSecondary} />
+                  <DateField value={fromDate} onChange={(d) => { setFromDate(d); if (toDate && toDate < d) setToDate(d); }} placeholder="Start" />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.label}>To Date</Text>
-                  <TextInput style={styles.input} value={toDate} onChangeText={setToDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textSecondary} />
+                  <DateField value={toDate} onChange={setToDate} min={fromDate || undefined} placeholder="End" />
                 </View>
               </View>
 

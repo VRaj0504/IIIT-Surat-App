@@ -28,11 +28,13 @@ import {
   updateEvent,
   deleteEvent,
 } from "../firebase/clubsService";
+import { KeyboardAwareScrollView } from "../components/KeyboardAware";
+import DateField, { todayIso } from "../components/DateField";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 type PostEventRoute = RouteProp<RootStackParamList, "PostEvent">;
 
-export default function PostEventScreen() {
+function PostEventScreenInner() {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<PostEventRoute>();
   const { clubId, clubName, editingEvent } = route.params;
@@ -128,10 +130,10 @@ export default function PostEventScreen() {
     >
       <SafeAreaView style={styles.container} edges={["top"]}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior={undefined}
           style={{ flex: 1 }}
         >
-          <ScrollView
+          <KeyboardAwareScrollView
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
@@ -165,13 +167,7 @@ export default function PostEventScreen() {
             <View style={styles.row}>
               <View style={styles.rowItem}>
                 <Text style={styles.label}>Date</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="2026-07-20"
-                  placeholderTextColor={colors.textSecondary}
-                  value={dateText}
-                  onChangeText={setDateText}
-                />
+                <DateField value={dateText} onChange={setDateText} min={todayIso()} placeholder="Event date" />
               </View>
               <View style={styles.rowItem}>
                 <Text style={styles.label}>Time (24h)</Text>
@@ -225,7 +221,7 @@ export default function PostEventScreen() {
                 )}
               </TouchableOpacity>
             )}
-          </ScrollView>
+          </KeyboardAwareScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </LinearGradient>
@@ -288,3 +284,24 @@ const styles = StyleSheet.create({
   },
   deleteBtnText: { color: colors.danger, fontWeight: "700", fontSize: 16 },
 });
+
+
+// Opened without a club (e.g. a refreshed or shared link on the web): there
+// is nothing to show, so say so instead of crashing.
+export default function PostEventScreen() {
+  const route = useRoute<any>();
+  const navigation = useNavigation<any>();
+  if (!route.params?.clubId) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: colors.background }}>
+        <Text style={{ fontSize: 15, color: colors.textSecondary, textAlign: "center", marginBottom: 12 }}>
+          Open this from a club's page.
+        </Text>
+        <Text style={{ color: colors.primary, fontWeight: "700" }} onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate("Tabs" as never))}>
+          Go back
+        </Text>
+      </View>
+    );
+  }
+  return <PostEventScreenInner />;
+}

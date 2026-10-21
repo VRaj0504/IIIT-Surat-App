@@ -17,6 +17,7 @@ import {
   ClassOption,
   Announcement,
 } from "../firebase/announcementsService";
+import { KeyboardAwareFlatList } from "../components/KeyboardAware";
 
 function timeAgo(ts: Announcement["createdAt"]): string {
   if (!ts) return "";
@@ -260,7 +261,7 @@ export default function AnnouncementsScreen() {
         {loading ? (
           <LoadingSpinner style={{ marginTop: spacing.xl }} />
         ) : (
-          <FlatList
+          <KeyboardAwareFlatList
             data={announcements}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}

@@ -65,11 +65,19 @@ function roomKey(room: string): string {
 
 // One slot's room field can name several rooms ("C101 / C102", "LAB1, LAB2",
 // "A & B") — each of them is occupied, not one oddly-named room.
+// Class / batch codes like "PG25CS01", "UG25CSE2", "RS25CS02" sometimes end
+// up in a room column (M.Tech and research-scholar sheets list the batch
+// there). They are never rooms: a whole-word code is dropped, and one stuck
+// on the end of a real room ("CSE LAB 1 PG25CS02") is trimmed off.
+const BATCH_CODE = "(?:PG|UG|RS|PH|MT|MS)\\d{2}[A-Z]{1,4}\\d{1,3}";
+const ONLY_BATCH_CODE = new RegExp(`^${BATCH_CODE}$`, "i");
+const TRAILING_BATCH_CODE = new RegExp(`\\s+${BATCH_CODE}$`, "i");
+
 function splitRooms(raw: string): string[] {
   return (raw ?? "")
     .split(/[\/,&;]+|\s+and\s+/i)
-    .map((r) => r.trim())
-    .filter(Boolean);
+    .map((r) => r.trim().replace(TRAILING_BATCH_CODE, "").trim())
+    .filter((r) => r && !ONLY_BATCH_CODE.test(r));
 }
 
 // A slot with a missing/unparseable end time is treated as the standard

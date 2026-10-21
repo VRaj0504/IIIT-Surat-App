@@ -11,6 +11,7 @@ import { subscribeToAllUpcomingEvents, ClubEvent } from "../firebase/clubsServic
 import { getClubIcon } from "../data/clubIcons";
 import GlassCard from "../components/GlassCard";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -97,7 +98,7 @@ export default function EventsScreen() {
         </View>
 
         {clubNames.length > 0 && (
-          <ScrollView
+          <KeyboardAwareScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             style={{ flexGrow: 0 }}
@@ -114,7 +115,7 @@ export default function EventsScreen() {
                 </Text>
               </TouchableOpacity>
             ))}
-          </ScrollView>
+          </KeyboardAwareScrollView>
         )}
 
         {loading ? (

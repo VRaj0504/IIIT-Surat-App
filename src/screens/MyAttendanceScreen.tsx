@@ -6,6 +6,7 @@ import { colors, spacing } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { subscribeToCurriculum, CurriculumSubject } from "../firebase/curriculumService";
 import { subscribeToMyLeaveApplications, excusedSessionSet, LeaveApplication } from "../firebase/leaveService";
+import { readCached, writeCached } from "../firebase/liveCache";
 import { getMyAttendance, SubjectAttendance, ATTENDANCE_TARGET } from "../firebase/attendanceService";
 import { getCurrentSemester } from "../utils/academicInfo";
 import LoadingSpinner from "../components/LoadingSpinner";
@@ -58,12 +59,19 @@ export default function MyAttendanceScreen() {
 
   const excused = useMemo(() => excusedSessionSet(leaves ?? []), [leaves]);
 
+  // Show the last attendance saved on this phone straight away; the fresh
+  // numbers replace it a moment later.
+  const cacheKey = ready ? `att:${profile!.enrollmentNumber}:${semester}` : "";
+  useEffect(() => {
+    if (!cacheKey) return;
+    readCached<SubjectAttendance[]>(cacheKey).then((v) => v && setRows((r) => r ?? v));
+  }, [cacheKey]);
+
   const load = useCallback(async () => {
     if (!ready || subjects === null) return;
     try {
       setError("");
-      setRows(
-        await getMyAttendance({
+      const fresh = await getMyAttendance({
           enrollmentNumber: profile!.enrollmentNumber!,
           branch: profile!.branch!,
           admissionYear: profile!.admissionYear!,
@@ -72,13 +80,14 @@ export default function MyAttendanceScreen() {
           semester: semester!,
           subjects,
           medicalExcusedSessions: excused,
-        }),
-      );
+        });
+      writeCached(cacheKey, fresh);
+      setRows(fresh);
     } catch (e: any) {
       setError(e?.message ?? "Couldn't load attendance.");
       setRows((r) => r ?? []);
     }
-  }, [ready, subjects, excused, profile, semester]);
+  }, [ready, subjects, excused, profile, semester, cacheKey]);
 
   useEffect(() => {
     load();

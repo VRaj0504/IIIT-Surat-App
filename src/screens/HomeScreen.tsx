@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Pressable } from 'react-native';
-import Animated, { SlideInDown } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Pressable, BackHandler } from 'react-native';
+import { Portal } from '../components/Portal';
+import Animated, { SlideInDown, SlideOutDown, FadeIn, FadeOut } from 'react-native-reanimated';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, typography } from '../theme/theme';
 import TapCard from '../components/TapCard';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { getCurrentSemester } from '../utils/academicInfo';
 import {
@@ -143,7 +144,8 @@ type Slot = TimetableSlot & { branch?: string; semester?: number; section?: stri
 // then quick chips. Everything else stays in the grouped grid below.
 type ToneKey = keyof typeof colors.tile;
 type BentoTile = { label: string; sub: string; icon: keyof typeof Ionicons.glyphMap; route: keyof RootStackParamList; tone: ToneKey };
-type Bento = { big: BentoTile; small: [BentoTile, BentoTile]; chips: { label: string; route: keyof RootStackParamList }[] };
+type QuickItem = { label: string; icon: keyof typeof Ionicons.glyphMap; route: keyof RootStackParamList; tone: ToneKey };
+type Bento = { big: BentoTile; small: [BentoTile, BentoTile]; chips: QuickItem[] };
 
 const studentBento: Bento = {
   big: { label: 'Attendance', sub: 'Your % in every subject', icon: 'checkmark-done-outline', route: 'MyAttendance', tone: 'mint' },
@@ -151,11 +153,12 @@ const studentBento: Bento = {
     { label: 'Resources', sub: 'Notes & papers', icon: 'book-outline', route: 'Resources', tone: 'blue' },
     { label: 'Empty classes', sub: 'Find an empty class', icon: 'business-outline', route: 'RoomAvailability', tone: 'lilac' },
   ],
+  // One tap from Home — the things people open most that aren't above.
   chips: [
-    { label: 'Resources', route: 'Resources' },
-    { label: 'Apply leave', route: 'ApplyLeave' },
-    { label: 'Exam schedule', route: 'ExamSchedule' },
-    { label: 'Lost & Found', route: 'LostFound' },
+    { label: 'Lost & Found', icon: 'search-outline', route: 'LostFound', tone: 'blue' },
+    { label: 'Thali Pass', icon: 'qr-code-outline', route: 'ThaliPass', tone: 'peach' },
+    { label: 'Exams', icon: 'document-text-outline', route: 'ExamSchedule', tone: 'lilac' },
+    { label: 'Leave', icon: 'mail-outline', route: 'ApplyLeave', tone: 'mint' },
   ],
 };
 const facultyBento: Bento = {
@@ -165,10 +168,10 @@ const facultyBento: Bento = {
     { label: 'Scan pass', sub: 'Mess counter', icon: 'scan-circle-outline', route: 'ScanThaliPass', tone: 'peach' },
   ],
   chips: [
-    { label: 'Resources', route: 'Resources' },
-    { label: 'Announcements', route: 'Announcements' },
-    { label: 'Complaints', route: 'Complaints' },
-    { label: 'Faculty directory', route: 'Faculty' },
+    { label: 'Attendance', icon: 'checkmark-done-outline', route: 'MarkAttendance', tone: 'mint' },
+    { label: 'Lost & Found', icon: 'search-outline', route: 'LostFound', tone: 'blue' },
+    { label: 'Announce', icon: 'notifications-outline', route: 'Announcements', tone: 'lilac' },
+    { label: 'Complaints', icon: 'alert-circle-outline', route: 'Complaints', tone: 'peach' },
   ],
 };
 
@@ -337,6 +340,10 @@ export default function HomeScreen() {
   const [openSection, setOpenSection] = useState<Section | null>(null);
   // Biggest categories first; a one-tool category ends up last (and wide).
   const exploreSections = useMemo(() => [...sections].sort((a, b) => b.tiles.length - a.tiles.length), [sections]);
+  // Leaving Home any other way (a notification tap, say) closes the sheet too.
+  useFocusEffect(
+    React.useCallback(() => () => setOpenSection(null), []),
+  );
   const openFromSheet = (route: keyof RootStackParamList) => {
     setOpenSection(null);
     setTimeout(() => go(route), 180);
@@ -535,6 +542,20 @@ export default function HomeScreen() {
             </View>
           </View>
 
+          {/* Quick access — one tap, no folder */}
+          <View style={styles.quickRow}>
+            {bento.chips.map((c) => (
+              <TapCard key={c.label} style={styles.quickItem} onPress={() => go(c.route)} accessibilityLabel={c.label}>
+                <View style={[styles.quickIcon, { backgroundColor: colors.tile[c.tone].bg }]}>
+                  <Ionicons name={c.icon} size={22} color={colors.tile[c.tone].fg} />
+                </View>
+                <Text style={styles.quickLabel} numberOfLines={1}>
+                  {c.label}
+                </Text>
+              </TapCard>
+            ))}
+          </View>
+
           {/* Later today */}
           {!dayStatus && later.length > 0 && (
             <View style={styles.card}>
@@ -632,41 +653,62 @@ function CategorySheet({
   onOpen: (route: keyof RootStackParamList) => void;
 }) {
   const tone = section ? colors.tile[toneForSection(section.title, 0)] : colors.tile.blue;
+  const insets = useSafeAreaInsets();
+  // Android back button closes the sheet instead of leaving the screen.
+  useEffect(() => {
+    if (!section) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [section, onClose]);
+
   return (
-    <Modal visible={!!section} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      <Pressable style={styles.sheetBackdrop} onPress={onClose} accessibilityLabel="Close" />
+    // Drawn through <Portal> (above the whole app, tab bar included) rather
+    // than <Modal>: see src/components/Portal.tsx.
+    <Portal>
       {section && (
-        <Animated.View entering={SlideInDown.duration(240)} style={styles.sheet}>
-          <View style={styles.sheetGrabber} />
-          <View style={styles.sheetHeader}>
-            <View style={[styles.sheetBadge, { backgroundColor: tone.bg }]}>
-              <Ionicons name={section.tiles[0]?.icon ?? 'apps-outline'} size={20} color={tone.fg} />
+        <View style={StyleSheet.absoluteFill}>
+          <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(160)} style={styles.sheetBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
+          </Animated.View>
+          <Animated.View
+            entering={SlideInDown.duration(260)}
+            exiting={SlideOutDown.duration(200)}
+            style={[styles.sheet, { paddingBottom: insets.bottom + 20 }]}
+          >
+            <View style={styles.sheetGrabber} />
+            <View style={styles.sheetHeader}>
+              <View style={[styles.sheetBadge, { backgroundColor: tone.bg }]}>
+                <Ionicons name={section.tiles[0]?.icon ?? 'apps-outline'} size={20} color={tone.fg} />
+              </View>
+              <Text style={styles.sheetTitle}>{section.title}</Text>
+              <TouchableOpacity onPress={onClose} style={styles.sheetClose} accessibilityLabel="Close">
+                <Ionicons name="close" size={20} color={colors.textPrimary} />
+              </TouchableOpacity>
             </View>
-            <Text style={styles.sheetTitle}>{section.title}</Text>
-            <TouchableOpacity onPress={onClose} style={styles.sheetClose} accessibilityLabel="Close">
-              <Ionicons name="close" size={20} color={colors.textPrimary} />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.sheetGrid}>
-            {section.tiles.map((t) => (
-              <TapCard key={t.label} style={[styles.sheetItem, { backgroundColor: tone.bg }]} onPress={() => onOpen(t.route)}>
-                <Ionicons name={t.icon} size={24} color={tone.fg} />
-                <Text style={[styles.sheetItemText, { color: tone.fg }]} numberOfLines={2}>
-                  {t.label}
-                </Text>
-              </TapCard>
-            ))}
-          </View>
-        </Animated.View>
+            <View style={styles.sheetGrid}>
+              {section.tiles.map((t) => (
+                <TapCard key={t.label} style={[styles.sheetItem, { backgroundColor: tone.bg }]} onPress={() => onOpen(t.route)}>
+                  <Ionicons name={t.icon} size={24} color={tone.fg} />
+                  <Text style={[styles.sheetItemText, { color: tone.fg }]} numberOfLines={2}>
+                    {t.label}
+                  </Text>
+                </TapCard>
+              ))}
+            </View>
+          </Animated.View>
+        </View>
       )}
-    </Modal>
+    </Portal>
   );
 }
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#FFFFFF' },
   container: { flex: 1 },
-  scrollContent: { paddingHorizontal: 18, paddingTop: spacing.md, paddingBottom: spacing.xl, gap: 12 },
+  scrollContent: { paddingHorizontal: 18, paddingTop: spacing.md, paddingBottom: 110, gap: 12 },
   scrollDesktop: { maxWidth: 960, width: '100%', alignSelf: 'center' },
 
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: 4 },
@@ -782,6 +824,18 @@ const styles = StyleSheet.create({
   },
   catTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
   catMeta: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginTop: 2 },
+
+  quickRow: { flexDirection: 'row', gap: 10 },
+  quickItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 22,
+    backgroundColor: colors.background,
+  },
+  quickIcon: { width: 46, height: 46, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  quickLabel: { fontSize: 12, fontWeight: '700', color: colors.textPrimary },
 
   sheetBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(14,26,51,0.4)' },
   sheet: {

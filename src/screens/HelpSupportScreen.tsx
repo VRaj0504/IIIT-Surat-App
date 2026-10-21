@@ -19,10 +19,42 @@ import {
 } from "../theme/theme";
 import ScreenHeader from "../components/ScreenHeader";
 
-const SUPPORT_EMAIL = "rajvaibhav068@gmail.com";
+const SUPPORT_EMAIL = "ug25cse114@iiitsurat.ac.in";
 
 const faqs: { question: string; answer: string }[] = [
-  
+  {
+    question: "My timetable or class details are missing",
+    answer:
+      "Your branch, section and batch come from the official student roster. If they're missing or wrong, email support with your enrollment number and we'll fix the roster entry.",
+  },
+  {
+    question: "How is my attendance percentage worked out?",
+    answer:
+      "It's the classes you attended out of the classes actually held in each subject. A 2-hour lab counts as 2 classes, and only your own lab batch counts for you. On-duty, approved event excusals and medical leave your teacher confirmed count as attended. The target is 75%.",
+  },
+  {
+    question: "My attendance looks wrong",
+    answer: "Ask the subject teacher. They can correct any day from the faculty portal, and the app updates straight away.",
+  },
+  {
+    question: "I'm not getting notifications",
+    answer:
+      "Allow notifications for CollegeGo in your phone's settings, then check Profile > Notifications to see which kinds are switched on.",
+  },
+  {
+    question: "How does SOS work?",
+    answer:
+      "Press and hold the SOS button for 2 seconds. The campus doctor, wardens and your emergency contacts are alerted with your location. Your location is used only while an SOS is open.",
+  },
+  {
+    question: "How do I delete my account?",
+    answer:
+      "Profile > Privacy & account > Delete account. Your profile, Lost & Found posts, complaints and counselling requests are deleted. Academic records the institute keeps, such as attendance, grades and leave records, stay.",
+  },
+  {
+    question: "Is CollegeGo an official IIIT Surat app?",
+    answer: "No. CollegeGo is an independent app built by a student of IIIT Surat for the IIIT Surat community.",
+  },
 ];
 
 // Was a flat list of question+answer pairs, all expanded all the time —
@@ -74,7 +106,7 @@ export default function HelpSupportScreen() {
 
           <TouchableOpacity
             style={styles.primaryBtn}
-            onPress={() => openMail("IIIT Surat App — Support")}
+            onPress={() => openMail("CollegeGo — Support")}
           >
             <Ionicons name="mail-outline" size={18} color={colors.onPrimary} />
             <Text style={styles.primaryBtnText}>Email Support</Text>
@@ -82,7 +114,7 @@ export default function HelpSupportScreen() {
 
           <TouchableOpacity
             style={styles.secondaryBtn}
-            onPress={() => openMail("IIIT Surat App — Bug Report")}
+            onPress={() => openMail("CollegeGo — Bug Report")}
           >
             <Ionicons name="bug-outline" size={18} color={colors.primary} />
             <Text style={styles.secondaryBtnText}>Report a Bug</Text>

@@ -34,3 +34,4 @@ export {sendCounsellingRequestPush} from "./sendCounsellingRequestPush";
 export {cleanupResolvedDoubts} from "./cleanupResolvedDoubts";
 export {sendSosPush} from "./sendSosPush";
 export {deleteMyAccount} from "./deleteMyAccount";
+export {requestPasswordResetOtp, confirmPasswordResetOtp} from "./passwordResetOtp";

@@ -11,6 +11,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { db } from "./firestore";
+import { persisted } from './liveCache';
 
 // A lightweight, class-targeted announcement — the "today's class is
 // cancelled" case — kept deliberately separate from formal Notices:
@@ -196,7 +197,7 @@ export function subscribeToAnnouncements(
     where("createdAt", ">=", cutoffTimestamp),
     orderBy("createdAt", "desc"),
   );
-  return onSnapshot(
+  return persisted(`ann:${viewer === null ? "staff" : JSON.stringify(viewer)}`, (onUpdate) => onSnapshot(
     q,
     (snapshot) => {
       const items: Announcement[] = snapshot.docs
@@ -215,7 +216,7 @@ export function subscribeToAnnouncements(
       // eslint-disable-next-line no-console
       console.error("[announcementsService] subscribe error:", err);
     },
-  );
+  ), onUpdate);
 }
 
 // Only the faculty who posted it (or an admin) can delete — enforced in

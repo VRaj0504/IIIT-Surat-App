@@ -24,12 +24,16 @@ const iconMap: Record<keyof RootTabParamList, keyof typeof Ionicons.glyphMap> = 
 };
 
 // C-style bar: a dark rounded pill; the active tab is a white circle.
-// It sits in its own strip (not floating over content), so no list item
-// can hide behind it. Plain views — switching tabs is instant.
+// It floats over the page with NO background strip behind it, so the
+// rounded pill stays soft. Every tab screen keeps TAB_BAR_SPACE of padding
+// at the bottom of its scroll content so the last item can be scrolled
+// clear of the pill. Plain views — switching tabs is instant.
+export const TAB_BAR_SPACE = 110;
+
 function AppTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+    <View pointerEvents="box-none" style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       <View style={styles.pill}>
         {state.routes.map((route, index) => {
           const focused = state.index === index;
@@ -79,7 +83,7 @@ export default function TabNavigator() {
 }
 
 const styles = StyleSheet.create({
-  wrap: { backgroundColor: colors.surface, paddingTop: 8, paddingHorizontal: 20 },
+  wrap: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'transparent', paddingTop: 8, paddingHorizontal: 20 },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -88,6 +92,11 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     height: 64,
     paddingHorizontal: 8,
+    shadowColor: '#0B1220',
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 10,
   },
   item: { width: 52, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   itemActive: { backgroundColor: colors.onInk },

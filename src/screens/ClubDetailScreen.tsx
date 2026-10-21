@@ -42,6 +42,7 @@ import {
   Notice,
 } from "../firebase/noticesService";
 import { openSafeUrl } from "../utils/safeLink";
+import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 type DetailRoute = RouteProp<RootStackParamList, "ClubDetail">;
@@ -59,7 +60,7 @@ function formatEventDate(timestamp: ClubEvent["dateTime"]): string {
   );
 }
 
-export default function ClubDetailScreen() {
+function ClubDetailScreenInner() {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<DetailRoute>();
   const { clubId, clubName } = route.params;
@@ -197,7 +198,7 @@ export default function ClubDetailScreen() {
       style={{ flex: 1 }}
     >
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <ScrollView showsVerticalScrollIndicator={false}>
+        <KeyboardAwareScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.title}>{clubName}</Text>
           {club && (
@@ -506,7 +507,7 @@ export default function ClubDetailScreen() {
             </View>
           )}
         />
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -710,3 +711,24 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+
+
+// Opened without a club (e.g. a refreshed or shared link on the web): there
+// is nothing to show, so say so instead of crashing.
+export default function ClubDetailScreen() {
+  const route = useRoute<any>();
+  const navigation = useNavigation<any>();
+  if (!route.params?.clubId) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: colors.background }}>
+        <Text style={{ fontSize: 15, color: colors.textSecondary, textAlign: "center", marginBottom: 12 }}>
+          Open this from a club's page.
+        </Text>
+        <Text style={{ color: colors.primary, fontWeight: "700" }} onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate("Tabs" as never))}>
+          Go back
+        </Text>
+      </View>
+    );
+  }
+  return <ClubDetailScreenInner />;
+}

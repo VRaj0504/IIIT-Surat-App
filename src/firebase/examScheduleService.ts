@@ -1,5 +1,6 @@
 import { collection, onSnapshot, query, where, Timestamp } from "firebase/firestore";
 import { db } from "./firestore";
+import { persisted } from './liveCache';
 
 // One doc per branch + semester + exam type, id `${branch}-${semester}-${examType}`
 // (written by the faculty web portal's Exam Schedule tab — the id scheme
@@ -49,7 +50,7 @@ export function subscribeToExamSchedules(
     where("branch", "in", isMnc(branch) ? ["MNC", "CSE"] : [branch]),
     where("semester", "==", semester),
   );
-  return onSnapshot(
+  return persisted(`exams:${branch}:${semester}`, (onUpdate) => onSnapshot(
     q,
     (snap) => {
       const all = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ExamSchedule, "id">) }));
@@ -69,5 +70,5 @@ export function subscribeToExamSchedules(
       console.error("[examScheduleService] subscribeToExamSchedules error:", err);
       onUpdate([]);
     },
-  );
+  ), onUpdate);
 }

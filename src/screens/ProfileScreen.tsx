@@ -13,7 +13,7 @@ import { getCurrentSemester } from "../utils/academicInfo";
 import TapCard from "../components/TapCard";
 
 // Public pages on the faculty portal's hosting (also given to the app stores).
-export const PRIVACY_URL = "https://faculty-upload-web.web.app/privacy.html";
+export const PRIVACY_URL = "https://collegego-iiitsurat.web.app/privacy.html";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 type Row = {
@@ -189,27 +189,34 @@ export default function ProfileScreen() {
             </View>
           )}
 
-          <TapCard style={[styles.card, styles.row, styles.logout]} onPress={handleLogout}>
-            <View style={[styles.rowIcon, { backgroundColor: colors.dangerBg }]}>
-              <Ionicons name="log-out-outline" size={18} color={colors.danger} />
-            </View>
-            <Text style={[styles.rowLabel, { color: colors.danger, flex: 1 }]}>Log out</Text>
-          </TapCard>
-
-          <TapCard style={[styles.card, styles.row]} onPress={() => Linking.openURL(PRIVACY_URL)}>
-            <View style={[styles.rowIcon, { backgroundColor: colors.surfaceAlt }]}>
-              <Ionicons name="shield-checkmark-outline" size={18} color={colors.textSecondary} />
-            </View>
-            <Text style={[styles.rowLabel, { flex: 1 }]}>Privacy policy</Text>
-            <Ionicons name="open-outline" size={16} color={colors.textSecondary} />
-          </TapCard>
-
-          <TapCard style={[styles.card, styles.row]} onPress={deleting ? undefined : handleDelete}>
-            <View style={[styles.rowIcon, { backgroundColor: colors.dangerBg }]}>
-              {deleting ? <ActivityIndicator size="small" color={colors.danger} /> : <Ionicons name="trash-outline" size={18} color={colors.danger} />}
-            </View>
-            <Text style={[styles.rowLabel, { color: colors.danger, flex: 1 }]}>{deleting ? "Deleting…" : "Delete account"}</Text>
-          </TapCard>
+          <Text style={styles.groupTitle}>Privacy & account</Text>
+          <View style={styles.card}>
+            <TapCard style={styles.row} onPress={() => Linking.openURL(PRIVACY_URL)}>
+              <View style={[styles.rowIcon, { backgroundColor: colors.surfaceAlt }]}>
+                <Ionicons name="shield-checkmark-outline" size={18} color={colors.textSecondary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowLabel}>Privacy policy</Text>
+                <Text style={styles.rowSub}>How your data is used</Text>
+              </View>
+              <Ionicons name="open-outline" size={16} color={colors.textSecondary} />
+            </TapCard>
+            <TapCard style={[styles.row, styles.rowDivider]} onPress={handleLogout}>
+              <View style={[styles.rowIcon, { backgroundColor: colors.dangerBg }]}>
+                <Ionicons name="log-out-outline" size={18} color={colors.danger} />
+              </View>
+              <Text style={[styles.rowLabel, { color: colors.danger, flex: 1 }]}>Log out</Text>
+            </TapCard>
+            <TapCard style={[styles.row, styles.rowDivider]} onPress={deleting ? undefined : handleDelete}>
+              <View style={[styles.rowIcon, { backgroundColor: colors.dangerBg }]}>
+                {deleting ? <ActivityIndicator size="small" color={colors.danger} /> : <Ionicons name="trash-outline" size={18} color={colors.danger} />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowLabel, { color: colors.danger }]}>{deleting ? "Deleting…" : "Delete account"}</Text>
+                <Text style={styles.rowSub}>Permanently removes your data</Text>
+              </View>
+            </TapCard>
+          </View>
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -218,7 +225,7 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.background },
-  scroll: { paddingHorizontal: 18, paddingTop: spacing.md, paddingBottom: spacing.xl * 2 },
+  scroll: { paddingHorizontal: 18, paddingTop: spacing.md, paddingBottom: 110 },
   h1: { ...typography.h1, color: colors.textPrimary, marginBottom: 14 },
 
   hero: { backgroundColor: colors.ink, borderRadius: 26, padding: 18, gap: 14 },

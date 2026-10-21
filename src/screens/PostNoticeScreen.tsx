@@ -30,6 +30,7 @@ import {
   Notice,
 } from "../firebase/noticesService";
 import { getAdmissionYears, getClassOptionsForYear, yearOfStudyLabel, ClassOption } from "../firebase/announcementsService";
+import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 type PostNoticeRoute = RouteProp<RootStackParamList, "PostNotice">;
@@ -190,10 +191,10 @@ export default function PostNoticeScreen() {
     >
       <SafeAreaView style={styles.container} edges={["top"]}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior={undefined}
           style={{ flex: 1 }}
         >
-          <ScrollView
+          <KeyboardAwareScrollView
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
@@ -412,7 +413,7 @@ export default function PostNoticeScreen() {
                 )}
               </TouchableOpacity>
             )}
-          </ScrollView>
+          </KeyboardAwareScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </LinearGradient>

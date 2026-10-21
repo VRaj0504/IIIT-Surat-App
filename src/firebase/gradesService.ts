@@ -11,6 +11,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { db } from "./firestore";
+import { persisted } from './liveCache';
 
 // IIIT Surat's actual relative-grading scale (confirmed against the real
 // convention used at IITs/IIITs: AA/AB/BB/BC/CC/CD/DD/FF, not a generic
@@ -156,7 +157,7 @@ export function subscribeToMyGrades(
   onUpdate: (grades: GradeEntry[]) => void,
 ): () => void {
   const q = query(collection(db, COLLECTION), where("studentEnrollmentNumber", "==", enrollmentNumber));
-  return onSnapshot(
+  return persisted(`grades:${enrollmentNumber}`, (onUpdate) => onSnapshot(
     q,
     (snapshot) => {
       onUpdate(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<GradeEntry, "id">) })));
@@ -165,7 +166,7 @@ export function subscribeToMyGrades(
       // eslint-disable-next-line no-console
       console.error("[gradesService] subscribeToMyGrades error:", err);
     },
-  );
+  ), onUpdate);
 }
 
 export type SemesterResult = { semester: number; sgpa: number; credits: number };
