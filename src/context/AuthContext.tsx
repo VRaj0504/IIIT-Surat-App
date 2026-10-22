@@ -34,7 +34,7 @@ try {
   isSuccessResponse = googleSigninModule.isSuccessResponse;
   GoogleSignin.configure({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-    // iPhone: the iOS OAuth client (see app.config.js). Ignored on Android.
+
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
   });
 } catch {
@@ -43,8 +43,6 @@ try {
 
 export const ALLOWED_EMAIL_DOMAIN = '@iiitsurat.ac.in';
 
-// The single app-store reviewer login (email + password, created by
-// scripts/create-reviewer.js). The only non-institute address that can sign in.
 export const REVIEWER_EMAIL = 'reviewer@collegego.app';
 export const isReviewerEmail = (email: string) => email.trim().toLowerCase() === REVIEWER_EMAIL;
 
@@ -62,9 +60,9 @@ export type UserProfile = {
   email: string;
   role: Role;
   photoUrl?: string;
-  // Up to 3 people the SOS screen can text with your location.
+
   emergencyContacts?: { name: string; phone: string }[];
-  // Admin on top of the normal role (scripts/make-admin.js); not self-editable.
+
   isAdmin?: boolean;
   enrollmentNumber?: string;
   branch?: Branch;
@@ -81,7 +79,7 @@ export type UserProfile = {
   publicationsCount?: number | null;
   aboutMe?: string;
   inCabin?: boolean;
-  reviewer?: boolean; // app-store review account (demo SOS)
+  reviewer?: boolean;
   roleEmail?: string;
   shortForm?: string;
   expoPushToken?: string;
@@ -92,10 +90,10 @@ type AuthContextValue = {
   profile: UserProfile | null;
   initializing: boolean;
   profileLoading: boolean;
-  /** True when the profile fetch failed (offline etc.) — NOT the same as "no profile yet". */
+
   profileLoadFailed: boolean;
   retryProfileLoad: () => Promise<void>;
-  /** Set when a sign-in was refused (e.g. non-institute Google account); shown on the login screens. */
+
   authError: string | null;
   clearAuthError: () => void;
   logIn: (email: string, password: string) => Promise<void>;
@@ -117,8 +115,7 @@ type AuthContextValue = {
   updatePhoto: (photoUrl: string) => Promise<void>;
   setInCabin: (inCabin: boolean) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
-  // Email + password sign-up: the account must verify its institute email
-  // before a profile can be created (the Firestore rules require it).
+
   needsEmailVerification: boolean;
   signUpWithEmail: (p: { name: string; email: string; password: string }) => Promise<void>;
   resendVerificationEmail: () => Promise<void>;
@@ -127,9 +124,6 @@ type AuthContextValue = {
   setPreviewRole: (role: Role | null) => void;
 };
 
-// Turns Firebase's raw "Firebase: Error (auth/...)" text into something a
-// person can act on. Returns null for "the user simply closed the window",
-// which is not an error worth showing.
 function friendlyGoogleError(err: any): string | null {
   switch (err?.code) {
     case 'auth/popup-closed-by-user':
@@ -161,16 +155,12 @@ function friendlyAuthErrorMessage(err: any): string {
   if (isOffline) {
     return "No internet connection right now — check your connection and try again.";
   }
-  // Profile creation is refused by the Firestore rules unless the account's
-  // institute email is VERIFIED — which an email/password account usually
-  // isn't. Before, this showed Firebase's raw "Missing or insufficient
-  // permissions." with no hint what to do.
+
   if (code === "permission-denied" || /insufficient permissions/i.test(raw)) {
     return `This account's email isn't verified as an institute address. Log out, then use "Continue with Google" with your ${ALLOWED_EMAIL_DOMAIN} account.`;
   }
   return raw || "Something went wrong. Please try again.";
 }
-
 
 async function buildGatedProfile(params: {
   uid: string;
@@ -199,7 +189,7 @@ async function buildGatedProfile(params: {
     if (!allowSnap.exists() || allowData?.role !== 'faculty') {
       throw new Error('This email is not on the approved faculty list. Contact an admin if you believe this is a mistake.');
     }
-    
+
     departmentOut = allowData?.department;
     designationOut = allowData?.designation;
     roleEmailOut = allowData?.roleEmail;
@@ -239,12 +229,10 @@ async function buildGatedProfile(params: {
   };
 }
 
-
 async function createUserProfileAtomically(uid: string, profile: UserProfile): Promise<void> {
   const userRef = doc(db, 'users', uid);
   await runTransaction(db, async (tx) => {
-    // Never overwrite an existing profile (a failed profile fetch must not
-    // be able to wipe a faculty member's saved details).
+
     const existing = await tx.get(userRef);
     if (existing.exists()) {
       throw new Error('Your profile already exists. Please close and reopen the app.');
@@ -265,7 +253,6 @@ async function createUserProfileAtomically(uid: string, profile: UserProfile): P
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-
 const DEV_PREVIEW_EMAIL = 'ug25cse114@iiitsurat.ac.in';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -280,22 +267,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const setPreviewRole = useCallback(
     (role: Role | null) => {
-      if (profile?.email !== DEV_PREVIEW_EMAIL) return; // silently ignored for everyone else
+      if (profile?.email !== DEV_PREVIEW_EMAIL) return;
       setPreviewRoleState(role);
     },
     [profile?.email],
   );
 
-  // Loads users/{uid}. A FAILED load (offline, timeout) is reported as
-  // profileLoadFailed — never as "no profile", because "no profile" sends
-  // the user to CompleteProfileScreen.
   const [needsEmailVerification, setNeedsEmailVerification] = useState(false);
 
   const loadProfile = useCallback(async (firebaseUser: User) => {
     const cacheKey = `profile:${firebaseUser.uid}`;
-    // Returning user: open straight away with the profile saved on this
-    // phone, then refresh it quietly in the background. Before, every launch
-    // waited on the network before showing anything.
+
     const cached = await readCached<UserProfile>(cacheKey);
     if (cached && cached.uid === firebaseUser.uid) {
       setProfile(cached);
@@ -311,7 +293,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           writeCached(cacheKey, fresh);
           setProfile(fresh);
         })
-        .catch(() => {}); // offline: keep showing the saved profile
+        .catch(() => {});
       return;
     }
     setProfileLoading(true);
@@ -320,8 +302,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
       if (snap.exists()) writeCached(cacheKey, snap.data() as UserProfile);
       setProfile(snap.exists() ? (snap.data() as UserProfile) : null);
-      // Only a brand-new password account (no profile yet) is asked to verify;
-      // existing accounts are never locked out.
+
       const passwordOnly =
         firebaseUser.providerData.length > 0 && firebaseUser.providerData.every((p) => p.providerId === 'password');
       setNeedsEmailVerification(!snap.exists() && passwordOnly && !firebaseUser.emailVerified);
@@ -334,10 +315,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      // A Google-only account outside the institute domain is refused here,
-      // BEFORE it is ever put into state — so the app never flashes the
-      // "complete your profile" screen for it, and the login screen stays
-      // mounted to show the reason (authError).
+
       if (firebaseUser) {
         const email = (firebaseUser.email ?? '').trim().toLowerCase();
         const googleOnly =
@@ -366,16 +344,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(null);
         setProfileLoadFailed(false);
         setNeedsEmailVerification(false);
-        clearCache(); // signed out / account deleted: forget this phone's saved data
+        clearCache();
       }
       setInitializing(false);
     });
     return unsubscribe;
   }, [loadProfile]);
 
-  // Only used by the redirect fallback above: when the browser comes back
-  // from Google, surface any failure instead of silently showing the login
-  // screen again.
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     getRedirectResult(auth).catch((e) => {
@@ -384,7 +359,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // Keep the saved copy in step with edits made in the app (name, phone, photo…).
   useEffect(() => {
     if (user && profile && profile.uid === user.uid) writeCached(`profile:${user.uid}`, profile);
   }, [user, profile]);
@@ -412,8 +386,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (auth.currentUser) await sendEmailVerification(auth.currentUser);
   }, []);
 
-  // After the person taps the link in their inbox: reload the account and
-  // refresh the sign-in token so the rules see email_verified = true.
   const checkEmailVerified = useCallback(async () => {
     const u = auth.currentUser;
     if (!u) return false;
@@ -424,33 +396,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return true;
   }, []);
 
-  
   function newGoogleProviderForcingAccountChooser(): GoogleAuthProvider {
     const provider = new GoogleAuthProvider();
-    // hd = hint that narrows Google's account chooser to the institute domain.
+
     provider.setCustomParameters({ prompt: 'select_account', hd: ALLOWED_EMAIL_DOMAIN.slice(1) });
     return provider;
   }
-
 
   const signInWithGoogle: AuthContextValue['signInWithGoogle'] = useCallback(async () => {
     if (Platform.OS === 'web') {
       setAuthError(null);
       const provider = newGoogleProviderForcingAccountChooser();
       try {
-        // A wrong-domain account is refused by the auth listener above,
-        // before the UI ever sees it; the reason shows up as authError.
+
         await signInWithPopup(auth, provider);
       } catch (e: any) {
         if (e?.code === 'auth/popup-blocked') {
-          // Some browsers (mostly phones) never allow the pop-up: fall back
-          // to a full-page redirect. The result is picked up by the
-          // getRedirectResult effect below when the page comes back.
+
           await signInWithRedirect(auth, provider);
           return;
         }
         const message = friendlyGoogleError(e);
-        if (message === null) return; // user closed the window — not an error
+        if (message === null) return;
         throw new Error(message);
       }
       return;
@@ -463,12 +430,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await GoogleSignin.hasPlayServices();
     const response = await GoogleSignin.signIn();
     if (!isSuccessResponse(response)) {
-      // User cancelled the picker — not an error, just a no-op.
+
       return;
     }
-    // Check the chosen account BEFORE touching Firebase: a wrong-domain
-    // account then never becomes a signed-in user at all, so nothing flickers
-    // and the error goes straight back to the login screen.
+
     const pickedEmail = (response.data.user?.email ?? '').trim().toLowerCase();
     if (!isAllowedEmailDomain(pickedEmail)) {
       await GoogleSignin.signOut().catch(() => {});
@@ -484,7 +449,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const credential = GoogleAuthProvider.credential(idToken);
     await signInWithCredential(auth, credential);
   }, []);
-
 
   const completeGoogleProfile: AuthContextValue['completeGoogleProfile'] = useCallback(async ({ role, enrollmentNumber }) => {
     if (!user) throw new Error('You must be signed in.');
@@ -510,19 +474,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   const logOut = useCallback(async () => {
-    
+
     if (user) {
       await clearPushToken(user.uid);
     }
     await signOut(auth);
     setPreviewRoleState(null);
-    
+
     if (Platform.OS !== 'web' && googleSignInAvailable) {
       await GoogleSignin.signOut().catch(() => {});
     }
   }, [user]);
 
-  
   const updateProfileName: AuthContextValue['updateProfileName'] = useCallback(async (name) => {
     const trimmed = name.trim();
     if (!trimmed) throw new Error('Name cannot be empty.');
@@ -533,7 +496,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updateFacultyDetails: AuthContextValue['updateFacultyDetails'] = useCallback(async (details) => {
     if (!user) throw new Error('You must be signed in.');
-    
+
     const patch: Record<string, string | number | null> = {};
     (Object.keys(details) as (keyof typeof details)[]).forEach((key) => {
       const value = details[key];
@@ -548,7 +511,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await sendPasswordResetEmail(auth, email.trim());
   }, []);
 
-  
   const updatePhone: AuthContextValue['updatePhone'] = useCallback(async (phone) => {
     if (!user) throw new Error('You must be signed in.');
     const trimmed = phone.trim();
@@ -556,7 +518,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile((prev) => (prev ? { ...prev, phone: trimmed } : prev));
   }, [user]);
 
-  
   const updatePhoto: AuthContextValue['updatePhoto'] = useCallback(async (photoUrl) => {
     if (!user) throw new Error('You must be signed in.');
     await updateDoc(doc(db, 'users', user.uid), { photoUrl });

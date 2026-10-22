@@ -3,22 +3,16 @@ import { db } from "./firestore";
 
 export type MealSlot = "lunch" ;
 
-// Meal windows for the Unlimited Thali plan — distinct from the wallet
-// system's continuous STORE_OPEN/STORE_CLOSE, since a thali subscription
-// is inherently meal-slot-based (breakfast/lunch/dinner), not a
-// continuous ordering window. Adjust these to match the canteen's actual
-// serving hours.
 const MEAL_WINDOWS: { slot: MealSlot; startMinutes: number; endMinutes: number }[] = [
 
   { slot: "lunch", startMinutes: 12 * 60, endMinutes: 14 * 60 + 30 },
-  
+
 ];
 
 function currentMonthKey(now: Date = new Date()): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
-// "2026-09" -> "September 2026" — for display on the student's ID card.
 export function monthLabel(monthKey: string): string {
   const [year, month] = monthKey.split("-").map(Number);
   const date = new Date(year, month - 1, 1);
@@ -41,9 +35,6 @@ export type SubscriptionCheck = {
   month?: string;
 };
 
-// Checks whether a given enrollment number has an active subscription for
-// the current month — used by the student's own Thali Pass screen to
-// decide whether to show a QR code at all.
 export async function checkMySubscription(enrollmentNumber: string): Promise<SubscriptionCheck> {
   const month = currentMonthKey();
   const snap = await getDoc(doc(db, "messSubscriptions", `${enrollmentNumber}_${month}`));
@@ -58,11 +49,6 @@ export type ScanResult =
   | { status: "already_used"; mealSlot: MealSlot }
   | { status: "outside_meal_hours" };
 
-// The core verification staff actually rely on at the door. Everything
-// here happens inside a single Firestore transaction so two staff
-// members scanning the same QR at the exact same moment can't both
-// succeed — the second one always sees the first one's scan log and
-// correctly reports "already used", never a race where both go through.
 export async function verifyAndLogMealScan(
   enrollmentNumber: string,
   scannedByUid: string,
@@ -101,9 +87,6 @@ export async function verifyAndLogMealScan(
 
 export type MealStatus = "scanned" | "missed" | "ongoing" | "upcoming";
 
-// Today's status across all 3 meal slots, for the student's own ID card —
-// "missed" only once that meal's window has fully closed without a scan;
-// a slot still in progress or not yet started is never shown as missed.
 export async function getTodaysMealStatus(
   enrollmentNumber: string,
 ): Promise<Record<MealSlot, MealStatus>> {

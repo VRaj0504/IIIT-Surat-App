@@ -9,9 +9,6 @@ import { GlassScreen, Glass, Reveal, Heading, PrimaryButton, g, TEXT, MUTED, ACC
 
 const RESEND_SECONDS = 60;
 
-// Shown after "Create account" with email: the person opens the link we sent
-// to their institute inbox, then comes back. Checked automatically whenever
-// the app returns to the foreground, and by the button.
 export default function VerifyEmailScreen() {
   const { user, checkEmailVerified, resendVerificationEmail, logOut } = useAuth();
   const [checking, setChecking] = useState(false);

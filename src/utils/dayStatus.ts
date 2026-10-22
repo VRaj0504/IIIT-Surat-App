@@ -1,12 +1,5 @@
 import type { ExamSchedule } from "../firebase/examScheduleService";
 
-// What today is, for the "Classes today" card on Home: a holiday or a
-// class's exam period shows as exactly that, instead of a misleading
-// "0" or the count of a weekly timetable that isn't running today.
-// Mirrors functions/src/holidays.ts and functions/src/examPeriod.ts (which
-// decide when class reminders stay silent) — same dates, same rule.
-// KEEP THE HOLIDAY LIST IN SYNC with those by hand once a year.
-
 const PUBLIC_HOLIDAYS: Record<string, string> = {
   "2026-01-26": "Republic Day",
   "2026-03-04": "Holi",
@@ -32,8 +25,6 @@ const BREAKS: { start: string; end: string; name: string }[] = [
   { start: "2026-12-14", end: "2027-01-01", name: "Semester Break" },
 ];
 
-// Only the regular Mid/End Semester sheets pause classes (a quiz is an
-// hour with classes around it; repeaters share the regular dates).
 const CLASS_SUSPENDING_TYPES = ["midsem", "endsem"];
 
 export type DayStatus = { short: string; label: string };
@@ -50,8 +41,6 @@ export function getHolidayName(iso: string, overrides?: Record<string, string>):
   return BREAKS.find((b) => iso >= b.start && iso <= b.end)?.name ?? null;
 }
 
-// The first exam date to the last is the exam period; the free days in
-// between (and a Sunday) are part of it, not class days.
 function inExamPeriod(schedules: ExamSchedule[], iso: string): boolean {
   return schedules.some((s) => {
     if (!CLASS_SUSPENDING_TYPES.includes(s.examType)) return false;

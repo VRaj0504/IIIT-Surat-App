@@ -20,12 +20,6 @@ import LoadingSpinner from "../components/LoadingSpinner";
 
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
-// Receives only the two primitive values this specific row actually
-// needs (its own current grade, its own saving flag) rather than the
-// whole draftGrades/saving maps — a roster can be 50-70+ students, and
-// without this, tapping a grade chip for ONE student re-rendered every
-// single row in the list, since draftGrades/saving are new object
-// references on every tap regardless of which student changed.
 const StudentGradeRow = memo(function StudentGradeRow({
   item,
   currentGrade,
@@ -65,7 +59,6 @@ const StudentGradeRow = memo(function StudentGradeRow({
 export default function GradeEntryScreen() {
   const { profile } = useAuth();
 
-  // Step 1: which class (year + branch/section) is being graded.
   const [years, setYears] = useState<number[]>([]);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [classOptions, setClassOptions] = useState<ClassOption[]>([]);
@@ -73,13 +66,11 @@ export default function GradeEntryScreen() {
   const [selectedSpecialization, setSelectedSpecialization] = useState<string | null>(null);
   const [classesLoading, setClassesLoading] = useState(false);
 
-  // Step 2: which subject (drives the curriculum semester + default credits).
   const [semester, setSemester] = useState<(typeof SEMESTERS)[number] | null>(null);
   const [subjects, setSubjects] = useState<CurriculumSubject[]>([]);
   const [selectedSubject, setSelectedSubject] = useState<CurriculumSubject | null>(null);
   const [creditsOverride, setCreditsOverride] = useState("");
 
-  // Step 3: the roster + grades being entered.
   const [roster, setRoster] = useState<RosterStudent[]>([]);
   const [rosterLoading, setRosterLoading] = useState(false);
   const [existingGrades, setExistingGrades] = useState<Map<string, GradeEntry>>(new Map());
@@ -112,9 +103,6 @@ export default function GradeEntryScreen() {
     return () => unsubscribe();
   }, [selectedClass, semester]);
 
-  // Once class + subject are both picked (and specialization too, when the
-  // class has more than one), load the roster and any grades already
-  // entered for this exact class+subject combination.
   useEffect(() => {
     const needsSpecialization = selectedClass && selectedClass.specializations.length > 0;
     if (!selectedClass || selectedYear === null || !selectedSubject || (needsSpecialization && !selectedSpecialization)) {
@@ -148,11 +136,6 @@ export default function GradeEntryScreen() {
     return typed > 0 ? typed : null;
   }, [selectedSubject, creditsOverride]);
 
-  // Wrapped in useCallback (not just a plain function) because a stable
-  // function reference is what actually lets StudentGradeRow's memo()
-  // below do its job — an inline/recreated-every-render function would
-  // make every row's props look "different" every time regardless of
-  // memo, defeating the whole point of memoizing the row.
   const handleSetGrade = useCallback(
     async (student: RosterStudent, grade: string) => {
       if (!profile || !selectedClass || selectedYear === null || !selectedSubject || !semester) return;

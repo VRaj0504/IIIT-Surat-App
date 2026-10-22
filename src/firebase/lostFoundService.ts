@@ -36,9 +36,9 @@ export type LostFoundItem = {
   storagePath: string | null;
   postedBy: string;
   postedByName: string;
-  
+
   postedByEmail: string;
-  
+
   postedByPhone: string | null;
   status: "open" | "resolved";
   createdAt: Timestamp | null;
@@ -57,15 +57,14 @@ export async function postLostFoundItem(params: {
   postedByName: string;
   postedByEmail: string;
   postedByPhone?: string | null;
-  // Local file URI from the image picker — optional, posting works fine
-  // without one.
+
   localPhotoUri?: string | null;
 }): Promise<void> {
   let photoUrl: string | null = null;
   let storagePath: string | null = null;
 
   if (params.localPhotoUri) {
-    
+
     const fileResponse = await fetch(params.localPhotoUri);
     const fileBlob = await fileResponse.blob();
     storagePath = `lostFound/${params.postedBy}/${Date.now()}.jpg`;
@@ -95,8 +94,6 @@ export async function postLostFoundItem(params: {
   });
 }
 
-// Live feed, newest first. Pass `type` to show only Lost or only Found —
-// the screen uses a segmented toggle rather than mixing both in one list.
 export function subscribeToLostFoundItems(
   type: LostFoundType,
   onUpdate: (items: LostFoundItem[]) => void,
@@ -123,7 +120,6 @@ export function subscribeToLostFoundItems(
   ), onUpdate);
 }
 
-// Only the original poster can resolve their own post (see firestore.rules).
 export async function resolveLostFoundItem(itemId: string): Promise<void> {
   await updateDoc(doc(db, COLLECTION, itemId), {
     status: "resolved",
@@ -136,15 +132,13 @@ export async function deleteLostFoundItem(item: LostFoundItem): Promise<void> {
     try {
       await deleteObject(ref(storage, item.storagePath));
     } catch (err: any) {
-      // If Storage isn't live yet (pre-Blaze) or the file's already gone,
-      // don't let that block removing the Firestore doc itself.
+
       // eslint-disable-next-line no-console
       console.warn("[lostFoundService] could not delete photo:", err?.message);
     }
   }
   await deleteDoc(doc(db, COLLECTION, item.id));
 }
-
 
 export async function notifyLostFoundContact(params: {
   itemId: string;

@@ -1,5 +1,5 @@
-// Web replacement for "add to calendar": downloads a standard .ics file,
-// which Google Calendar / Outlook / Apple Calendar all open directly.
+
+
 function fmt(d: Date): string {
   return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 }

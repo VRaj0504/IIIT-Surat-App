@@ -10,16 +10,6 @@ type ScreenHeaderProps = {
   onAction?: () => void;
 };
 
-// A shared title block for the top of a screen's body content (NOT the
-// native nav bar, which is hidden on these screens — this is the custom
-// "Timetable" / "Clubs & Events" text each screen was rendering itself).
-// Before this, every screen wrote its own version: TimetableScreen had
-// title+subtitle stacked with no room for an action button, ClubsScreen
-// had title+button in a row with no subtitle, HomeScreen's greeting was
-// yet a third layout again — each visually inconsistent with the others
-// even though they're all doing the same job. One component now, used
-// wherever a screen needs a title (optionally with a subtitle below it,
-// or a single icon action button on the right, e.g. Clubs' "add club").
 export default function ScreenHeader({ title, subtitle, actionIcon, onAction }: ScreenHeaderProps) {
   return (
     <View style={styles.row}>

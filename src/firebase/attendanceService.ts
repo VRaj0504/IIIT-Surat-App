@@ -13,28 +13,24 @@ import { getApprovedExcusalRanges, isDateWithinExcusal } from "./eventExcusalSer
 
 const COLLECTION = "attendanceSessions";
 
-// One document per (class, subject, date) — storing only who was ABSENT,
-// not a per-student doc for everyone present. Matches the actual faculty
-// workflow (mark the few exceptions, not every name), and keeps writes
-// small regardless of class size.
 export type AttendanceSession = {
   branch: string;
   admissionYear: number;
   section: string | null;
   subjectCode: string;
   subjectName: string;
-  date: string; // "YYYY-MM-DD"
+  date: string;
   absentEnrollmentNumbers: string[];
-  // Optional fields written by the faculty portal (older docs lack them):
-  lecture?: number; // 2 = second class of this subject that day
+
+  lecture?: number;
   semester?: number;
-  specialization?: string | null; // only these students take it
-  excusedEnrollmentNumbers?: string[]; // on duty / leave — counts as attended
-  hours?: number; // a 2-hour lab counts as 2
+  specialization?: string | null;
+  excusedEnrollmentNumbers?: string[];
+  hours?: number;
   kind?: "lecture" | "lab";
-  onlyEnrollmentNumbers?: string[]; // one lab batch: only these students
+  onlyEnrollmentNumbers?: string[];
   batchLabel?: string;
-  markedBy: string; // faculty uid
+  markedBy: string;
   markedAt: any;
 };
 
@@ -48,11 +44,6 @@ function sessionDocId(params: {
   return `${params.branch}_${params.admissionYear}_${params.section ?? "NONE"}_${params.subjectCode}_${params.date}`;
 }
 
-// Faculty side — records one class session's attendance. Re-marking the
-// same (class, subject, date) combination overwrites the previous
-// record entirely, same as re-entering a grade overwrites the old one
-// elsewhere in this app — there's one true record per session, not a
-// history of edits.
 export async function markAttendance(params: {
   branch: string;
   admissionYear: number;
@@ -67,11 +58,11 @@ export async function markAttendance(params: {
   specialization?: string | null;
 }): Promise<void> {
   const id = sessionDocId(params);
-  // Keep on-duty marks made on the portal, except for anyone now marked absent.
+
   const prev = await getDoc(doc(db, COLLECTION, id));
   const prevData = prev.exists() ? (prev.data() as AttendanceSession) : null;
   const excused = (prevData?.excusedEnrollmentNumbers ?? []).filter((r) => !params.absentEnrollmentNumbers.includes(r));
-  // Keep lab details set on the portal (length, which batch).
+
   const lab = {
     ...(prevData?.hours ? { hours: prevData.hours } : {}),
     ...(prevData?.kind ? { kind: prevData.kind } : {}),
@@ -98,10 +89,6 @@ export async function markAttendance(params: {
   });
 }
 
-// Loads whatever session already exists for this exact (class, subject,
-// date) — lets the faculty screen pre-fill if they're re-opening a day
-// they already marked, instead of starting blank and risking an
-// accidental double-count.
 export async function getExistingSession(params: {
   branch: string;
   admissionYear: number;
@@ -120,32 +107,24 @@ export type SubjectAttendance = {
   subjectName: string;
   totalSessions: number;
   presentCount: number;
-  percentage: number; // 0-100, rounded to 1 decimal
-  // Classes you can still miss and stay at 75% (0 if already below), or
-  // classes in a row you need to attend to get back to 75%.
+  percentage: number;
+
   canMiss: number;
   needToAttend: number;
-  lastClass: string | null; // "YYYY-MM-DD"
+  lastClass: string | null;
 };
 
 export const ATTENDANCE_TARGET = 75;
 
 function slack(present: number, total: number) {
   const t = ATTENDANCE_TARGET / 100;
-  // largest k with present / (total + k) >= t
+
   const canMiss = Math.max(0, Math.floor(present / t - total + 1e-9));
-  // smallest k with (present + k) / (total + k) >= t
+
   const needToAttend = present / Math.max(total, 1) >= t ? 0 : Math.ceil((t * total - present) / (1 - t) - 1e-9);
   return { canMiss, needToAttend };
 }
 
-// Student side — every class held for the student's own section this
-// semester, grouped by subject (electives included). One query; the rules
-// let a student read exactly their branch + year + section.
-//   · OD / leave marked by the teacher, approved event excusals and
-//     medical leaves confirmed by the teacher count as attended
-//   · classes saved for another specialization don't count
-//   · a class from an earlier semester doesn't count
 export async function getMyAttendance(params: {
   enrollmentNumber: string;
   branch: string;
@@ -153,8 +132,8 @@ export async function getMyAttendance(params: {
   section: string | null;
   specialization?: string | null;
   semester: number;
-  subjects: { code: string; name: string }[]; // this semester's curriculum
-  medicalExcusedSessions?: Set<string>; // "CS304|2026-10-19"
+  subjects: { code: string; name: string }[];
+  medicalExcusedSessions?: Set<string>;
 }): Promise<SubjectAttendance[]> {
   const q = query(
     collection(db, COLLECTION),
@@ -173,9 +152,9 @@ export async function getMyAttendance(params: {
     const thisSem = d.semester !== undefined ? d.semester === params.semester : semCodes.has(key);
     if (!thisSem) return;
     if (d.specialization && d.specialization !== params.specialization) return;
-    // A lab batch I'm not in isn't my class.
+
     if (d.onlyEnrollmentNumbers?.length && !d.onlyEnrollmentNumbers.includes(params.enrollmentNumber)) return;
-    const w = Math.max(1, Math.round(d.hours ?? 1)); // a 2-hour lab counts as 2
+    const w = Math.max(1, Math.round(d.hours ?? 1));
 
     const entry = bySubject.get(key) ?? {
       code: semCodes.get(key)?.code ?? d.subjectCode,

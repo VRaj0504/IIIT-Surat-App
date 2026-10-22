@@ -319,11 +319,7 @@ const styles = StyleSheet.create({
   },
   submitButtonText: { color: colors.surface, fontWeight: "700", fontSize: 15 },
   historyHeader: { ...typography.h3, color: colors.textPrimary, paddingHorizontal: spacing.lg, marginTop: spacing.xl, marginBottom: spacing.sm },
-  // Without an explicit height/flex here, this FlatList (the screen's only
-  // child) sizes itself to its content instead of filling the SafeAreaView
-  // — RN's ScrollView needs a bounded frame to know what's "offscreen" and
-  // scroll to it, so a form this long (all the fields plus the submissions
-  // history) just overflowed the screen with nothing to scroll.
+
   list: { flex: 1 },
   listContent: { paddingBottom: spacing.xl },
   emptyNote: { ...typography.caption, color: colors.textSecondary, paddingHorizontal: spacing.lg },

@@ -31,11 +31,10 @@ import { KeyboardAwareScrollView } from "../../components/KeyboardAware";
 
 const BRANCHES = ["CSE", "ECE", "MNC"] as const;
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
-// Same order as the folders students see.
+
 const TYPES = ["Notes", "Slides", "Assignment", "PYQ"] as const;
 const EXAM_YEARS = examYearOptions();
-// Newest first, so the common case (this year) is the leftmost chip and
-// already selected by default.
+
 const BATCH_CHOICES = batchChoices();
 
 export default function UploadResourceScreen() {
@@ -50,18 +49,12 @@ export default function UploadResourceScreen() {
   const [type, setType] = useState<(typeof TYPES)[number]>("Notes");
   const [section, setSection] = useState("");
   const [academicYear, setAcademicYear] = useState<string>(currentAcademicYear());
-  // Only for PYQs, and deliberately NOT defaulted: a silent default would
-  // quietly file a paper under the wrong year, so the faculty member has
-  // to pick it.
+
   const [examYear, setExamYear] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  // Depends on branch + semester, so declared after both are already set up.
   const [subjectOptions, setSubjectOptions] = useState<CurriculumSubject[]>([]);
 
-  // Re-subscribes to Firestore every time branch or semester changes,
-  // so the dropdown always reflects live curriculum data for whatever's
-  // currently selected — not a bundled snapshot from build time.
   useEffect(() => {
     const unsubscribe = subscribeToCurriculum(branch, semester, (subjects) => {
       setSubjectOptions(subjects);
@@ -133,7 +126,6 @@ export default function UploadResourceScreen() {
         <KeyboardAwareScrollView contentContainerStyle={styles.content}>
           <Text style={styles.title}>Upload Resource</Text>
 
-          {/* --- File picker --- */}
           <TouchableOpacity style={styles.filePicker} onPress={pickFile}>
             <Ionicons
               name="document-attach-outline"
@@ -145,7 +137,6 @@ export default function UploadResourceScreen() {
             </Text>
           </TouchableOpacity>
 
-          {/* --- Title --- */}
           <Text style={styles.label}>Title</Text>
           <TextInput
             style={styles.input}
@@ -155,7 +146,6 @@ export default function UploadResourceScreen() {
             placeholderTextColor={colors.textSecondary}
           />
 
-          {/* --- Branch chips (must come before Subject, since Subject depends on it) --- */}
           <Text style={styles.label}>Branch</Text>
           <View style={styles.chipRow}>
             {BRANCHES.map((b) => (
@@ -176,7 +166,6 @@ export default function UploadResourceScreen() {
             ))}
           </View>
 
-          {/* --- Semester chips (must come before Subject too) --- */}
           <Text style={styles.label}>Semester</Text>
           <View style={styles.chipRow}>
             {SEMESTERS.map((s) => (
@@ -197,7 +186,6 @@ export default function UploadResourceScreen() {
             ))}
           </View>
 
-
           <Text style={styles.label}>Section (optional)</Text>
           <TextInput
            style={styles.input}
@@ -208,7 +196,6 @@ export default function UploadResourceScreen() {
             autoCapitalize="characters"
           />
 
-          {/* --- Subject chips — auto-populated from curriculum.ts based on Branch + Semester above --- */}
           <Text style={styles.label}>Subject</Text>
           {subjectOptions.length === 0 ? (
             <Text style={styles.emptyHint}>
@@ -235,7 +222,6 @@ export default function UploadResourceScreen() {
             </View>
           )}
 
-          {/* --- Type chips --- */}
           <Text style={styles.label}>Type</Text>
           <View style={styles.chipRow}>
             {TYPES.map((t) => (
@@ -253,8 +239,6 @@ export default function UploadResourceScreen() {
             ))}
           </View>
 
-          {/* PYQs are filed by the year the exam was held; everything else
-              is filed by which batch it was written for. */}
           {type === "PYQ" ? (
             <>
               <Text style={styles.label}>Exam year</Text>
@@ -299,7 +283,6 @@ export default function UploadResourceScreen() {
             </>
           )}
 
-          {/* --- Upload button --- */}
           <TouchableOpacity
             style={[
               styles.uploadButton,

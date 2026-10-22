@@ -17,12 +17,6 @@ import { expandFaculty } from "../data/facultyLegend";
 import { mergeContiguousSlots, toMinutes } from "../utils/timetable";
 import LoadingSpinner from "../components/LoadingSpinner";
 
-// One day at a time: finished classes fade, the running one is
-// highlighted, and any free hour shows up as its own slot with a shortcut
-// to Class Emptiness. Plain views only (no row animations), so switching
-// days is instant.
-//
-// Saturday is excluded: every timetable in this app only runs Mon–Fri.
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
 type Slot = TimetableSlot & { branch?: string; semester?: number; section?: string };
@@ -39,17 +33,15 @@ function fmt(mins: number): string {
   return `${h12}:${String(m).padStart(2, "0")} ${period}`;
 }
 
-// "9:00 – 11:00 AM" (one AM/PM when both ends share it) — fits one line.
 function fmtRange(a: number, b: number): string {
   const sameHalf = (a < 720) === (b < 720);
   const short = (m: number) => fmt(m).replace(/ (AM|PM)$/, "");
   return sameHalf ? `${short(a)} – ${fmt(b)}` : `${fmt(a)} – ${fmt(b)}`;
 }
 
-// Monday..Friday of the current week (on a weekend: the coming week).
 function weekDates(today: Date): Date[] {
   const d = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const dow = d.getDay(); // 0 Sun .. 6 Sat
+  const dow = d.getDay();
   const offsetToMonday = dow === 0 ? 1 : dow === 6 ? 2 : 1 - dow;
   const monday = new Date(d);
   monday.setDate(d.getDate() + offsetToMonday);
@@ -60,7 +52,6 @@ function weekDates(today: Date): Date[] {
   });
 }
 
-// Classes and free gaps (>= 60 min), in time order.
 function buildRows(slots: Slot[], isToday: boolean, nowMin: number): Row[] {
   const sorted = mergeContiguousSlots(slots)
     .filter((s) => toMinutes(s.startTime) >= 0)
@@ -93,13 +84,10 @@ export default function TimetableScreen() {
   const navigation = useNavigation<any>();
   const isFaculty = (previewRole ?? profile?.role) === "faculty";
 
-  // --- Student path: one section's timetable doc ---
   const [timetable, setTimetable] = useState<Timetable | null>(null);
   const hasAcademicInfo = !!(profile?.branch && profile?.section && profile?.admissionYear);
   const semester = profile?.admissionYear ? getCurrentSemester(profile.admissionYear, undefined, profile.program) : null;
 
-  // --- Faculty path: derived from every section's timetable (see
-  // subscribeToFacultyTimetable in timetableService.ts). ---
   const [facultyEntries, setFacultyEntries] = useState<FacultyScheduleEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -248,8 +236,7 @@ export default function TimetableScreen() {
 }
 
 function ClassCard({ slot, state, showSection }: { slot: Slot; state: "past" | "now" | "upcoming"; showSection: boolean }) {
-  // Labs (room contains "LAB") get a warm tint; lectures a cool one, so a
-  // 2-hour lab reads differently from a 1-hour lecture at a glance.
+
   const isLab = (slot.room ?? "").toUpperCase().includes("LAB");
   const tone = isLab ? colors.tile.peach : colors.tile.blue;
   const live = state === "now";

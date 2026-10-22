@@ -12,7 +12,6 @@ import { useAuth } from "../context/AuthContext";
 import { getCurrentSemester } from "../utils/academicInfo";
 import TapCard from "../components/TapCard";
 
-// Public pages on the faculty portal's hosting (also given to the app stores).
 export const PRIVACY_URL = "https://collegego-iiitsurat.web.app/privacy.html";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
@@ -67,7 +66,6 @@ export default function ProfileScreen() {
 
   const [deleting, setDeleting] = useState(false);
 
-  // Required by Google Play and the App Store: delete the account from inside the app.
   const handleDelete = () => {
     Alert.alert(
       "Delete your account?",
@@ -115,7 +113,6 @@ export default function ProfileScreen() {
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <Text style={styles.h1}>Profile</Text>
 
-          {/* Who you are */}
           <View style={styles.hero}>
             <View style={styles.heroTop}>
               {profile?.photoUrl ? (
@@ -171,9 +168,6 @@ export default function ProfileScreen() {
             </View>
           ))}
 
-          {/* Dev-only convenience for previewing the faculty screens
-              without changing your real role in Firestore — setPreviewRole
-              no-ops for any other account. */}
           {profile?.email === "ug25cse114@iiitsurat.ac.in" && (
             <View style={[styles.card, styles.row, { marginTop: 14 }]}>
               <View style={[styles.rowIcon, { backgroundColor: colors.surfaceAlt }]}>

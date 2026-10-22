@@ -17,11 +17,6 @@ export function guessMimeType(name: string): string {
   }
 }
 
-// Only images render correctly inside the in-app WebView preview (browsers/
-// WebViews natively decode image data URIs). PDFs and everything else need
-// to go through the OS's own viewer via expo-sharing instead — Android's
-// WebView has no built-in PDF renderer, so a data: URI PDF just shows a
-// blank page there even though the exact same approach works on iOS.
 export function isPreviewableInWebView(name: string): boolean {
   return guessMimeType(name).startsWith("image/");
 }

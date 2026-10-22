@@ -1,5 +1,5 @@
-// Central place for navigation param types. Add a new screen here first,
-// then it gets full type-checking + autocomplete everywhere else.
+
+
 import type { ClubEvent } from "../firebase/clubsService";
 import type { Notice } from "../firebase/noticesService";
 
@@ -14,11 +14,10 @@ export type RootTabParamList = {
 export type RootStackParamList = {
   Tabs: undefined;
   MessMenu: undefined;
-  // reorderItems, when present, prefills the cart with a past order's
-  // items (quantities capped to whatever's actually in stock right now).
+
   ThaliPass: undefined;
   ScanThaliPass: undefined;
-  
+
   LostFound: undefined;
   PostLostFound: { type?: "lost" | "found" } | undefined;
   ApplyLeave: undefined;

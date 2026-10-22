@@ -1,25 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Timestamp } from "firebase/firestore";
 
-// Makes screens open instantly.
-//
-// Every live list in the app (timetable, notices, exam dates, …) used to start
-// empty and wait for the network each time a screen opened, and again on every
-// app launch. `persisted()` wraps any `subscribe(onUpdate) => unsubscribe`
-// function so that:
-//   1. the last value is handed back straight away (from memory if this
-//      session has seen it, otherwise from the phone's storage),
-//   2. the live Firestore data then replaces it as soon as it arrives,
-//   3. the newest live value is saved for next time.
-// So a returning user sees their timetable immediately, even offline, and the
-// screen quietly updates if anything changed.
-
 const PREFIX = "cg-cache:v1:";
 const memory = new Map<string, { v: unknown; j: string }>();
 const pendingWrites = new Map<string, ReturnType<typeof setTimeout>>();
 
-// Firestore Timestamps become {seconds, nanoseconds, type} in JSON; turn them
-// back into real Timestamps so `.toMillis()` / `.toDate()` keep working.
 function revive(_key: string, value: any) {
   if (value && typeof value === "object" && value.type === "firestore/timestamp/1.0" && typeof value.seconds === "number") {
     return new Timestamp(value.seconds, value.nanoseconds ?? 0);
@@ -51,7 +36,7 @@ export function writeCached<T>(key: string, value: T) {
   const j = toJson(value);
   memory.set(key, { v: value, j });
   if (!j) return;
-  // Live listeners can fire several times in a row; save once they settle.
+
   const old = pendingWrites.get(key);
   if (old) clearTimeout(old);
   pendingWrites.set(
@@ -70,7 +55,7 @@ export function persisted<T>(
 ): () => void {
   let live = false;
   let closed = false;
-  let shownJson: string | null = null; // what the screen is showing right now
+  let shownJson: string | null = null;
 
   const fromMemory = memory.get(key);
   if (fromMemory) {
@@ -87,7 +72,7 @@ export function persisted<T>(
     live = true;
     if (closed) return;
     const j = toJson(value);
-    // Live data identical to what's already on screen: nothing to redraw.
+
     if (j && j === shownJson) return;
     shownJson = j || null;
     writeCached(key, value);
@@ -100,7 +85,6 @@ export function persisted<T>(
   };
 }
 
-// Sign-out: forget everything this phone saved for the last account.
 export async function clearCache() {
   memory.clear();
   pendingWrites.forEach((t) => clearTimeout(t));

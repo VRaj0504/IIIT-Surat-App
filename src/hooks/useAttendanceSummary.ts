@@ -7,8 +7,6 @@ import { subscribeToMyLeaveApplications, excusedSessionSet, LeaveApplication } f
 import { getMyAttendance, ATTENDANCE_TARGET } from "../firebase/attendanceService";
 import { getCurrentSemester } from "../utils/academicInfo";
 
-// Overall attendance for the Home tile — same numbers as My Attendance
-// (same service, same rules). Refreshes whenever Home comes back into view.
 export function useAttendanceSummary(profile: UserProfile | null, enabled: boolean) {
   const semester = profile?.admissionYear ? getCurrentSemester(profile.admissionYear, undefined, profile.program) : null;
   const ready = enabled && !!(profile?.enrollmentNumber && profile.branch && profile.admissionYear && semester);
@@ -33,7 +31,6 @@ export function useAttendanceSummary(profile: UserProfile | null, enabled: boole
 
   const excused = useMemo(() => excusedSessionSet(leaves), [leaves]);
 
-  // Home shows the last saved figure instantly, then the fresh one.
   const cacheKey = ready ? `attsum:${profile!.enrollmentNumber}:${semester}` : "";
   useEffect(() => {
     if (!cacheKey) return;

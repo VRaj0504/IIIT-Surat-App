@@ -100,9 +100,6 @@ export default function CounsellingScreen() {
         <KeyboardAwareScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Text style={styles.header}>Counselling & Wellness</Text>
 
-          {/* Always here, never behind the form below — this is the one
-              part of the screen that has to work even if someone never
-              scrolls further or never fills in a single field. */}
           <View style={styles.crisisCard}>
             <Text style={styles.crisisTitle}>If you're in immediate danger, call now</Text>
             <Text style={styles.crisisSubtitle}>

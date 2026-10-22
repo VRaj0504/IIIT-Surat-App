@@ -13,9 +13,6 @@ import { openSafeUrl } from "../utils/safeLink";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-// "YYYY-MM-DD" -> a local-midnight Date. Built from the parts rather than
-// new Date("2026-11-12"), which JS reads as UTC and can land on the
-// previous day in some timezones.
 function parseLocalDate(iso: string): Date {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(y, m - 1, d);
@@ -63,9 +60,6 @@ export default function ExamScheduleScreen() {
 
   const now = new Date();
 
-  // Default to the exam type that still has something ahead of you, so a
-  // student opening this the week of endsems doesn't land on last month's
-  // finished midsem sheet.
   const activeSchedule = useMemo(() => {
     const picked = schedules.find((s) => s.id === selectedId);
     if (picked) return picked;

@@ -7,10 +7,9 @@ type ClayCardProps = {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   onPress?: () => void;
-  soft?: boolean; // kept for API compatibility with existing call sites — no longer changes anything, see below
-  flat?: boolean; // same as above
+  soft?: boolean;
+  flat?: boolean;
 };
-
 
 const LAYOUT_KEYS = [
   'width', 'minWidth', 'maxWidth',
@@ -35,7 +34,6 @@ function splitLayoutStyle(style: StyleProp<ViewStyle>): [ViewStyle, ViewStyle] {
   return [layout as ViewStyle, rest as ViewStyle];
 }
 
-
 export default function ClayCard({ children, style, onPress }: ClayCardProps) {
   const Wrapper = onPress ? TapCard : View;
   const [layoutStyle, contentStyle] = splitLayoutStyle(style);
@@ -55,7 +53,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   inner: {
-   
+
     width: '100%',
     borderRadius: radius.lg,
     backgroundColor: colors.surface,

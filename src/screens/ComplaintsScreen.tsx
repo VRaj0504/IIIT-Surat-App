@@ -14,12 +14,6 @@ const statusColors: Record<Complaint["status"], string> = {
   rejected: colors.danger,
 };
 
-// Memoized, and the remark draft lives HERE (local state) rather than in
-// a shared map on the parent — previously every keystroke into any one
-// row's remark box updated a Record<string,string> on ComplaintsScreen
-// itself, which re-rendered (and recreated renderItem for) every row in
-// the list on every keystroke, not just the one being typed into. Same
-// pattern as ResourcesScreen.tsx's ResourceRow.
 const ComplaintRow = memo(function ComplaintRow({
   item,
   onResolve,

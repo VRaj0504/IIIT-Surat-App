@@ -16,13 +16,12 @@ import { colors } from "../theme/theme";
 
 type Props = {
   style?: StyleProp<ViewStyle>;
-  // Dot size for the "dots" variant (kept for older call sites).
+
   size?: number;
-  // "brand" (default): the CollegeGo logo with a pinging "go" dot. "dots": three
-  // pulsing dots, for tight spots.
+
   variant?: "brand" | "dots";
   label?: string;
-  // Bigger logo + caption, for full-screen loading.
+
   large?: boolean;
 };
 
@@ -68,10 +67,6 @@ function Dots({ size = 8, color = colors.primary }: { size?: number; color?: str
   );
 }
 
-// The app-wide loader: the CollegeGo logo floating gently while its mint
-// "go" dot sends out a soft ping — like a live location dot. Only
-// transform/opacity animate (UI thread, no re-renders), so it stays smooth
-// even while the screen behind it is busy.
 export default function LoadingSpinner({ style, size, variant = "brand", label, large }: Props) {
   const t = useSharedValue(0);
 
@@ -88,11 +83,11 @@ export default function LoadingSpinner({ style, size, variant = "brand", label, 
   const dotY = DOT_CENTER.y * w;
 
   const markStyle = useAnimatedStyle(() => {
-    const p = Math.sin(t.value * Math.PI * 2); // -1 … 1, one slow float per cycle
+    const p = Math.sin(t.value * Math.PI * 2);
     return { transform: [{ translateY: -2.5 * p }] };
   });
   const pingStyle = useAnimatedStyle(() => {
-    const e = 1 - Math.pow(1 - t.value, 3); // ease-out
+    const e = 1 - Math.pow(1 - t.value, 3);
     return { opacity: 0.75 * (1 - t.value), transform: [{ scale: 1 + e * 2.6 }] };
   });
   const dotStyle = useAnimatedStyle(() => {

@@ -33,15 +33,10 @@ function resolveTimetableBranch(branch: string): string {
   return branch.toUpperCase() === 'MNC' ? 'CSE' : branch;
 }
 
-// Doc id scheme must match scripts/seed-timetable.mjs exactly: `${branch}-${semester}-${section}`.
 function timetableDocId(branch: string, semester: number, section: string): string {
   return `${resolveTimetableBranch(branch)}-${semester}-${section}`;
 }
 
-
-
-// Subscribes to a single section's timetable doc. Calls onUpdate(null) if no
-// timetable has been uploaded yet for that branch/semester/section.
 export function subscribeToTimetable(
   branch: string,
   semester: number,
@@ -58,16 +53,6 @@ export function subscribeToTimetable(
   }), onUpdate);
 }
 
-// A faculty member's personal schedule isn't stored anywhere on its
-// own — it's derived by scanning every section's timetable for slots
-// where the faculty field (once expanded via expandFaculty) matches
-// their name. Deliberately NOT a separate upload: a section's
-// timetable is the one source of truth for who teaches what and when,
-// so deriving from it means a faculty member's schedule can never
-// drift out of sync with what students actually see — there's nothing
-// second to keep in sync. Each entry carries the section it came from,
-// since a faculty member's own schedule spans multiple sections that a
-// single TimetableSlot alone doesn't identify.
 export type FacultyScheduleEntry = TimetableSlot & {
   branch: string;
   semester: number;
@@ -101,14 +86,6 @@ export function subscribeToFacultyTimetable(
   }), onUpdate);
 }
 
-// Every section's whole timetable, live, unfiltered — the raw
-// material for the Room Availability screen, same whole-collection
-// subscription as subscribeToFacultyTimetable above. Kept deliberately
-// dumb (just the raw array, no day/time filtering here) so a student
-// picking a different day or time in that screen recomputes locally
-// instead of re-subscribing to Firestore on every tap — see
-// src/utils/roomAvailability.ts for the actual "who's using what,
-// when" logic that runs against this.
 export function subscribeToAllTimetables(
   onUpdate: (timetables: Timetable[]) => void,
   onError?: (error: Error) => void,

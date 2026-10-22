@@ -19,10 +19,6 @@ function formatEventTime(timestamp: ClubEvent["dateTime"]): string {
   return timestamp.toDate().toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
 }
 
-// "Today" / "Tomorrow" / "This Week" / "Later" — every college event feed
-// is really "what's coming up soon" more than "the full list", so grouping
-// by how-soon reads faster than one flat chronological list, the same way
-// a calendar app buckets things rather than just sorting them.
 function bucketFor(date: Date, now: Date): string {
   const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const today = startOfDay(now);
@@ -50,8 +46,6 @@ export default function EventsScreen() {
     return unsubscribe;
   }, []);
 
-  // Only clubs that actually have an upcoming event show up as a filter
-  // chip — a chip for a club with nothing to show would just be a dead end.
   const clubNames = useMemo(
     () => Array.from(new Set(events.map((e) => e.clubName))).sort((a, b) => a.localeCompare(b)),
     [events],
@@ -74,8 +68,7 @@ export default function EventsScreen() {
       if (!byBucket.has(bucket)) byBucket.set(bucket, []);
       byBucket.get(bucket)!.push(event);
     }
-    // subscribeToAllUpcomingEvents already returns soonest-first, so each
-    // bucket's events stay in that order without re-sorting here.
+
     return BUCKET_ORDER.filter((b) => byBucket.has(b)).map((title) => ({ title, data: byBucket.get(title)! }));
   }, [filtered]);
 

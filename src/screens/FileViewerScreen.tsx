@@ -1,4 +1,4 @@
-// src/screens/FileViewerScreen.tsx — full replacement
+
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -12,19 +12,6 @@ import type { RootStackParamList } from "../navigation/types";
 import LoadingSpinner from "../components/LoadingSpinner";
 
 type ViewerRoute = RouteProp<RootStackParamList, "FileViewer">;
-
-// This screen only ever receives images now — MyDownloadsScreen routes
-// PDFs and everything else through expo-sharing's native "open with"
-// sheet instead, since WebView (Android especially) has no built-in PDF
-// renderer. For images, a raw file:// URI into the app's own sandboxed
-// storage looks like it should load fine in a WebView, but modern
-// Android WebView refuses it with net::ERR_ACCESS_DENIED — this isn't a
-// permission we can grant from JS, it's WebView declining to reach into
-// another app's private storage at all.
-//
-// The fix: don't ask WebView to read the file itself. Read it into a
-// base64 data: URI ourselves (expo-file-system) and hand WebView a
-// self-contained blob it doesn't need filesystem access for at all.
 
 export default function FileViewerScreen() {
   const { params } = useRoute<ViewerRoute>();

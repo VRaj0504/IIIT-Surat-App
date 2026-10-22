@@ -33,45 +33,14 @@ function formatBytes(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// Resources downloaded via ResourcesScreen.tsx land in Paths.document
-// (the app's own private storage). This screen lists what's actually
-// sitting in that folder, right from the filesystem itself, so a
-// download is something you can find and reopen again later — not just
-// bytes that quietly landed somewhere invisible.
 type SavedFile = { uri: string; name: string; size: number | null };
 
 export default function MyDownloadsScreen() {
   const navigation = useNavigation<NavProp>();
-  // Plain snapshots, never live File objects: every property on a File
-  // (size, creationTime, …) is a native call, and React/dev tools reading
-  // one for a file that's gone (or whose name has a space and was stored
-  // encoded) threw "NoSuchFileException" and crashed the screen.
+
   const [files, setFiles] = useState<SavedFile[]>([]);
   const [opening, setOpening] = useState<string | null>(null);
 
-  // Images preview fine inside the app's own WebView. Everything else
-  // (PDFs especially) needs to leave the app entirely.
-  //
-  // expo-sharing's shareAsync fires Android's ACTION_SEND intent — that's
-  // a "send this content TO another app" chooser, which only lists apps
-  // registered to receive shared content (WhatsApp, Drive's "upload",
-  // Gmail...). A dedicated PDF *viewer* (Adobe Acrobat, Drive's own PDF
-  // viewer, the OS default) registers for ACTION_VIEW instead — "open
-  // this content" — a different intent that ACTION_SEND's chooser never
-  // surfaces, which is exactly why the share sheet showed WhatsApp/Upload
-  // but no way to actually view the file. Firing ACTION_VIEW directly
-  // (via expo-intent-launcher) gets the right chooser.
-  //
-  // ACTION_VIEW needs a content:// URI, not our raw file:// one — Android
-  // blocks exposing a file:// URI from the app's private storage to
-  // another app outright (FileUriExposedException), regardless of any
-  // permission we grant. getContentUriAsync wraps it through a
-  // FileProvider so another app can actually read it once we grant
-  // FLAG_GRANT_READ_URI_PERMISSION (flags: 1) on the intent.
-  //
-  // iOS has no such ACTION_VIEW/ACTION_SEND split — the one share sheet
-  // there already offers a Quick Look preview plus "Copy to Files", so
-  // the old shareAsync path stays for iOS.
   const openFile = useCallback(
     async (file: SavedFile) => {
       if (isPreviewableInWebView(file.name)) {
@@ -102,9 +71,7 @@ export default function MyDownloadsScreen() {
           dialogTitle: file.name,
         });
       } catch (err: any) {
-        // Android throws here (rather than resolving with a Canceled
-        // result) when no installed app handles ACTION_VIEW for this
-        // MIME type at all — i.e. no PDF viewer on the device.
+
         Alert.alert(
           "No app found to open this file",
           `Install a PDF viewer (or a file manager with one built in) — "${file.name}" is still saved here and will open once you have one.`,
@@ -141,9 +108,6 @@ export default function MyDownloadsScreen() {
     }
   }, []);
 
-  // Refreshes every time this screen comes into focus, not just once on
-  // mount — otherwise downloading something new in Resources and coming
-  // back here wouldn't show it until the app fully reloaded.
   useFocusEffect(refresh);
 
   const handleDelete = useCallback(

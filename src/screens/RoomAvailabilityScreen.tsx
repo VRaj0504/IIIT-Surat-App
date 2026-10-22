@@ -8,13 +8,11 @@ import { subscribeToAllTimetables, Timetable } from "../firebase/timetableServic
 import { getRoomAvailability, getAllTimeSlots, pickCurrentSlot, RoomStatus } from "../utils/roomAvailability";
 import LoadingSpinner from "../components/LoadingSpinner";
 
-// Same Mon-Fri list as TimetableScreen.tsx — every timetable in this
-// app only ever has real slots on these five days.
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
 function currentWeekdayOrFirst(): string {
-  const jsDay = new Date().getDay(); // 0=Sun..6=Sat
-  const idx = jsDay - 1; // Mon=0..Fri=4
+  const jsDay = new Date().getDay();
+  const idx = jsDay - 1;
   return idx >= 0 && idx <= 4 ? WEEKDAYS[idx] : WEEKDAYS[0];
 }
 
@@ -37,8 +35,6 @@ export default function RoomAvailabilityScreen() {
   const [time, setTime] = useState<string | null>(null);
   const [phase, setPhase] = useState<"before" | "during" | "between" | "after">("during");
 
-  // The "today" day pill. null on weekends — there is no "today" in the
-  // Mon–Fri list then, so the clock must not drive the preselection.
   const today = isWeekend() ? null : currentWeekdayOrFirst();
 
   useEffect(() => {
@@ -48,7 +44,7 @@ export default function RoomAvailabilityScreen() {
         setTimetables(tts);
       },
       (err) => {
-        // Before: errors were dropped and the spinner ran forever.
+
         setLoadError(err.message || "Couldn't load timetables.");
         setTimetables((prev) => prev ?? []);
       },
@@ -60,12 +56,10 @@ export default function RoomAvailabilityScreen() {
 
   useEffect(() => {
     if (timeSlots.length === 0) return;
-    // Keep a valid selection if a live timetable update changed the slot
-    // list (the old code kept a stale time that no pill matched).
+
     if (time !== null && timeSlots.includes(time)) return;
     if (today === null) {
-      // Weekend: showing Monday, so start from Monday's first period
-      // instead of matching Monday against Saturday's clock.
+
       setTime(timeSlots[0]);
       setPhase("before");
       return;
@@ -76,8 +70,6 @@ export default function RoomAvailabilityScreen() {
     setPhase(pick.phase);
   }, [timeSlots, time, today]);
 
-  // The before/between/after notes describe TODAY's clock — they're
-  // wrong once the student picks another day or time.
   const [autoTime, setAutoTime] = useState(true);
   const showPhaseNote = autoTime && today !== null && day === today;
 
@@ -197,12 +189,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 4,
   },
-  // A horizontal ScrollView doesn't reliably size itself to its
-  // children's height inside a flex column — it was collapsing and
-  // clipping each pill's text top and bottom. An explicit height sized
-  // for the pill (13px text + 8px padding top/bottom + 1.5px border)
-  // with a little slack fixes it outright, rather than depending on
-  // content-driven sizing that the parent layout can squeeze.
+
   pillRow: { flexGrow: 0, height: 46, marginBottom: spacing.md },
   pillRowContent: { gap: spacing.xs, alignItems: "center", paddingRight: spacing.md },
   pill: {

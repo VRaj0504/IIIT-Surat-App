@@ -5,32 +5,19 @@ import { storage } from './storage';
 import { isResourceVisibleThisYear } from '../utils/academicYear';
 import { persisted } from './liveCache';
 
-// This is the "shape" of one resource's metadata, stored in Firestore.
-// Note: this does NOT include the actual file bytes — just information
-// ABOUT the file, plus a URL pointing to where the real file lives (in
-// Firebase Storage, now that the project is on the Blaze plan).
 export type Resource = {
   id: string;
   title: string;
   subject: string;
-  branch: string;      // e.g. 'CSE', 'ECE', 'MnC'
-  semester: number;         // e.g. 1 to 8
-  // Canonical form is the bare section letter ('A', 'B', 'C', 'D') —
-  // the same string stored on a student's profile and in the roster.
-  // null/undefined means "the whole semester, every section", which is
-  // also what every resource created before section targeting existed
-  // implicitly is, so those keep reaching everyone exactly as before.
+  branch: string;
+  semester: number;
+
   section?: string | null;
   type: 'Notes' | 'PYQ' | 'Slides' | 'Assignment';
   examYear?: number | null;
-  // Which cohort's material this is, e.g. "2026-27". Notes/Slides are
-  // only shown to students in that same academic year, so next year's
-  // juniors start from a clean shelf instead of inheriting every batch's
-  // files; PYQs ignore this and carry forward deliberately. Optional
-  // because resources predating this field exist — utils/academicYear.ts
-  // derives their year from createdAt instead.
+
   academicYear?: string | null;
-  fileUrl: string;      // download URL from Firebase Storage
+  fileUrl: string;
   storagePath: string;
   uploadedBy: string;
   uploadedByName: string;
@@ -38,51 +25,20 @@ export type Resource = {
 };
 
 const RESOURCES_COLLECTION = 'resources';
-// How many resources a single "everything" (faculty) subscription pulls at
-// once. That view is for a handful of faculty accounts total, so this is
-// generous headroom, not a tight cap — it exists only so the collection
-// growing over years of semesters can't eventually make that one query
-// read (and re-read on every live update) thousands of docs at once.
+
 const FACULTY_VIEW_LIMIT = 500;
 
-// Uploads a file to Firebase Storage, then saves its metadata to Firestore.
-// "localFileUri" is the path to the file ON THE PHONE (before upload) —
-// this comes from a file picker (wired up in the faculty screen).
 export async function uploadResource(
   localFileUri: string,
   fileName: string,
   metadata: Omit<Resource, 'id' | 'fileUrl' | 'createdAt' | 'storagePath'>
 ): Promise<void> {
-  // Read the file via fetch(uri).blob() rather than reading it as a
-  // base64 STRING first (FileSystem.readAsStringAsync) and decoding that
-  // back into bytes — base64 text is ~33% larger than the file's real
-  // byte size, so that two-step path held two full copies of an inflated
-  // file in memory at once, a real risk of running a low-end phone out
-  // of memory on a slideshow or scan-heavy PDF, plus needless latency for
-  // every faculty upload regardless of device.
-  //
-  // Specifically .blob(), NOT .arrayBuffer(): Firebase's SDK internally
-  // tries to wrap raw bytes into a Blob before uploading, and React
-  // Native's Blob implementation can't construct one from an ArrayBuffer
-  // (throws "Creating blobs from 'ArrayBuffer'... not supported" on
-  // upload, even though the exact same code works fine on web). Getting a
-  // real Blob straight from the fetch response sidesteps that internal
-  // conversion entirely, with the same one-copy memory efficiency as the
-  // ArrayBuffer approach would have had if RN supported it.
+
   const fileResponse = await fetch(localFileUri);
   const fileBlob = await fileResponse.blob();
 
-  // Build a unique path inside the bucket, e.g.
-  // resources/CSE/3/Data Structures/1737000000-notes.pdf
   const storagePath = `resources/${metadata.branch}/${metadata.semester}/${metadata.subject}/${Date.now()}-${fileName}`;
 
-  // Upload the bytes, with a long cacheControl — safe because storagePath
-  // already embeds Date.now(), so a given path's content never changes; a
-  // new upload always gets a new path. Without this, every one of hundreds
-  // of students opening the same shared PDF re-pulls it from origin
-  // storage instead of a cached edge copy, which is exactly the kind of
-  // repeat load that costs the most bandwidth during exam-week PYQ
-  // download spikes.
   const fileRef = ref(storage, storagePath);
   try {
     await uploadBytes(fileRef, fileBlob, {
@@ -93,14 +49,8 @@ export async function uploadResource(
     throw new Error(`Upload failed: ${err.message}`);
   }
 
-  // Get the download URL for the file we just uploaded — this is what
-  // students will actually open/download later. Firebase's download URLs
-  // carry their own access token, so they work for anyone with the link
-  // regardless of the caller's auth state, same as Supabase's public URL did.
   const fileUrl = await getDownloadURL(fileRef);
 
-  // Save the metadata (NOT the file itself) into Firestore, including
-  // the download URL we just got.
   await addDoc(collection(db, RESOURCES_COLLECTION), {
     ...metadata,
     fileUrl,
@@ -109,20 +59,6 @@ export async function uploadResource(
   });
 }
 
-// Live-listens for resources, ordered newest first.
-//
-// Pass `scope` to restrict this to one branch+semester — what every
-// student view actually needs (see ResourcesScreen.tsx), instead of
-// syncing the whole college's resource library to every single student's
-// phone and filtering client-side. That mattered increasingly little when
-// this was a few dozen files; at thousands of concurrent students each
-// holding a live listener open, and years of accumulated notes/PYQs/slides,
-// an unscoped listener means every new upload anywhere re-syncs the full
-// collection to every connected phone.
-//
-// Omit `scope` for the faculty "everything, across all subjects" view
-// (small, privileged audience) — that path keeps the previous behavior,
-// just with FACULTY_VIEW_LIMIT as a growth safety net.
 export function subscribeToResources(
   onUpdate: (resources: Resource[]) => void,
   scope?: { branch: string; semester: number; section?: string | null },
@@ -147,38 +83,22 @@ export function subscribeToResources(
         id: docSnap.id,
         ...(docSnap.data() as Omit<Resource, 'id'>),
       }));
-      // Section is matched here rather than as a third where() clause on
-      // purpose: a resource with no section is meant for the WHOLE
-      // semester, and Firestore can't express "section == mine OR section
-      // is absent" in one query. Doing it in memory keeps that rule exact,
-      // needs no new composite index, and costs nothing at these sizes
-      // (already narrowed to one branch+semester by the query above).
+
       const viewerSection = scope?.section ?? null;
       const sectionMatched = viewerSection
         ? all.filter((r) => !r.section || r.section === viewerSection)
         : all;
-      // Cohort rule, applied only to the scoped (student) view: a
-      // previous year's Notes/Slides are not this student's material, so
-      // they're dropped here rather than piling up in the list forever.
-      // PYQs pass through untouched — see isResourceVisibleThisYear.
-      // The unscoped faculty view deliberately skips this: faculty need
-      // to see, and be able to delete, what they uploaded in past years.
+
       const resources = scope ? sectionMatched.filter((r) => isResourceVisibleThisYear(r)) : sectionMatched;
       onUpdate(resources);
     },
-    // Previously no error callback at all — a failed query (missing
-    // index, permission edge case, anything) failed completely silently:
-    // no error anywhere, the screen just stayed empty forever with no
-    // way to tell why. This at least surfaces it to whoever's watching
-    // (console now, and the screen's own error state below).
+
     (error) => {
       console.error('subscribeToResources failed:', scope, error);
       onError?.(error);
     },
   ), onUpdate);
 }
-
-/// deleting the slides of resources function
 
 export async function deleteResource(resource: Resource): Promise<void> {
   try {

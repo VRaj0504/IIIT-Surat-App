@@ -2,11 +2,6 @@ import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "./firestore";
 import { persisted } from './liveCache';
 
-// Ad-hoc holidays a real faculty/admin adds after reading an actual
-// email circular — e.g. Ganesh Visarjan, an unplanned closure — which
-// never appear in the fixed annual list in src/utils/dayStatus.ts.
-// Written from AddHoliday.tsx in the faculty web portal; this just
-// reads it. One doc per date, id == "YYYY-MM-DD", { name: string }.
 export function subscribeToHolidayOverrides(
   onUpdate: (overrides: Record<string, string>) => void,
 ): () => void {

@@ -13,11 +13,6 @@ import {
 import { db } from "./firestore";
 import { persisted } from './liveCache';
 
-// IIIT Surat's actual relative-grading scale (confirmed against the real
-// convention used at IITs/IIITs: AA/AB/BB/BC/CC/CD/DD/FF, not a generic
-// O/A+/A/... scale). Kept identical to CGPACalculatorScreen's own copy so
-// a student's official transcript and their own what-if calculator always
-// agree on what a grade is worth.
 export const GRADE_POINTS: Record<string, number> = {
   AA: 10,
   AB: 9,
@@ -51,9 +46,6 @@ export type GradeEntry = {
 
 const COLLECTION = "grades";
 
-// One grade per (student, subject) — re-entering for the same pair
-// overwrites rather than duplicating, so correcting a mistake is just
-// "enter it again" instead of needing a separate edit flow.
 function gradeDocId(enrollmentNumber: string, subjectCode: string): string {
   return `${enrollmentNumber}_${subjectCode}`;
 }
@@ -98,17 +90,8 @@ export async function setGrade(params: {
   );
 }
 
-// A roster student, minimal shape needed for the grading list.
 export type RosterStudent = { enrollmentNumber: string; name: string; uid?: string | null; specialization?: string };
 
-// Reuses the same "fetch by admissionYear, filter client-side" approach as
-// announcementsService.getClassOptionsForYear — a single equality query
-// needs no composite index, and a class roster is small enough (tens of
-// students) that client-side filtering is instant. Pass `specialization`
-// to narrow further within a mixed section (e.g. only the AI/ML students
-// in CSE B) — omit it to get everyone in the section regardless of
-// specialization, which is correct for a subject the whole section takes
-// together.
 export async function getClassRoster(
   admissionYear: number,
   branch: string,
@@ -118,19 +101,13 @@ export async function getClassRoster(
   const snap = await getDocs(query(collection(db, "roster"), where("admissionYear", "==", admissionYear)));
   return snap.docs
     .map((d) => ({ regNo: d.id, ...(d.data() as { name: string; branch: string; section?: string; specialization?: string; reviewer?: boolean }) }))
-    .filter((r) => !r.reviewer) // app-store review account
+    .filter((r) => !r.reviewer)
     .filter((r) => r.branch === branch && (section ? r.section === section : true))
     .filter((r) => (specialization ? r.specialization === specialization : true))
     .map((r) => ({ enrollmentNumber: r.regNo, name: r.name, specialization: r.specialization }))
     .sort((a, b) => a.enrollmentNumber.localeCompare(b.enrollmentNumber));
 }
 
-// Existing grades for a specific class+subject, keyed by enrollment number
-// — lets the grading screen show what's already entered (and pre-fill it)
-// rather than starting blank every time. One getDoc per roster student by
-// its deterministic ID; fine for a class-sized list, and avoids needing a
-// composite index for a where(branch)+where(section)+where(subjectCode)
-// query just to check existing entries.
 export async function getExistingGrades(
   roster: RosterStudent[],
   subjectCode: string,
@@ -148,10 +125,6 @@ export async function getExistingGrades(
   return map;
 }
 
-// A student's complete official transcript — every grade ever entered for
-// them, live. Matched by enrollment number (not uid), the same reasoning
-// as leaveApplications matching by email: grades can exist before a
-// student has ever signed into the app.
 export function subscribeToMyGrades(
   enrollmentNumber: string,
   onUpdate: (grades: GradeEntry[]) => void,
@@ -172,11 +145,6 @@ export function subscribeToMyGrades(
 export type SemesterResult = { semester: number; sgpa: number; credits: number };
 export type Transcript = { semesters: SemesterResult[]; cgpa: number | null; totalCredits: number };
 
-// Groups grades by their subject's curriculum semester, computes each
-// semester's credit-weighted SGPA, then the overall credit-weighted CGPA
-// across every semester with at least one grade — same weighting formula
-// as the self-service calculator, just driven by real entered grades
-// instead of manually typed SGPA/credit pairs.
 export function computeTranscript(grades: GradeEntry[]): Transcript {
   const bySemester = new Map<number, GradeEntry[]>();
   for (const g of grades) {

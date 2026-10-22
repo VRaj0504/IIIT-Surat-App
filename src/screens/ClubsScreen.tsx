@@ -73,7 +73,7 @@ export default function ClubsScreen() {
 
   const Header = (
     <>
-      {/* Upcoming events — a swipeable strip, the next few only */}
+
       <View style={styles.sectionRow}>
         <Text style={styles.sectionTitle}>Coming up</Text>
         {events.length > 0 && (
@@ -124,7 +124,6 @@ export default function ClubsScreen() {
         </ScrollView>
       )}
 
-      {/* All clubs */}
       <View style={[styles.sectionRow, { marginTop: 22 }]}>
         <Text style={styles.sectionTitle}>All clubs</Text>
         <Text style={styles.count}>{clubs.length}</Text>
@@ -201,7 +200,7 @@ export default function ClubsScreen() {
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={Header}
           renderItem={({ item: club }) => {
-            // Keeps an odd last card half-width instead of stretching.
+
             if (club.id === '__pad') return <View style={{ flex: 1 }} />;
             const { icon, color } = getClubIcon(club.name);
             return (

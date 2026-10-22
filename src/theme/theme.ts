@@ -1,21 +1,15 @@
-// src/theme/theme.ts
-//
-// Light "Today-first" design (UI canvas direction A) with the coloured
-// bento tiles of direction C. Light only.
-//
-// Token NAMES are unchanged from the old palette (primary, surface,
-// textPrimary, badge.*, …) so every existing screen keeps compiling.
+
 
 type Badge = { bg: string; fg: string };
 
 export type Palette = {
   primary: string;
   primaryDark: string;
-  onPrimary: string; // text/icons drawn ON a primary-coloured fill
+  onPrimary: string;
   accent: string;
   background: string;
   surface: string;
-  surfaceAlt: string; // inputs, inset rows, tracks
+  surfaceAlt: string;
   textPrimary: string;
   textSecondary: string;
   border: string;
@@ -26,11 +20,11 @@ export type Palette = {
   successFg: string;
   successBorder: string;
   dangerBg: string;
-  overlay: string; // modal backdrops
-  ink: string; // tab bar / strong dark surfaces
+  overlay: string;
+  ink: string;
   onInk: string;
   inkMuted: string;
-  heroBg: string; // the "next class" hero card
+  heroBg: string;
   heroText: string;
   heroMuted: string;
   heroChip: string;
@@ -41,7 +35,7 @@ export type Palette = {
   clayHighlight: string;
   claySurface: string;
   badge: { peach: Badge; pink: Badge; green: Badge; blue: Badge; purple: Badge };
-  // Bento tiles (direction C): brighter pastels for the big home tiles.
+
   tile: { blue: Badge; mint: Badge; peach: Badge; lilac: Badge; yellow: Badge; pink: Badge };
 };
 
@@ -94,7 +88,6 @@ const light: Palette = {
   },
 };
 
-// Kept so existing imports compile; the app is light-only.
 export const isDark = false;
 
 export const colors: Palette = light;
@@ -102,10 +95,6 @@ export const colors: Palette = light;
 export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 };
 export const radius = { sm: 10, md: 16, lg: 22, xl: 28, full: 999 };
 
-// System font (SF Pro on iOS, Roboto on Android): a custom font can't be
-// applied app-wide in React Native without editing every <Text>, and a
-// half-applied one looks worse than a consistent native one. The new look
-// comes from tighter, heavier headings instead.
 export const typography = {
   h1: { fontSize: 28, fontWeight: '800' as const, letterSpacing: -0.6 },
   h2: { fontSize: 22, fontWeight: '800' as const, letterSpacing: -0.4 },
@@ -114,8 +103,6 @@ export const typography = {
   caption: { fontSize: 13, fontWeight: '500' as const },
 };
 
-// Cards stay flat (separated from the page by colour, not shadow) — kept
-// as empty objects so every `...clayShadow` spread still compiles.
 export const clayShadow = {};
 
 export const clayShadowSoft = {};

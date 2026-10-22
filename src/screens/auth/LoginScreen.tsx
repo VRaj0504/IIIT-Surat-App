@@ -29,8 +29,6 @@ function friendlyError(code: string): string {
   }
 }
 
-// The ID box takes just the part before the @ — the institute domain is
-// fixed beside it. Pasting a full address still works.
 export function toInstituteEmail(id: string): string {
   const t = id.trim().toLowerCase();
   return t.includes("@") ? t : `${t}${ALLOWED_EMAIL_DOMAIN}`;
@@ -53,7 +51,6 @@ export default function LoginScreen({ onNavigateToSignUp, onNavigateToForgotPass
   const rejected = wrongAccountEmail(message);
   const sheetEmail = rejected && rejected !== dismissedSheet ? rejected : null;
 
-  // Keep the field being typed in above the keyboard.
   const keepVisible = () => setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 280);
 
   const handleLogin = async () => {

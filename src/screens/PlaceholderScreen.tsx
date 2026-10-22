@@ -17,8 +17,6 @@ type Props = {
   description: string;
 };
 
-// Used for modules we haven't built out yet (Mess Menu, Lost & Found, Resources,
-// Faculty Directory, Placements). Each becomes its own real screen in a later step.
 export default function PlaceholderScreen({ title, icon, description }: Props) {
   return (
     <LinearGradient

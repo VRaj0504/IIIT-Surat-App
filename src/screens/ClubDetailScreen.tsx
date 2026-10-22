@@ -105,8 +105,7 @@ function ClubDetailScreenInner() {
   }, [clubId]);
 
   useEffect(() => {
-    // Reuses the same global notices subscription and filters client-side —
-    // avoids needing a composite Firestore index for a where + orderBy combo.
+
     const unsubscribe = subscribeToNotices((allNotices) => {
       setClubNotices(allNotices.filter((n) => n.clubId === clubId));
       setLoadingNotices(false);
@@ -712,9 +711,6 @@ const styles = StyleSheet.create({
   },
 });
 
-
-// Opened without a club (e.g. a refreshed or shared link on the web): there
-// is nothing to show, so say so instead of crashing.
 export default function ClubDetailScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();

@@ -1,4 +1,4 @@
-// src/screens/SubmitComplaintScreen.tsx
+
 import React, { useState, useEffect, useMemo } from "react";
 import LoadingSpinner from "../components/LoadingSpinner";
 import {
@@ -77,9 +77,7 @@ export default function SubmitComplaintScreen() {
 
   const handleTypeChange = (next: IssueType) => {
     setType(next);
-    // Each type has its own category list, so switching resets to that
-    // list's first option rather than carrying over a category (like
-    // "Harassment") that wouldn't make sense for the other type.
+
     setCategory(next === "complaint" ? COMPLAINT_CATEGORIES[0] : DOUBT_CATEGORIES[0]);
   };
 

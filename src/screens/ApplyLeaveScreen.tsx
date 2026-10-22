@@ -55,12 +55,6 @@ function parseStrictDate(value: string): Date | null {
  return date;
 }
 
-// Strips anything that isn't a digit on every keystroke, then inserts
-// the two dashes automatically as they type ("20260915" -> "2026-09-15")
-// — this is what actually stops a letter from ever landing in the
-// field, not the keyboardType hint the inputs had before (that's just
-// a suggestion to the OS's own keyboard layout, and some keyboards
-// ignore it entirely, letting someone type real letters into a date).
 function maskDateInput(raw: string): string {
   const digits = raw.replace(/\D/g, "").slice(0, 8);
   if (digits.length <= 4) return digits;
@@ -68,9 +62,6 @@ function maskDateInput(raw: string): string {
   return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
 }
 
-// Medical leave goes doctor -> HOD -> teachers. Who the doctor and the
-// HOD are comes from config/medicalLeave (set by an admin with
-// scripts/seed-medical-leave.js), never from the student.
 const MEDICAL_STEPS: { stage: MedicalStage; label: string }[] = [
   { stage: "doctor", label: "Doctor" },
   { stage: "hod", label: "HOD" },
@@ -159,7 +150,6 @@ export default function ApplyLeaveScreen() {
   const [uploadingReport, setUploadingReport] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Who a medical leave will go through, for this student's branch.
   const [medicalConfig, setMedicalConfig] = useState<MedicalLeaveConfig | null | undefined>(undefined);
   useEffect(() => {
     getMedicalLeaveConfig()
@@ -168,8 +158,6 @@ export default function ApplyLeaveScreen() {
   }, []);
   const medicalHod = profile?.branch ? medicalConfig?.hodByBranch?.[profile.branch] : undefined;
 
-  // Medical leave never uses the faculty picker (the chain is fixed), so
-  // switching type clears whatever was picked or attached for the other.
   const handleTypeChange = (next: LeaveType) => {
     setType(next);
     setSelectedFaculty(null);
@@ -190,10 +178,7 @@ export default function ApplyLeaveScreen() {
     if (!profile) return;
     setUploadingReport(true);
     try {
-      // Timestamped, not a fixed filename like the profile photo
-      // upload — a student may apply for medical leave more than
-      // once, and each application's report needs to stay its own
-      // file, not silently overwrite whatever they uploaded last time.
+
       const safeName = asset.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
       const path = `medicalReports/${profile.uid}/${Date.now()}-${safeName}`;
       const fileRef = ref(storage, path);
@@ -265,10 +250,7 @@ export default function ApplyLeaveScreen() {
     }
 
     const reportUrlTrimmed = medicalReportUrl.trim();
-    // Just checks something was actually uploaded — the URL itself is
-    // never typed by hand anymore, it's always whatever
-    // handlePickMedicalReport's own upload produced, so there's
-    // nothing further to validate about its shape.
+
     if (type === "medical" && !reportUrlTrimmed) {
       Alert.alert("Add your medical report", "Attach a PDF or photo of your report before submitting.");
       return;

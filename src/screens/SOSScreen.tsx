@@ -109,7 +109,6 @@ export default function SOSScreen() {
     return subscribeToMyActiveSos(user.uid, setActive);
   }, [user]);
 
-  // While an alert is open, keep the responders' map pin fresh.
   const lastSent = useRef(0);
   useEffect(() => {
     if (!active) return;
@@ -138,7 +137,6 @@ export default function SOSScreen() {
     };
   }, [active?.id]);
 
-  // ---- press-and-hold ring ----
   const progress = useSharedValue(0);
   const pulse = useSharedValue(0);
   useEffect(() => {
@@ -320,7 +318,6 @@ export default function SOSScreen() {
           </>
         )}
 
-        {/* Call directly */}
         <Text style={styles.groupTitle}>Call now</Text>
         <View style={styles.card}>
           {[...responders, ...NATIONAL].map((r, i) => (
@@ -337,7 +334,6 @@ export default function SOSScreen() {
           ))}
         </View>
 
-        {/* Emergency contacts */}
         <Text style={styles.groupTitle}>My emergency contacts</Text>
         <View style={styles.card}>
           {contacts.length === 0 && !adding && (

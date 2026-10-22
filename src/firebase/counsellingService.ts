@@ -16,11 +16,6 @@ import { db } from "./firestore";
 const REQUESTS_COLLECTION = "counsellingRequests";
 const COUNSELLORS_COLLECTION = "counsellors";
 
-// A small, easier set to pick from than a clinical checklist — this is
-// deliberately NOT a diagnosis list (no "depression" / "suicidal
-// ideation" checkbox). Urgency is its own separate toggle below, not a
-// category here, so nobody has to label what they're feeling just to
-// ask for help.
 export const CONCERN_CATEGORIES = [
   "Academic stress",
   "Anxiety",
@@ -50,13 +45,6 @@ export type CounsellingRequest = {
   contactedByName: string | null;
 };
 
-// Checks whether the signed-in account is on the admin-maintained
-// counsellor list — gates the counselling queue screen. Keyed by
-// lowercased email as the doc ID itself (unlike eventCoordinators,
-// which uses a random ID) specifically so firestore.rules can check
-// membership with a single exists() call instead of needing a query —
-// see isCounsellor() in firestore.rules. Matched by email, not uid,
-// since a counsellor might be seeded before they've ever signed in.
 export async function isCounsellor(email: string): Promise<boolean> {
   const snap = await getDoc(doc(db, COUNSELLORS_COLLECTION, email.toLowerCase()));
   return snap.exists();
@@ -109,10 +97,6 @@ export function subscribeToMyCounsellingRequests(
   );
 }
 
-// The counsellor-facing queue. Sorted urgent-first, then oldest-first
-// within each group, client-side — deliberately not via a second
-// orderBy in the query itself, which would need its own composite
-// index for a collection this small; a client sort is plenty here.
 export function subscribeToCounsellingQueue(onUpdate: (requests: CounsellingRequest[]) => void): () => void {
   const q = query(collection(db, REQUESTS_COLLECTION), orderBy("createdAt", "desc"));
   return onSnapshot(

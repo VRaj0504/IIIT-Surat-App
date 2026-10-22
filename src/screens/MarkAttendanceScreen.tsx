@@ -24,15 +24,12 @@ import DateField, { todayIso } from "../components/DateField";
 
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
-// A class is a SECTION: 1st-year MNC students sit in "CSE D" with CSE
-// students and are marked together. Each branch still gets its own
-// session doc (students look their attendance up by their own branch).
 type ClassGroup = {
   key: string;
   label: string;
   section: string | null;
   branches: string[];
-  mainBranch: string; // for the subject list
+  mainBranch: string;
   specializations: string[];
 };
 
@@ -56,7 +53,7 @@ function groupClasses(options: ClassOption[]): ClassGroup[] {
     }
   }
   return Array.from(map.values()).map((g) => {
-    // The branch named in the section ("CSE D" → CSE) owns the subject list.
+
     g.mainBranch = g.branches.find((b) => g.section && new RegExp(`\\b${b}\\b`, "i").test(g.section)) ?? g.branches[0];
     const pg = options.some((o) => o.section === g.section && o.label.startsWith("M.Tech"));
     const others = g.branches.filter((b) => b !== g.mainBranch);
@@ -72,10 +69,6 @@ const isValidDate = (s: string) => {
   return d.getFullYear() === +m[1] && d.getMonth() === +m[2] - 1 && d.getDate() === +m[3];
 };
 
-// Receives only this row's own isAbsent boolean, not the whole
-// absentSet — same reasoning as GradeEntryScreen.tsx's StudentGradeRow:
-// a 50-70 student roster shouldn't re-render in full every time ONE
-// student gets toggled present/absent.
 const AttendanceRow = memo(function AttendanceRow({
   item,
   isAbsent,
@@ -139,7 +132,7 @@ export default function MarkAttendanceScreen() {
     }
     setClassesLoading(true);
     setSelectedClass(null);
-    // Default to the semester this batch is in now (can still be changed).
+
     setSemester(getCurrentSemester(selectedYear) as (typeof SEMESTERS)[number]);
     setSelectedSubject(null);
     getClassOptionsForYear(selectedYear)
@@ -192,11 +185,6 @@ export default function MarkAttendanceScreen() {
       .finally(() => setRosterLoading(false));
   }, [selectedClass, selectedYear, selectedSubject, selectedSpecialization, date]);
 
-  // useCallback with an empty dep array is safe here — the updater form
-  // of setAbsentSet means this never actually closes over absentSet
-  // itself, so the reference genuinely never needs to change. That
-  // stability is what lets AttendanceRow's memo() below skip
-  // re-rendering the other 50-70 rows every time one student is toggled.
   const toggleAbsent = useCallback((enrollmentNumber: string) => {
     setAbsentSet((prev) => {
       const next = new Set(prev);

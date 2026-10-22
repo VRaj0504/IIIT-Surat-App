@@ -1,9 +1,6 @@
 import React from "react";
 import Svg, { Defs, LinearGradient, Stop, Rect, Path, Circle } from "react-native-svg";
 
-// The CollegeGo logo, drawn as a vector so it is sharp at any size:
-// a white "G" whose bar turns down into a mint "go" dot, on the blue → violet
-// tile. Same drawing as the app icon (assets/icon.png).
 export const BRAND = {
   blue: "#0A84FF",
   indigo: "#3D5CFF",
@@ -11,7 +8,6 @@ export const BRAND = {
   mint: "#6CF0D8",
 };
 
-// Where the mint dot sits, as a fraction of the logo's size (used by the loader).
 export const DOT_CENTER = { x: 0.5 + (784 - 512) * 1.12 / 1024, y: 0.5 + (690 - 512) * 1.12 / 1024 };
 export const DOT_RADIUS = (52 * 1.12) / 1024;
 
@@ -31,7 +27,7 @@ export default function BrandMark({ size = 40, tile = true, dot = true }: { size
         </LinearGradient>
       </Defs>
       {tile && <Rect width={1024} height={1024} rx={240} fill="url(#cgTile)" />}
-      {/* scale(1.12) about the centre, matching the icon */}
+
       <Path
         d="M 671.8 344.7 A 250 250 0 1 0 653.3 697.8"
         transform="translate(512 512) scale(1.12) translate(-512 -512)"

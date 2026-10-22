@@ -12,11 +12,6 @@ export type NotificationPreferences = {
   examsAndGrades: boolean;
 };
 
-// Absence of the field entirely (any user who signed up before this
-// screen existed) means "everything on" — opt-out, not opt-in, so nobody
-// silently stops getting notices they'd expect just because this feature
-// shipped after their account did. classReminderMinutes defaults to 3 to
-// match the original fixed behavior before this became configurable.
 const DEFAULTS: NotificationPreferences = {
   classReminders: true,
   classReminderMinutes: 3,

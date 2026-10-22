@@ -26,19 +26,13 @@ type RosterMatch =
   | { state: "missing" }
   | { state: "error" };
 
-// Enrollment numbers look like UG25CSE114 — check the roster once enough
-// has been typed for a real number, so the student SEES which branch /
-// section / batch they'll be filed under before they commit, instead of
-// finding out from a wrong timetable later.
 function looksComplete(n: string): boolean {
   return /^[A-Z]{2}\d{2}[A-Z]{2,4}\d{2,4}$/.test(n);
 }
 
 export default function CompleteProfileScreen() {
   const { user, completeGoogleProfile, logOut } = useAuth();
-  // Student institute emails are the enrollment number (ug25cse114@…), so
-  // pre-pick Student and fill it in; anything else (name.surname@…) starts
-  // on Faculty. Both are still checked against the roster / faculty list.
+
   const emailLocal = (user?.email ?? "").split("@")[0].toUpperCase();
   const emailIsRegNo = /^(UG|PG|RS|PH)\d{2}[A-Z]{2,4}\d{2,4}$/.test(emailLocal);
   const [role, setRole] = useState<Role>(emailIsRegNo || !user?.email ? "student" : "faculty");

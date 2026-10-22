@@ -18,8 +18,6 @@ function ago(ms: number) {
   return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} hr ago`;
 }
 
-// For the doctor, wardens (config/sos) and admins: every SOS still needing
-// attention, newest first, live.
 export default function SosAlertsScreen() {
   const { profile } = useAuth();
   const [alerts, setAlerts] = useState<SosAlert[] | null>(null);

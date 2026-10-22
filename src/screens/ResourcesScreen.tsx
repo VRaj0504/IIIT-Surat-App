@@ -104,13 +104,7 @@ const ResourceRow = memo(function ResourceRow({
           {item.type === "PYQ" && item.examYear ? `PYQ ${item.examYear}` : item.type} · {item.branch} · Sem {item.semester}
         </Text>
       </View>
-      {/* Downloads the actual file to the device instead of just opening
-          it — the previous tap-to-open behavior needs a live connection
-          every single time, even to re-view something already seen
-          once, which is the whole complaint on patchy campus wifi. This
-          is a separate action from the row's own tap-to-open, not a
-          replacement for it — opening is still the quick "view it now"
-          path when you do have signal. */}
+
       <TouchableOpacity onPress={() => onDownload(item)} hitSlop={8} disabled={downloading}>
         {downloading ? (
           <ActivityIndicator size="small" color={colors.primary} />
@@ -127,9 +121,6 @@ const ResourceRow = memo(function ResourceRow({
   );
 });
 
-// One folder in the browser — a subject, a type (Notes / Slides /
-// Assignments / Papers) or a year. Same card shape at every level so
-// drilling down feels like one consistent thing rather than three screens.
 const FolderCard = memo(function FolderCard({
   folder,
   icon,
@@ -172,11 +163,7 @@ export default function ResourcesScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Faculty get the unscoped "everything, across all subjects" view (see
-    // the faculty branch below) — everyone else only ever needs their own
-    // branch+semester, so scope the query itself instead of pulling the
-    // whole college's resource library to every student's phone and
-    // filtering client-side (see subscribeToResources's comment).
+
     const scope =
       effectiveRole !== "faculty" && profile?.branch && profile?.admissionYear
         ? {
@@ -224,29 +211,18 @@ export default function ResourcesScreen() {
 
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
 
-  // item.fileUrl is a direct Firebase Storage download link (see
-  // resourceService.ts), not an HTML viewer page — so this fetches the
-  // actual file bytes, not just a link to them. Saved into the app's own
-  // document directory, which persists across app restarts and needs no
-  // internet to re-open later. Opening the saved file (share sheet for
-  // PDFs, in-app viewer for images) happens from MyDownloadsScreen.
   const handleDownload = useCallback(async (item: Resource) => {
     setDownloadingIds((prev) => new Set(prev).add(item.id));
     try {
       if (Platform.OS === "web") {
-        // No real filesystem to save into on web — opening the URL directly
-        // is the actual "download" (the browser handles it: PDFs render
-        // in-tab via the browser's own native viewer, other types save via
-        // the browser's normal download flow). window.open avoids
-        // navigating the app itself away from the current screen.
+
         window.open(item.fileUrl, "_blank");
         await addToWebDownloadHistory({ name: item.title, url: item.fileUrl });
         return;
       }
       const extMatch = item.fileUrl.match(/\.([a-zA-Z0-9]{2,5})(?:\?|$)/);
       const ext = extMatch ? `.${extMatch[1]}` : "";
-      // No spaces in the file name — Android stores them encoded and reading
-      // the file back later failed with "NoSuchFileException".
+
       const safeName = item.title.replace(/[^a-zA-Z0-9 _-]/g, "").trim().replace(/\s+/g, "_") || "resource";
       const destination = new File(Paths.document, `${safeName}${ext}`);
       const downloaded = await File.downloadFileAsync(item.fileUrl, destination, {
@@ -294,10 +270,6 @@ export default function ResourcesScreen() {
     );
   }, []);
 
-  // ---- Folder navigation --------------------------------------------
-  // Faculty see the whole library; students only their own branch +
-  // semester (already scoped by the subscription above, filtered again
-  // here as a safety net against a stale profile).
   const mode = effectiveRole === "faculty" ? "faculty" : "student";
   const studentBranch = profile?.branch ?? null;
   const studentSemester = profile?.admissionYear
@@ -314,13 +286,9 @@ export default function ResourcesScreen() {
   }, [mode, resources, semesterSubjects, studentBranch, studentSemester]);
 
   const [path, setPath] = useState<FolderPath>(ROOT_PATH);
-  // What to actually show. If the requested folder has since emptied out
-  // or vanished, this quietly falls back to the nearest one that exists.
+
   const loc = useMemo(() => describeLocation(path, groups, mode), [path, groups, mode]);
 
-  // Android's hardware back button steps up one folder instead of leaving
-  // the whole screen — but ONLY while this screen is focused, otherwise
-  // this listener would swallow back presses on every other screen.
   useFocusEffect(
     useCallback(() => {
       const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -358,10 +326,6 @@ export default function ResourcesScreen() {
     );
   }
 
-  // Faculty see everything they/others have posted, grouped by whatever
-  // subject names appear in the data — same as before. This is the one
-  // truly unbounded list on this screen (whole college's resource library,
-  // forever), so it's the one worth virtualizing.
   if (mode === "student" && !(profile?.branch && profile?.admissionYear)) {
     return (
       <LinearGradient
@@ -386,9 +350,6 @@ export default function ResourcesScreen() {
         ? `${studentBranch} · Semester ${studentSemester} · Section ${profile.section}`
         : `${studentBranch} · Semester ${studentSemester}`;
 
-  // Icon + colour per folder level. Subjects are plain folders; type
-  // folders reuse the type's own icon/colour; year folders take their
-  // parent type's colour so the trail reads as one thread.
   const folderStyle = (folder: Folder): { icon: keyof typeof Ionicons.glyphMap; color: string } => {
     if (loc.level === "subjects") return { icon: "folder-outline", color: colors.primary };
     if (loc.level === "types") {
@@ -433,8 +394,6 @@ export default function ResourcesScreen() {
           </TouchableOpacity>
         )}
 
-        {/* key = the current path, so opening a folder always starts at
-            the top instead of inheriting the previous list's scroll. */}
         {loc.level === "files" ? (
           <FlatList
             key={listKey}

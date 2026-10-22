@@ -4,10 +4,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors, isDark } from "../../theme/theme";
 import { ALLOWED_EMAIL_DOMAIN } from "../../context/AuthContext";
 
-// Shared pieces of the sign-in screens (UI canvas: "Login · light" and
-// "Wrong account").
-
-// Calm, light header: the app icon, a title and one line under it.
 export function AuthHero({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <View style={styles.hero}>
@@ -18,7 +14,6 @@ export function AuthHero({ title, subtitle }: { title: string; subtitle: string 
   );
 }
 
-// What the app does, floating over the bottom edge of the hero.
 export function FeatureStrip() {
   const items: { icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
     { icon: "time-outline", label: "Next class" },
@@ -66,8 +61,6 @@ export function GoogleButton({ onPress, loading }: { onPress: () => void; loadin
   );
 }
 
-// AuthContext's wrong-domain message starts with the rejected address:
-// "someone@gmail.com isn't an institute account. Please sign in with …"
 export function wrongAccountEmail(message: string | null | undefined): string | null {
   if (!message || !/isn't an institute account/i.test(message)) return null;
   const email = message.split(" isn't an institute account")[0].trim();
@@ -135,8 +128,6 @@ export function ErrorBox({ message }: { message: string }) {
   );
 }
 
-// The Google button is the dark "ink" colour in light mode and the lime
-// accent in dark mode, so it's always the most prominent thing on screen.
 const googleBg = isDark ? colors.primary : colors.ink;
 const googleFg = isDark ? colors.onPrimary : colors.onInk;
 

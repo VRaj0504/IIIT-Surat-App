@@ -10,7 +10,6 @@ import { GlassScreen, Glass, Reveal, Heading, HintRow, GlassInput, PrimaryButton
 
 type Props = { onNavigateToLogin: () => void };
 
-// Sends Firebase's password-reset email to the institute inbox.
 export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
   const { sendPasswordReset } = useAuth();
   const [id, setId] = useState("");
@@ -28,8 +27,7 @@ export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
     setLoading(true);
     try {
       await sendPasswordReset(email);
-      // Shown whether or not the address has an account, so this can't be
-      // used to find out who is registered.
+
       setSentTo(email);
     } catch (e: any) {
       setError(e?.code === "auth/network-request-failed" ? "No internet connection right now — try again." : "Couldn't send the email. Please try again.");

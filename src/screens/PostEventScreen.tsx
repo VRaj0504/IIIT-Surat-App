@@ -49,12 +49,12 @@ function PostEventScreenInner() {
     editingEvent
       ? editingEvent.dateTime.toDate().toISOString().slice(0, 10)
       : "",
-  ); // e.g. 2026-07-20
+  );
   const [timeText, setTimeText] = useState(
     editingEvent
       ? editingEvent.dateTime.toDate().toTimeString().slice(0, 5)
       : "",
-  ); // e.g. 18:00
+  );
   const [link, setLink] = useState(editingEvent?.link ?? "");
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -285,9 +285,6 @@ const styles = StyleSheet.create({
   deleteBtnText: { color: colors.danger, fontWeight: "700", fontSize: 16 },
 });
 
-
-// Opened without a club (e.g. a refreshed or shared link on the web): there
-// is nothing to show, so say so instead of crashing.
 export default function PostEventScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();

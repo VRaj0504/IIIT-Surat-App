@@ -4,8 +4,6 @@ import LoginScreen from '../screens/auth/LoginScreen';
 import SignUpScreen from '../screens/auth/SignUpScreen';
 import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
 
-// Plain conditional render (not React Navigation), so give it a gentle
-// crossfade between the three sign-in screens.
 export default function AuthNavigator() {
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
   return (

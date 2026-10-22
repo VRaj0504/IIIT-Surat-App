@@ -25,10 +25,6 @@ import Animated, {
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
-// The light, minimal "glass" look shared by every sign-in screen: a soft
-// moving colour wash (brand Iris + Mint), frosted cards, calm fade-up
-// entrances and a light haptic tick on every press.
-
 export const BG = "#F3F5F9";
 export const TEXT = "#0E1A33";
 export const MUTED = "#5B6478";
@@ -36,7 +32,7 @@ export const FAINT = "#8A93A6";
 export const ACCENT = "#0B3D91";
 export const MINT = "#2BB8A3";
 export const EASE = Easing.out(Easing.cubic);
-// Android blurs a referenced view (the background) instead of "whatever is behind".
+
 const BLUR_METHOD = "dimezisBlurViewSdk31Plus" as const;
 
 export const tick = () => Haptics.selectionAsync().catch(() => {});
@@ -57,7 +53,6 @@ function Blob({ size, color, x, y, dx, dy, duration }: { size: number; color: st
   );
 }
 
-// Wrap a whole sign-in screen in this.
 export function GlassScreen({ children }: { children: React.ReactNode }) {
   const bg = useRef<View>(null);
   const { width, height } = useWindowDimensions();
@@ -78,7 +73,6 @@ export function GlassScreen({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Fades a block in and lifts it a few pixels, after `delay` ms.
 export function Reveal({ delay = 0, children, style }: { delay?: number; children: React.ReactNode; style?: any }) {
   const v = useSharedValue(0);
   useEffect(() => {
@@ -88,8 +82,6 @@ export function Reveal({ delay = 0, children, style }: { delay?: number; childre
   return <Animated.View style={[style, a]}>{children}</Animated.View>;
 }
 
-// Frosted glass: blur + a milky white layer + a bright hairline edge + a
-// very soft shadow so it floats just above the page.
 export function Glass({ style, children, radius = 24 }: { style?: any; children: React.ReactNode; radius?: number }) {
   const bg = useContext(BgRef);
   return (
@@ -114,7 +106,6 @@ export function BrandRow() {
 }
 export const BrandChip = BrandRow;
 
-// Anything pressable that sinks a touch and ticks.
 export function Press({ onPress, disabled, style, children, label, flex }: { onPress: () => void; disabled?: boolean; style?: any; children: React.ReactNode; label?: string; flex?: boolean }) {
   const p = useSharedValue(1);
   const a = useAnimatedStyle(() => ({ transform: [{ scale: p.value }] }));
@@ -150,7 +141,6 @@ export function Heading({ icon, title, subtitle }: { icon: keyof typeof Ionicons
   );
 }
 
-// "Got an account?   Log in here →"
 export function HintRow({ text, link, onPress }: { text: string; link: string; onPress: () => void }) {
   return (
     <View style={g.hintRow}>
@@ -170,8 +160,6 @@ export function HintRow({ text, link, onPress }: { text: string; link: string; o
   );
 }
 
-// A glass option card ("with Google"). When selected it gets an Iris ring
-// and its arrow turns to show it has opened.
 export function OptionCard({
   icon,
   label,

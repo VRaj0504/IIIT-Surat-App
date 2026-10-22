@@ -20,25 +20,16 @@ export type Club = {
   name: string;
   category: string;
   description: string;
-  leadUid: string | null; // null until the lead has an account and gets linked
+  leadUid: string | null;
   leadName: string;
   leadEmail: string | null;
   createdAt: Timestamp | null;
-  parentClubId: string | null; // set when this club is a sub-club (e.g. Exposure under Saaras)
-  // Set by scripts/set-club-extra-leads.js for clubs genuinely run by more
-  // than one person — additionalLeadEmails is what ingestFacultyEmail.ts
-  // (Cloud Function) actually checks for email-posting access;
-  // additionalLeadNames is the same list of people, for display only, in
-  // the same order. Neither grants in-app edit permissions — that's still
-  // leadUid/leadEmail alone.
+  parentClubId: string | null;
+
   additionalLeadEmails?: string[];
   additionalLeadNames?: string[];
 };
 
-// "Lead: X" for a single-lead club, "Leads: X, Y, Z" once there are
-// additional leads — used anywhere a club's lead(s) are displayed, so
-// the two places that show this (the club header and each sub-club row)
-// can't drift out of sync with each other.
 export function formatClubLeads(club: Club): string {
   const names = [club.leadName, ...(club.additionalLeadNames ?? [])].filter(Boolean);
   const label = names.length > 1 ? "Leads" : "Lead";
@@ -61,12 +52,6 @@ export type ClubEvent = {
 const CLUBS_COLLECTION = 'clubs';
 const EVENTS_COLLECTION = 'clubEvents';
 
-// Faculty creates a new club. `leadName` is always required (just a display name).
-// `leadEmail` is optional. If given and an account already exists with that email,
-// we link it immediately. If given but no account exists yet, we still store the
-// email as a "pending" claim — as soon as someone signs up with that exact email,
-// claimPendingClubLead() links them automatically. Leave it blank to add the club
-// with just a name, to be linked manually later via setClubLead().
 export async function createClub(
   name: string,
   category: string,
@@ -102,11 +87,6 @@ export async function createClub(
   return docRef.id;
 }
 
-// Faculty sets/changes a club's lead — rename, relink to a different account,
-// or reassign entirely (e.g. new lead each year). Pass no leadEmail to keep it
-// unlinked (name-only) or to intentionally drop the previous account link.
-// If the email doesn't have an account yet, it's saved as a pending claim and
-// will self-link the moment that person signs up (see claimPendingClubLead).
 export async function setClubLead(clubId: string, leadName: string, leadEmail?: string): Promise<void> {
   let leadUid: string | null = null;
   let resolvedLeadEmail: string | null = null;
@@ -127,9 +107,6 @@ export async function setClubLead(clubId: string, leadName: string, leadEmail?: 
   });
 }
 
-// Immediately revokes the current lead's posting access without changing the
-// displayed name — useful the moment someone steps down, before a replacement
-// is decided.
 export async function revokeClubLeadAccess(clubId: string): Promise<void> {
   await updateDoc(doc(db, CLUBS_COLLECTION, clubId), {
     leadUid: null,
@@ -137,10 +114,6 @@ export async function revokeClubLeadAccess(clubId: string): Promise<void> {
   });
 }
 
-// Called right after a new account is created. Finds any club(s) that were
-// pre-assigned to this email (leadEmail set, leadUid still null — i.e. the
-// lead hadn't signed up yet) and links this account as the lead. Safe to call
-// for every signup; it's a no-op if nothing matches.
 export async function claimPendingClubLead(uid: string, email: string): Promise<void> {
   const normalizedEmail = email.trim().toLowerCase();
   const pendingQuery = query(
@@ -154,7 +127,6 @@ export async function claimPendingClubLead(uid: string, email: string): Promise<
   );
 }
 
-// Live subscription to every club, alphabetical by name.
 export function subscribeToClubs(onUpdate: (clubs: Club[]) => void): () => void {
   const q = query(collection(db, CLUBS_COLLECTION), orderBy('name'));
   return persisted('clubs', (onUpdate) => onSnapshot(q, (snapshot) => {
@@ -166,7 +138,6 @@ export function subscribeToClubs(onUpdate: (clubs: Club[]) => void): () => void 
   }), onUpdate);
 }
 
-// The club's lead posts a new event.
 export async function createEvent(
   clubId: string,
   clubName: string,
@@ -190,8 +161,6 @@ export async function createEvent(
   });
 }
 
-// Only the original poster can edit/delete their own event (enforced by
-// firestore.rules — createdBy must match and can't be changed).
 export async function updateEvent(
   eventId: string,
   title: string,
@@ -211,9 +180,6 @@ export async function deleteEvent(eventId: string): Promise<void> {
   await deleteDoc(doc(db, EVENTS_COLLECTION, eventId));
 }
 
-// Live subscription to one club's upcoming events, soonest first. Past events
-// automatically drop off — an event's own date/time is its natural expiry,
-// so nobody needs to remember to delete it afterward.
 export function subscribeToClubEvents(clubId: string, onUpdate: (events: ClubEvent[]) => void): () => void {
   const q = query(
     collection(db, EVENTS_COLLECTION),
@@ -230,7 +196,6 @@ export function subscribeToClubEvents(clubId: string, onUpdate: (events: ClubEve
   }), onUpdate);
 }
 
-// Live subscription to every upcoming event across all clubs — the global feed.
 export function subscribeToAllUpcomingEvents(onUpdate: (events: ClubEvent[]) => void): () => void {
   const now = Timestamp.fromDate(new Date());
   const q = query(

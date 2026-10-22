@@ -35,8 +35,6 @@ import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 type PostNoticeRoute = RouteProp<RootStackParamList, "PostNotice">;
 
-// Categories a faculty member can pick from when posting a general notice
-// (not tied to a specific club).
 const GENERAL_CATEGORIES: Notice["category"][] = [
   "Academic",
   "Placement",
@@ -65,12 +63,6 @@ export default function PostNoticeScreen() {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Targeting — a General/Academic/Placement notice can optionally be
-  // scoped to a specific class (year + branch/section), picked from live
-  // roster data — not free-typed, since a typo here would mean the
-  // notice silently reaches nobody. "Everyone" (no targeting at all)
-  // stays available as its own explicit choice. Not shown for club
-  // notices (those stay open to everyone interested, same as before).
   const [targetEnabled, setTargetEnabled] = useState(
     !!(editingNotice?.targetBranch || editingNotice?.targetAdmissionYear),
   );
@@ -100,10 +92,7 @@ export default function PostNoticeScreen() {
     getClassOptionsForYear(selectedYear)
       .then((options) => {
         setClassOptions(options);
-        // Editing an existing notice — once this year's real classes load,
-        // find and pre-select whichever one matches what was already
-        // saved, so re-opening a targeted notice for editing shows the
-        // same class already picked instead of an empty picker.
+
         if (editingNotice?.targetBranch) {
           const match = options.find(
             (o) => o.branch === editingNotice.targetBranch && o.section === (editingNotice.targetSection ?? null),

@@ -66,9 +66,6 @@ const ROWS: Row[] = [
   },
 ];
 
-// Same fixed preset as functions/src/sendClassReminderPush.ts's
-// REMINDER_OFFSETS — the server only ever checks these exact values, so
-// offering anything else here would silently never fire.
 const REMINDER_MINUTES_OPTIONS = [3, 5, 7, 10, 15] as const;
 
 export default function NotificationSettingsScreen() {
@@ -83,14 +80,13 @@ export default function NotificationSettingsScreen() {
 
   const handleToggle = async (key: keyof NotificationPreferences, value: boolean) => {
     if (!user?.uid || !prefs) return;
-    // Update the screen immediately, then save — a toggle should feel
-    // instant, not wait on a round trip before visibly moving.
+
     setPrefs({ ...prefs, [key]: value });
     setSavingKey(key);
     try {
       await updateNotificationPreference(user.uid, key, value);
     } catch (err) {
-      // Revert on failure so the switch doesn't lie about what's saved.
+
       setPrefs((current) => (current ? { ...current, [key]: !value } : current));
     } finally {
       setSavingKey(null);

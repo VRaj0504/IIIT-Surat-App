@@ -12,14 +12,6 @@ import {
 } from "firebase/firestore";
 import { db } from "./firestore";
 
-// SOS: a student presses and holds the SOS button → one doc in `sosAlerts`.
-// A Cloud Function (sendSosPush) sends an SMS with the location to the
-// student's saved emergency contacts, the doctor, wardens, medical committee
-// and hostel committee (config/sos), and an app notification to responders; they see it live in
-// the app (SOS alerts) and on the faculty portal's SOS board, mark "on my
-// way" and then "resolved". While the alert is open the student's phone
-// keeps refreshing `location` so responders always have the latest pin.
-
 export type SosType = "medical" | "safety" | "other";
 export type SosStatus = "open" | "acknowledged" | "resolved" | "cancelled";
 
@@ -40,7 +32,7 @@ export type SosAlert = {
   ackBy: { name: string; email: string; at: number } | null;
   resolvedBy: { name: string; email: string; at: number } | null;
   createdAt: Timestamp | null;
-  // Written by the server once the SMS has gone out.
+
   smsSent?: number;
   smsError?: string | null;
 };
@@ -49,7 +41,7 @@ export type SosResponder = { name: string; role: string; phone?: string; email?:
 export type SosConfig = {
   doctor?: SosResponder;
   wardens?: SosResponder[];
-  // Extra numbers anyone can call from the SOS screen (security desk etc.).
+
   helplines?: SosResponder[];
   medicalCommittee?: SosResponder[];
   hostelCommittee?: SosResponder[];
@@ -103,7 +95,6 @@ export function updateSosLocation(id: string, location: SosLocation) {
   return updateDoc(doc(db, "sosAlerts", id), { location, updatedAt: serverTimestamp() });
 }
 
-// Student side: "I'm safe" (cancelled) — or responder side: on my way / resolved.
 export function setSosStatus(
   id: string,
   status: SosStatus,
@@ -115,7 +106,6 @@ export function setSosStatus(
   return updateDoc(doc(db, "sosAlerts", id), patch);
 }
 
-// The student's own alerts that are still active (normally zero or one).
 export function subscribeToMyActiveSos(uid: string, onUpdate: (a: SosAlert | null) => void): () => void {
   const q = query(collection(db, "sosAlerts"), where("studentUid", "==", uid), where("status", "in", ["open", "acknowledged"]));
   return onSnapshot(
@@ -129,7 +119,6 @@ export function subscribeToMyActiveSos(uid: string, onUpdate: (a: SosAlert | nul
   );
 }
 
-// Responders: every alert still needing attention.
 export function subscribeToActiveSos(
   onUpdate: (alerts: SosAlert[]) => void,
   onError?: (e: Error) => void,

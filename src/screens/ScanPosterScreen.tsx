@@ -24,12 +24,6 @@ import { scanPoster } from "../firebase/posterScanService";
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 import DateField, { todayIso } from "../components/DateField";
 
-// IMPORTANT: expo-calendar is unsupported in Expo Go (per Expo's own
-// docs) — this whole screen's "Add to Calendar" step only actually works
-// in a real dev/production build. The camera/upload → OCR extraction part
-// above it works fine in Expo Go regardless, same split as push
-// notifications elsewhere in this app.
-
 export default function ScanPosterScreen() {
   const { profile } = useAuth();
   const navigation = useNavigation();
@@ -40,11 +34,9 @@ export default function ScanPosterScreen() {
   const [rawText, setRawText] = useState("");
   const [showRawText, setShowRawText] = useState(false);
 
-  // Editable fields, pre-filled from OCR but never trusted blindly —
-  // this is the confirm/edit step the person asked for explicitly.
   const [title, setTitle] = useState("");
-  const [date, setDate] = useState(""); // "YYYY-MM-DD"
-  const [time, setTime] = useState(""); // "HH:mm"
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
   const [location, setLocation] = useState("");
   const [adding, setAdding] = useState(false);
 
@@ -79,7 +71,7 @@ export default function ScanPosterScreen() {
       setExtracted(true);
     } catch (err: any) {
       Alert.alert("Couldn't scan", err.message ?? "Please try again, or fill the details in manually below.");
-      setExtracted(true); // let them fill in manually even if OCR failed
+      setExtracted(true);
     } finally {
       setScanning(false);
     }
@@ -95,10 +87,10 @@ export default function ScanPosterScreen() {
       Alert.alert("Invalid date/time", "Use YYYY-MM-DD for the date and HH:mm for the time.");
       return;
     }
-    const endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // default 1-hour event
+    const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
 
     if (Platform.OS === "web") {
-      // Browsers can't write to a calendar directly — hand over a .ics file.
+
       downloadIcs({
         title: title.trim(),
         start: startDate,
@@ -117,11 +109,6 @@ export default function ScanPosterScreen() {
         return;
       }
 
-      // getDefaultCalendarAsync is genuinely iOS-only at the
-      // implementation level — it exists as an exported function on
-      // Android too, but throws when actually called there, so checking
-      // whether the function reference exists doesn't correctly detect
-      // platform support. Checking Platform.OS directly does.
       let calendarId: string;
       if (Platform.OS === "ios") {
         const defaultCalendar = await Calendar.getDefaultCalendarAsync();

@@ -27,8 +27,6 @@ function friendlyError(e: any): string {
   }
 }
 
-// "Create account": with Google (one tap) or with the institute email and a
-// password. Email accounts confirm the address from their inbox first.
 export default function SignUpScreen({ onNavigateToLogin }: Props) {
   const { signInWithGoogle, signUpWithEmail, authError, clearAuthError } = useAuth();
   const [emailOpen, setEmailOpen] = useState(false);

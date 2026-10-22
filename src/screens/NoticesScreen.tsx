@@ -16,7 +16,6 @@ type NavProp = NativeStackNavigationProp<RootStackParamList>;
 type Category = Notice["category"];
 type Filter = "All" | Category;
 
-// Same pastel tones as Home — one colour per kind of notice, everywhere.
 const TONE: Record<Category, keyof typeof colors.tile> = {
   Academic: "blue",
   Placement: "mint",
@@ -135,9 +134,7 @@ export default function NoticesScreen() {
   const now = Date.now();
 
   useEffect(() => {
-    // Faculty/admin see every notice regardless of targeting (they need to
-    // moderate/manage all of them); students only see untargeted notices
-    // plus ones targeted at their own branch/section/year.
+
     const viewer =
       profile?.role === "student"
         ? {
@@ -161,7 +158,6 @@ export default function NoticesScreen() {
     ]);
   };
 
-  // Only offer the categories that actually have notices (plus All).
   const filters = useMemo(() => FILTERS.filter((f) => f === "All" || notices.some((n) => n.category === f)), [notices]);
   const shown = filter === "All" ? notices : notices.filter((n) => n.category === filter);
   const newCount = notices.filter((n) => n.createdAt && now - n.createdAt.toMillis() < 24 * 60 * 60 * 1000).length;

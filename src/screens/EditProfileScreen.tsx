@@ -106,9 +106,7 @@ export default function EditProfileScreen() {
 
     setUploadingPhoto(true);
     try {
-      // Fixed filename per user (not timestamped) — re-uploading replaces
-      // the old photo in Storage rather than accumulating orphaned files
-      // nobody ever cleans up.
+
       const photoRef = ref(storage, `profilePhotos/${profile.uid}/photo.jpg`);
       const response = await fetch(result.assets[0].uri);
       const blob = await response.blob();
@@ -131,9 +129,7 @@ export default function EditProfileScreen() {
     setSaving(true);
     try {
       await updateProfileName(name);
-      // These fields only matter for faculty (they're what shows up in
-      // FacultyDirectoryScreen) — skip the write entirely for students so
-      // it doesn't touch fields that don't apply to them.
+
       if (profile?.role === "faculty") {
         await updateFacultyDetails({
           department,
@@ -148,8 +144,7 @@ export default function EditProfileScreen() {
       } else if (profile?.role === "student") {
         await updatePhone(phone);
       } else {
-        // Any other role (admin today) — same as the student path, just
-        // the plain phone field, not the faculty-directory fields.
+
         await updatePhone(phone);
       }
       navigation.goBack();
@@ -180,8 +175,7 @@ export default function EditProfileScreen() {
 
   return (
     <View style={styles.page}>
-      {/* behavior="height" on Android, not undefined — the OS-level resize
-          is unreliable on newer Android with edge-to-edge display on. */}
+
       <KeyboardAvoidingView behavior={undefined} style={{ flex: 1 }}>
         <KeyboardAwareScrollView
           style={{ flex: 1 }}
@@ -189,7 +183,7 @@ export default function EditProfileScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Photo */}
+
           <View style={styles.photoCard}>
             <TouchableOpacity onPress={handlePickPhoto} disabled={uploadingPhoto} activeOpacity={0.85}>
               {uploadingPhoto ? (
@@ -375,13 +369,11 @@ export default function EditProfileScreen() {
             </>
           )}
 
-          {/* Any other role (admin today) — just the contact phone. */}
           {!isStudent && !isFaculty && <Section title="Contact">{phoneField("Optional — used for Lost & Found contact.")}</Section>}
 
           {error && <Text style={styles.error}>{error}</Text>}
         </KeyboardAwareScrollView>
 
-        {/* Save stays put at the bottom while you scroll */}
         <View style={styles.saveBar}>
           <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving} activeOpacity={0.85}>
             {saving ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={styles.saveBtnText}>Save changes</Text>}
@@ -401,8 +393,6 @@ const DEPARTMENTS = [
 ];
 const DESIGNATIONS = ["Professor", "Associate Professor", "Assistant Professor", "Visiting Faculty", "Adjunct Faculty", "Teaching Assistant"];
 
-// Pick-from-list for fixed values (no typos); a value already saved that
-// isn't in the list still shows, selected.
 function ChipPicker({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
   const all = value && !options.includes(value) ? [value, ...options] : options;
   return (

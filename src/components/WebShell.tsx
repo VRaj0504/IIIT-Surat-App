@@ -14,10 +14,6 @@ type Props = {
 
 const pointer: any = { cursor: "pointer" };
 
-// Website chrome for wide browser windows: a top navigation bar, a centered
-// content column and a slim footer. On phones, and on narrow browser
-// windows, it renders nothing extra — the normal app layout is used
-// (bottom tabs, full width).
 export default function WebShell({ navigationRef, currentRoute, children }: Props) {
   const { isDesktop } = useWebLayout();
   const { user, profile, logOut } = useAuth();

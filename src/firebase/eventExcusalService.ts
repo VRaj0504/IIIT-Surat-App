@@ -22,11 +22,6 @@ export type EventCoordinator = {
   email: string;
 };
 
-// Checks whether the signed-in student is on the admin-maintained
-// coordinator list — gates the Submit Event Excusal screen. Matched by
-// email (lowercased), same pattern as the faculty allowlist elsewhere in
-// this app, since a coordinator might not have a stored uid yet if this
-// list was seeded before they ever signed in.
 export async function isEventCoordinator(email: string): Promise<boolean> {
   const q = query(collection(db, COORDINATORS_COLLECTION), where("email", "==", email.toLowerCase()));
   const snap = await getDocs(q);
@@ -38,13 +33,13 @@ export type ExcusalStatus = "pending" | "approved" | "rejected";
 export type EventExcusal = {
   id: string;
   eventName: string;
-  fromDate: string; // "YYYY-MM-DD"
+  fromDate: string;
   toDate: string;
   studentEnrollmentNumbers: string[];
   facultyCoordinatorUid: string;
   facultyCoordinatorName: string;
   facultyCoordinatorEmail: string;
-  submittedBy: string; // student coordinator's uid
+  submittedBy: string;
   submittedByName: string;
   status: ExcusalStatus;
   facultyRemark: string | null;
@@ -80,10 +75,6 @@ export async function submitEventExcusal(params: {
   });
 }
 
-// The student coordinator's own submission history — lets them see
-// whether something they submitted is still pending, approved, or was
-// rejected (and why), without needing to separately ask the faculty
-// coordinator.
 export function subscribeToMySubmittedExcusals(
   submittedBy: string,
   onUpdate: (excusals: EventExcusal[]) => void,
@@ -94,8 +85,6 @@ export function subscribeToMySubmittedExcusals(
   });
 }
 
-// What a specific faculty coordinator needs to review — only requests
-// assigned to them, not every request in the system.
 export function subscribeToAssignedExcusals(
   facultyCoordinatorUid: string,
   onUpdate: (excusals: EventExcusal[]) => void,
@@ -118,14 +107,6 @@ export async function respondToExcusal(
   });
 }
 
-// The actual integration point attendance percentage calculation uses —
-// given a student and a date, was there an APPROVED excusal covering
-// that date? Nothing takes effect until a faculty coordinator has
-// explicitly approved it; a pending or rejected request never excuses
-// anything. Callers fetch this once per student (not per date) and
-// check date-range membership themselves, since a student is realistically
-// only ever covered by a handful of approved excusals across a whole
-// semester — far cheaper than a query per session.
 export async function getApprovedExcusalRanges(
   enrollmentNumber: string,
 ): Promise<{ fromDate: string; toDate: string; eventName: string }[]> {
@@ -150,12 +131,6 @@ export function isDateWithinExcusal(
 
 export type RosterSearchResult = { regNo: string; name: string };
 
-// A free-text search across the WHOLE roster, not filtered to one class
-// — an event's participants can come from any branch/year/section, so
-// this can't reuse the class-scoped roster helpers used elsewhere (Grade
-// Entry, Mark Attendance). Fetches once and filters client-side, same
-// "small enough collection" reasoning already applied to roster
-// elsewhere in this app.
 export async function searchWholeRoster(queryText: string): Promise<RosterSearchResult[]> {
   const q = queryText.trim().toLowerCase();
   if (!q) return [];

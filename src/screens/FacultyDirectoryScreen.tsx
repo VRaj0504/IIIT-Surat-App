@@ -21,10 +21,6 @@ import { subscribeToFacultyDirectory, FacultyMember } from "../firebase/facultyS
 import { subscribeToTnpCoordinators, StudentCoordinator } from "../firebase/tnpCoordinatorsService";
 import LoadingSpinner from "../components/LoadingSpinner";
 
-// Department codes as seeded in scripts/seed-allowlist.js (from the
-// allowlist, carried onto the profile at signup — see AuthContext.ts).
-// Best-guess expansions of the institute's internal codes; correct these
-// if any are wrong.
 const DEPARTMENT_LABELS: Record<string, string> = {
   UGCSE: "Computer Science and Engineering",
   UGECE: "Electronics and Communication Engineering",
@@ -39,14 +35,6 @@ function departmentLabel(code?: string): string | undefined {
   return DEPARTMENT_LABELS[code] ?? code;
 }
 
-// The 3 folders explicitly asked for, plus a TnP Cell folder (a separate
-// administrative unit, not an academic department — shouldn't be lumped
-// in with Applied Sciences), an Administration folder for the Director/
-// Registrar's office (not an academic department either, and shouldn't
-// fall into the PAS catch-all just for having no department code), and
-// a PAS Department catch-all for Applied Sciences faculty and anyone
-// else whose department code doesn't match one of the others, so
-// nobody silently disappears from the directory.
 type FolderId = "UGCSE" | "UGECE" | "UGMCS" | "TNP" | "ADMIN" | "OTHER";
 
 const FOLDERS: { id: FolderId; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -71,20 +59,12 @@ function folderFor(department?: string): FolderId {
   return "OTHER";
 }
 
-// A faculty member's home department decides their PRIMARY folder, but
-// additionalDepartments lets them also show under other folders on top
-// of that — e.g. someone whose home department is CSE but who's also
-// involved with MCS.
 function isInFolder(member: FacultyMember, folder: FolderId): boolean {
   if (folderFor(member.department) === folder) return true;
   if (member.additionalDepartments?.includes(folder)) return true;
   return false;
 }
 
-// HOD/Head first, then regular (non-contractual) faculty, then
-// contractual positions, then anything with no designation set yet
-// (allowlist-only entries that haven't been assigned one). Alphabetical
-// by name within each tier.
 function designationRank(designation?: string): number {
   if (!designation) return 3;
   const d = designation.toLowerCase();
@@ -100,11 +80,6 @@ function compareFacultyForDisplay(a: FacultyMember, b: FacultyMember): number {
   return a.name.localeCompare(b.name);
 }
 
-// A photo when the person has one (self-uploaded via Edit Profile, or
-// set on their allowlist entry) — the same initials circle as before
-// otherwise. Used in both the card and the detail modal so a photo
-// (or the in-cabin dot below) added later shows up in both places
-// automatically.
 function FacultyAvatar({ member, style, textStyle }: { member: FacultyMember; style: object; textStyle: object }) {
   const initial = member.name?.trim()?.[0]?.toUpperCase() ?? "?";
   return (
@@ -116,10 +91,7 @@ function FacultyAvatar({ member, style, textStyle }: { member: FacultyMember; st
           <Text style={textStyle}>{initial}</Text>
         </View>
       )}
-      {/* Only ever true from the faculty member's own live toggle on
-          Home (see AuthContext's setInCabin) — never set for an
-          allowlist-only entry that hasn't signed up, so this can't
-          show for someone who's never even opened the app. */}
+
       {member.inCabin && <View style={styles.inCabinDot} />}
     </View>
   );
@@ -220,11 +192,6 @@ const FacultyCard = memo(function FacultyCard({ member }: { member: FacultyMembe
       </View>
     </TouchableOpacity>
 
-    {/* Tapping the card opens this — the card itself stays a flat list
-        item (fast to scroll through, shows contact buttons at a
-        glance); this is for the two things that don't fit in a
-        two-line card: a real bio, and the research summary given room
-        to breathe instead of getting cut off at 2 lines. */}
     <Modal visible={detailOpen} animationType="slide" transparent onRequestClose={() => setDetailOpen(false)}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalSheet}>
@@ -307,13 +274,6 @@ const FacultyCard = memo(function FacultyCard({ member }: { member: FacultyMembe
   );
 });
 
-// Deliberately a separate, simpler component from FacultyCard rather than
-// reusing it — designation/department/officeHours/roleEmail all make
-// sense for faculty but not for a student in an informal coordinator
-// role, and forcing StudentCoordinator into FacultyMember's shape would
-// mean a lot of blank/undefined fields rendered conditionally for no
-// real benefit. The "STUDENT" badge (instead of HOD/DEAN) is the visual
-// cue that keeps these clearly distinct from actual faculty.
 const StudentCoordinatorCard = memo(function StudentCoordinatorCard({
   coordinator,
 }: {
@@ -388,22 +348,15 @@ export default function FacultyDirectoryScreen() {
     [faculty, selectedFolder],
   );
 
-  // Without this, Android's hardware back button skips straight past this
-  // screen's internal folder state and pops the whole Faculty Directory
-  // screen off the navigation stack (landing back on Home) — since
-  // switching folders here is just useState, not a real stack push, React
-  // Navigation has no idea a "sub-screen" is open. Intercepting back while
-  // a folder is open and just clearing selectedFolder instead makes back
-  // behave the way it looks like it should: one step at a time.
   useFocusEffect(
     useCallback(() => {
       const onBackPress = () => {
         if (selectedFolder) {
           setSelectedFolder(null);
           setSearch("");
-          return true; // handled — don't let React Navigation pop the screen
+          return true;
         }
-        return false; // no folder open, let the normal back behavior happen
+        return false;
       };
       const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
       return () => subscription.remove();
@@ -425,7 +378,6 @@ export default function FacultyDirectoryScreen() {
     [],
   );
 
-  // Folder picker — the landing view.
   if (!selectedFolder) {
     return (
       <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
@@ -459,7 +411,6 @@ export default function FacultyDirectoryScreen() {
     );
   }
 
-  // Inside a folder — same searchable list as before, just scoped.
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>

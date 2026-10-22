@@ -5,15 +5,10 @@ import { persisted } from './liveCache';
 export type CurriculumSubject = {
   code: string;
   name: string;
-  // Optional since the faculty-upload-web uploader doesn't collect this
-  // yet for older entries — the grading screen falls back to asking
-  // faculty to confirm/type it inline when missing.
+
   credits?: number;
 };
 
-// Live-subscribes to just the subjects matching one branch + semester —
-// not the whole curriculum collection, so this stays fast even once
-// every branch/semester/subject across all years is in Firestore.
 export function subscribeToCurriculum(
   branch: string,
   semester: number,

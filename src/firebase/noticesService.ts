@@ -26,17 +26,11 @@ export type Notice = {
   createdBy: string;
   createdByName: string;
   createdAt: Timestamp | null;
-  // Optional targeting — null/undefined on any of these means "everyone"
-  // for that dimension. A notice with targetBranch set but no
-  // targetSection/targetAdmissionYear reaches every section/year of that
-  // branch; all three set together narrows to one specific class.
+
   targetBranch?: 'CSE' | 'ECE' | 'MNC' | null;
   targetSection?: string | null;
   targetAdmissionYear?: number | null;
-  // Only meaningful when the targeted section actually mixes
-  // specializations within the same branch (e.g. CSE C split into
-  // Core/Cyber Security) — null means "everyone in this section", not
-  // "nobody".
+
   targetSpecialization?: string | null;
 };
 
@@ -69,9 +63,6 @@ export async function createNotice(
   });
 }
 
-
-// Only the original poster can edit/delete their own notice (enforced by
-// firestore.rules — createdBy must match and can't be changed).
 export async function updateNotice(
   noticeId: string,
   title: string,
@@ -98,28 +89,10 @@ export async function deleteNotice(noticeId: string): Promise<void> {
   await deleteDoc(doc(db, NOTICES_COLLECTION, noticeId));
 }
 
-const NOTICE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-// Same precedent as resourceService.ts's FACULTY_VIEW_LIMIT — staff/admin
-// deliberately see everything regardless of age (they moderate/manage
-// old notices too, not just recent ones), so their view can't use the
-// same age cutoff students get; this caps it instead of leaving it fully
-// unbounded.
+const NOTICE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
 const NOTICE_STAFF_VIEW_LIMIT = 500;
 
-// Auto-hides anything older than 30 days from the feed. Students: this is
-// now enforced in the query itself, not just a client-side filter
-// afterward — previously every student's phone downloaded and kept
-// live-syncing the ENTIRE notice history ever posted, forever, only to
-// immediately discard anything older than 30 days on arrival. Staff/admin
-// still need to moderate/manage old notices too, so their path skips the
-// age filter and uses a document-count cap instead (see
-// NOTICE_STAFF_VIEW_LIMIT above).
-//
-// `viewer` scopes targeted notices to the signed-in student's own
-// branch/section/year — a notice with no targeting set on a given field
-// reaches everyone for that field, so all three being null means "everyone".
-// Omit `viewer` (or pass role 'faculty'/'admin') to see every notice
-// regardless of targeting, since staff need to moderate/manage all of them.
 export function subscribeToNotices(
   onUpdate: (notices: Notice[]) => void,
   viewer?: { branch?: string; section?: string; admissionYear?: number; specialization?: string } | null,
@@ -139,7 +112,7 @@ export function subscribeToNotices(
         ...(docSnap.data() as Omit<Notice, 'id'>),
       }))
       .filter((n) => {
-        if (viewer === undefined) return true; // faculty/admin: see everything
+        if (viewer === undefined) return true;
         if (n.targetBranch && n.targetBranch !== viewer?.branch) return false;
         if (n.targetSection && n.targetSection !== viewer?.section) return false;
         if (n.targetAdmissionYear && n.targetAdmissionYear !== viewer?.admissionYear) return false;

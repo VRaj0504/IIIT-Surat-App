@@ -57,11 +57,6 @@ const faqs: { question: string; answer: string }[] = [
   },
 ];
 
-// Was a flat list of question+answer pairs, all expanded all the time —
-// four answers' worth of text always on screen whether or not anyone
-// wanted to read them. An accordion (tap a question, only that one
-// answer expands) is the standard, expected shape for an FAQ section:
-// scan the questions first, open only the one that's actually relevant.
 function FaqItem({ item }: { item: { question: string; answer: string } }) {
   const [open, setOpen] = useState(false);
 

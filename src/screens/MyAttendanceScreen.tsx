@@ -11,11 +11,6 @@ import { getMyAttendance, SubjectAttendance, ATTENDANCE_TARGET } from "../fireba
 import { getCurrentSemester } from "../utils/academicInfo";
 import LoadingSpinner from "../components/LoadingSpinner";
 
-// The student's own attendance, per subject, for the current semester —
-// computed from the classes their teachers mark (app or faculty portal).
-// OD / leave, approved event excusals and teacher-confirmed medical leave
-// count as attended, the same rule the portal's semester download uses.
-
 function prettyDate(iso: string) {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
@@ -43,8 +38,7 @@ export default function MyAttendanceScreen() {
   useEffect(() => {
     if (!ready) return;
     const unsub = subscribeToCurriculum(profile!.branch!, semester!, setSubjects);
-    // If the curriculum can't be read (offline, not uploaded), carry on
-    // without it — electives and everything saved with a semester still show.
+
     const t = setTimeout(() => setSubjects((s) => s ?? []), 6000);
     return () => {
       unsub();
@@ -59,8 +53,6 @@ export default function MyAttendanceScreen() {
 
   const excused = useMemo(() => excusedSessionSet(leaves ?? []), [leaves]);
 
-  // Show the last attendance saved on this phone straight away; the fresh
-  // numbers replace it a moment later.
   const cacheKey = ready ? `att:${profile!.enrollmentNumber}:${semester}` : "";
   useEffect(() => {
     if (!cacheKey) return;
@@ -115,7 +107,7 @@ export default function MyAttendanceScreen() {
   const present = rows.reduce((a, r) => a + r.presentCount, 0);
   const overall = held ? Math.round((present / held) * 1000) / 10 : null;
   const low = rows.filter((r) => r.percentage < ATTENDANCE_TARGET);
-  // Curriculum subjects with no class recorded yet.
+
   const pending = (subjects ?? []).filter(
     (s) => !rows.some((r) => r.subjectCode.replace(/\s+/g, "").toUpperCase() === s.code.replace(/\s+/g, "").toUpperCase()),
   );

@@ -2,11 +2,6 @@ import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db } from "./firestore";
 
-// Reporting and blocking for anything students post (Lost & Found today).
-// Store rules (Apple 1.2, Google UGC policy) want both: a way to flag
-// objectionable content, and a way to stop seeing someone's posts.
-// Reports land in `reports`, which faculty review in the portal's Reports tab.
-
 export const REPORT_REASONS = [
   "Spam or fake post",
   "Inappropriate or offensive",

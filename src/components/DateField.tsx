@@ -3,10 +3,6 @@ import { Modal, Pressable, Text, TouchableOpacity, View, StyleSheet } from "reac
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/theme";
 
-// A date you tap to pick from a calendar, instead of typing "YYYY-MM-DD".
-// Value in and out is the same "YYYY-MM-DD" string the screens already store,
-// so nothing else changes. `min` / `max` grey out days outside the range.
-
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
@@ -45,7 +41,7 @@ export default function DateField({
 
   const cells = useMemo(() => {
     const first = new Date(view.y, view.m, 1);
-    const lead = (first.getDay() + 6) % 7; // Monday first
+    const lead = (first.getDay() + 6) % 7;
     const count = new Date(view.y, view.m + 1, 0).getDate();
     return [...Array(lead).fill(null), ...Array.from({ length: count }, (_, i) => i + 1)];
   }, [view]);

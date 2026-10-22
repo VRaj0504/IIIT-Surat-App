@@ -31,18 +31,10 @@ import { ATTENDANCE_TARGET } from '../firebase/attendanceService';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
-// badge keys into colors.badge (theme.ts) — a real color-graded pair per
-// category (peach/pink/green/blue/purple), not one hue at varying alpha
-// like the old `tint: '#hex'` + `+ '1A'` suffix trick.
 type BadgeKey = keyof typeof colors.badge;
 type Tile = { label: string; icon: keyof typeof Ionicons.glyphMap; route: keyof RootStackParamList; badge: BadgeKey };
 type Section = { title: string; tiles: Tile[] };
 
-// Grouped by what someone is actually trying to DO, rather than one flat
-// 14-18 tile grid where everything competes equally for attention. The
-// eye can skip straight to the right section instead of scanning every
-// tile. Kept expanded (not collapsible) deliberately — collapsing would
-// add a tap before every action and hide things people are hunting for.
 const studentSections: Section[] = [
   {
     title: 'Academics',
@@ -89,8 +81,6 @@ const studentSections: Section[] = [
   },
 ];
 
-// Faculty see their own tools FIRST (that's what they open the app for),
-// then the shared campus/mess features below.
 const facultySections: Section[] = [
   {
     title: 'Faculty Tools',
@@ -139,9 +129,6 @@ const facultySections: Section[] = [
 
 type Slot = TimetableSlot & { branch?: string; semester?: number; section?: string };
 
-// Bento tiles under the class card (UI canvas direction C): one tall tile
-// for the thing people open the app for most, two small ones beside it,
-// then quick chips. Everything else stays in the grouped grid below.
 type ToneKey = keyof typeof colors.tile;
 type BentoTile = { label: string; sub: string; icon: keyof typeof Ionicons.glyphMap; route: keyof RootStackParamList; tone: ToneKey };
 type QuickItem = { label: string; icon: keyof typeof Ionicons.glyphMap; route: keyof RootStackParamList; tone: ToneKey };
@@ -153,7 +140,7 @@ const studentBento: Bento = {
     { label: 'Resources', sub: 'Notes & papers', icon: 'book-outline', route: 'Resources', tone: 'blue' },
     { label: 'Empty classes', sub: 'Find an empty class', icon: 'business-outline', route: 'RoomAvailability', tone: 'lilac' },
   ],
-  // One tap from Home — the things people open most that aren't above.
+
   chips: [
     { label: 'Lost & Found', icon: 'search-outline', route: 'LostFound', tone: 'blue' },
     { label: 'Thali Pass', icon: 'qr-code-outline', route: 'ThaliPass', tone: 'peach' },
@@ -197,7 +184,6 @@ function minutesLabel(mins: number): string {
   return m === 0 ? `${h} hr` : `${h} hr ${m} min`;
 }
 
-// Re-renders every 30 s so "in 8 min" / "now" stay true without a reload.
 function useNow(intervalMs = 30000): Date {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -220,8 +206,6 @@ export default function HomeScreen() {
   const todayName = now.toLocaleDateString('en-US', { weekday: 'long' });
   const semester = profile?.admissionYear ? getCurrentSemester(profile.admissionYear, undefined, profile.program) : null;
 
-  // Student: their section's timetable. Faculty: their own teaching slots,
-  // derived from every section's timetable (same as the Timetable tab).
   const [timetable, setTimetableState] = useState<Timetable | null>(null);
   const [facultyEntries, setFacultyEntries] = useState<FacultyScheduleEntry[]>([]);
   useEffect(() => {
@@ -242,16 +226,13 @@ export default function HomeScreen() {
     return mergeContiguousSlots(raw).filter((s) => toMinutes(s.startTime) >= 0);
   }, [isFaculty, facultyEntries, timetable, todayName]);
 
-  // A holiday, or a class's exam period, replaces the class card.
   const [examSchedules, setExamSchedules] = useState<ExamSchedule[]>([]);
   useEffect(() => {
     if (isFaculty || !profile?.branch || !semester) return;
     const unsubscribe = subscribeToExamSchedules(profile.branch, semester, setExamSchedules);
     return () => unsubscribe();
   }, [isFaculty, profile?.branch, semester]);
-  // Ad-hoc holidays (an email circular someone typed into the portal,
-  // not on the fixed annual list) — relevant to everyone regardless of
-  // role, unlike exam period above, so this isn't gated on isFaculty.
+
   const [holidayOverrides, setHolidayOverrides] = useState<Record<string, string>>({});
   useEffect(() => {
     const unsubscribe = subscribeToHolidayOverrides(setHolidayOverrides);
@@ -259,7 +240,6 @@ export default function HomeScreen() {
   }, []);
   const dayStatus = getDayStatus(now, isFaculty ? [] : examSchedules, holidayOverrides);
 
-  // Faculty-only quick toggle — see setInCabin in AuthContext.tsx.
   const [cabinBusy, setCabinBusy] = useState(false);
   const handleToggleCabin = async () => {
     setCabinBusy(true);
@@ -274,7 +254,7 @@ export default function HomeScreen() {
 
   const [notices, setNotices] = useState<Notice[]>([]);
   useEffect(() => {
-    // Same viewer-scoping as NoticesScreen.tsx.
+
     const viewer =
       !isFaculty && profile
         ? {
@@ -287,8 +267,7 @@ export default function HomeScreen() {
     const unsubscribe = subscribeToNotices(setNotices, viewer);
     return () => unsubscribe();
   }, [isFaculty, profile?.branch, profile?.section, profile?.admissionYear, profile?.specialization]);
-  // Responders (doctor, wardens, admins) see a red banner while any SOS is
-  // open. Everyone else's read is refused by the rules — then it stays empty.
+
   const [activeSos, setActiveSos] = useState<SosAlert[]>([]);
   useEffect(() => {
     if (!isFaculty && (profile?.role as string) !== 'admin' && !profile?.isAdmin) return;
@@ -298,14 +277,11 @@ export default function HomeScreen() {
   const oneDayAgo = now.getTime() - 24 * 60 * 60 * 1000;
   const newNoticesCount = notices.filter((n) => n.createdAt && n.createdAt.toMillis() >= oneDayAgo).length;
 
-  // ---- what the hero card shows ----
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const current = todaySlots.find((s) => toMinutes(s.startTime) <= nowMin && nowMin < toMinutes(s.endTime));
   const upcoming = todaySlots.filter((s) => toMinutes(s.startTime) > nowMin);
   const hero = current ?? upcoming[0] ?? null;
-  // Labs split into Group 1 / Group 2 run in parallel; a student is in
-  // one of them but the timetable doesn't say which, so the card shows
-  // every group running at that time (and counts it as ONE period).
+
   const heroGroup = hero ? todaySlots.filter((s) => toMinutes(s.startTime) === toMinutes(hero.startTime)) : [];
   const parallel = heroGroup.length > 1;
   const later = upcoming.filter((s) => !heroGroup.includes(s)).slice(0, 3);
@@ -331,16 +307,12 @@ export default function HomeScreen() {
           .join(' · ')
       : expandFaculty(s.faculty ?? '');
 
-
   const go = (route: keyof RootStackParamList) => navigation.navigate(route as any);
 
-  // Which category sheet is open (null = none). Opening one is a single
-  // native-driven slide; navigating closes it first so the next screen's
-  // own slide-in plays cleanly.
   const [openSection, setOpenSection] = useState<Section | null>(null);
-  // Biggest categories first; a one-tool category ends up last (and wide).
+
   const exploreSections = useMemo(() => [...sections].sort((a, b) => b.tiles.length - a.tiles.length), [sections]);
-  // Leaving Home any other way (a notification tap, say) closes the sheet too.
+
   useFocusEffect(
     React.useCallback(() => () => setOpenSection(null), []),
   );
@@ -369,7 +341,7 @@ export default function HomeScreen() {
           contentContainerStyle={[styles.scrollContent, isDesktop && styles.scrollDesktop]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Header (C) */}
+
           <View style={styles.headerRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.greeting} numberOfLines={1}>
@@ -427,7 +399,6 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
 
-          {/* Next / current class (C pastel tile) */}
           <TapCard style={styles.next} onPress={goTimetable}>
             {dayStatus ? (
               <>
@@ -483,7 +454,6 @@ export default function HomeScreen() {
             )}
           </TapCard>
 
-          {/* Big tiles (C bento) */}
           <View style={styles.bentoRow}>
             <TapCard
               style={[styles.bentoBig, { backgroundColor: colors.tile[bento.big.tone].bg }]}
@@ -493,7 +463,7 @@ export default function HomeScreen() {
                 <Ionicons name={bento.big.icon} size={30} color={colors.tile[bento.big.tone].fg} />
               </View>
               {bento.big.route === 'MyAttendance' ? (
-                // Students: the overall % right on the tile.
+
                 <View>
                   {attendance?.overall != null && (
                     <Text
@@ -542,7 +512,6 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* Quick access — one tap, no folder */}
           <View style={styles.quickRow}>
             {bento.chips.map((c) => (
               <TapCard key={c.label} style={styles.quickItem} onPress={() => go(c.route)} accessibilityLabel={c.label}>
@@ -556,7 +525,6 @@ export default function HomeScreen() {
             ))}
           </View>
 
-          {/* Later today */}
           {!dayStatus && later.length > 0 && (
             <View style={styles.card}>
               <View style={styles.cardHeader}>
@@ -583,7 +551,6 @@ export default function HomeScreen() {
             </View>
           )}
 
-          {/* Everything else, grouped (C bento categories) */}
           <Text style={styles.exploreTitle}>Explore</Text>
           <View style={styles.catGrid}>
             {exploreSections.map((section, i) => {
@@ -626,7 +593,6 @@ export default function HomeScreen() {
   );
 }
 
-// Category colours: same category, same colour, everywhere.
 const SECTION_TONES: Record<string, ToneKey> = {
   Academics: 'blue',
   Requests: 'lilac',
@@ -641,8 +607,6 @@ function toneForSection(title: string, i: number): ToneKey {
   return SECTION_TONES[title] ?? FALLBACK_TONES[i % FALLBACK_TONES.length];
 }
 
-// A category's tools in a sheet that slides up from the bottom — one
-// native slide, nothing staggered.
 function CategorySheet({
   section,
   onClose,
@@ -654,7 +618,7 @@ function CategorySheet({
 }) {
   const tone = section ? colors.tile[toneForSection(section.title, 0)] : colors.tile.blue;
   const insets = useSafeAreaInsets();
-  // Android back button closes the sheet instead of leaving the screen.
+
   useEffect(() => {
     if (!section) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -665,8 +629,7 @@ function CategorySheet({
   }, [section, onClose]);
 
   return (
-    // Drawn through <Portal> (above the whole app, tab bar included) rather
-    // than <Modal>: see src/components/Portal.tsx.
+
     <Portal>
       {section && (
         <View style={StyleSheet.absoluteFill}>
@@ -807,7 +770,6 @@ const styles = StyleSheet.create({
   laterBar: { width: 3, height: 34, borderRadius: 2, backgroundColor: colors.border },
   laterTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   laterMeta: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginTop: 2 },
-
 
   exploreTitle: { fontSize: 20, fontWeight: '800', letterSpacing: -0.4, color: colors.textPrimary, marginTop: 10 },
   catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },

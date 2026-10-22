@@ -57,11 +57,7 @@ export default function RootNavigator() {
         headerTintColor: colors.primary,
         headerTitleStyle: { color: colors.textPrimary },
         headerShadowVisible: false,
-        // Previously unset — meant iOS and Android used their own,
-        // slightly different default push transitions, one small but
-        // real contributor to the app feeling inconsistent screen to
-        // screen. Setting this once here applies everywhere without
-        // touching any individual screen file.
+
         animation: "slide_from_right",
       }}
     >
@@ -70,7 +66,7 @@ export default function RootNavigator() {
         component={TabNavigator}
         options={{ headerShown: false }}
       />
-      
+
       <Stack.Screen
         name="AcademicCalendar"
         component={AcademicCalendarScreen}

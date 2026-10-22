@@ -1,9 +1,6 @@
 import { Platform } from "react-native";
 import type { LinkingOptions } from "@react-navigation/native";
 
-// Real, readable URLs on the web build (/timetable, /notices,
-// /academic-calendar ...) so the browser's back/forward buttons, refresh and
-// shared links behave like a website. Disabled on Android/iOS.
 export const linking: LinkingOptions<any> | undefined =
   Platform.OS === "web"
     ? {
@@ -62,7 +59,6 @@ export const linking: LinkingOptions<any> | undefined =
       }
     : undefined;
 
-// Browser tab title: "Academic Calendar · IIIT Surat".
 export function formatDocumentTitle(options: any, route: any): string {
   const raw = options?.title ?? route?.name ?? "Home";
   const pretty = String(raw).replace(/([a-z])([A-Z])/g, "$1 $2");

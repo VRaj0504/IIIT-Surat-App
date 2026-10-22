@@ -13,22 +13,12 @@ import {
   type ScrollViewProps,
 } from "react-native";
 
-// Keeps the text field you're typing in above the keyboard, on every phone.
-//
-// Why this exists: on Android 15+ apps draw edge-to-edge, and the system no
-// longer shrinks the window when the keyboard opens — so a field near the
-// bottom of a form (e.g. an emergency contact on the SOS screen) ended up
-// hidden behind the keyboard. This adds the keyboard's height as extra room
-// at the bottom of the list and scrolls the focused field into view, also
-// when you tap from one field to the next while the keyboard is open.
-// Pure JavaScript: works in Expo Go and in builds alike.
-
-const GAP = 24; // space kept between the field and the top of the keyboard
+const GAP = 24;
 
 function useKeyboardAware(scrollTo: (y: number) => void) {
   const offset = useRef(0);
   const kbRef = useRef(0);
-  const kbTop = useRef(0); // keyboard's top edge, in window coordinates
+  const kbTop = useRef(0);
   const [kb, setKb] = useState(0);
 
   const reveal = useCallback(() => {
@@ -36,8 +26,7 @@ function useKeyboardAware(scrollTo: (y: number) => void) {
     const input: any = (TextInput as any).State?.currentlyFocusedInput?.();
     if (!input?.measureInWindow) return;
     input.measureInWindow((_x: number, y: number, _w: number, h: number) => {
-      // Two estimates of where the keyboard starts; take the higher one so a
-      // phone that reports the nav bar differently still clears the field.
+
       const fromHeight = Dimensions.get("window").height - kbRef.current;
       const visibleBottom = Math.min(kbTop.current || fromHeight, fromHeight) - GAP;
       const overlap = y + h - visibleBottom;
@@ -66,8 +55,7 @@ function useKeyboardAware(scrollTo: (y: number) => void) {
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     offset.current = e.nativeEvent.contentOffset.y;
   };
-  // Tapping into another field while the keyboard is already open fires no
-  // keyboard event, so check again shortly after any touch.
+
   const onTouchEnd = () => {
     if (kbRef.current) setTimeout(reveal, 250);
   };

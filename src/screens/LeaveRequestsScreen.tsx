@@ -29,14 +29,6 @@ import {
 } from "../firebase/leaveService";
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 
-// One desk for every kind of leave work a faculty member can have:
-//   • Doctor     — medical leaves waiting for a report check (step 1)
-//   • HOD        — medical leaves the doctor approved (step 2)
-//   • Teacher    — approved medical leaves: excuse the classes missed (step 3)
-//   • Casual     — casual leave addressed to this faculty member
-// A section only appears if this person has something in it, so a regular
-// teacher just sees their own lists, not the doctor's or HOD's.
-
 const statusColors: Record<LeaveApplication["status"], string> = {
   pending: colors.warning,
   approved: colors.success,
@@ -88,8 +80,7 @@ export default function LeaveRequestsScreen() {
   useEffect(() => {
     if (!email) return;
     const unsubs = [
-      // Medical chain docs also carry facultyEmail (= the doctor's), so they
-      // are filtered out here and shown in the doctor's section instead.
+
       subscribeToLeaveRequestsForFaculty(email, (apps) => setCasual(apps.filter((a) => a.type !== "medical" || !a.stage))),
       subscribeToMedicalLeavesFor("doctor", email, setAsDoctor),
       subscribeToMedicalLeavesFor("hod", email, setAsHod),
@@ -330,7 +321,6 @@ export default function LeaveRequestsScreen() {
     </View>
   );
 
-  // Compact rows for things already handled.
   const historyRows = useMemo(() => {
     type Row = { key: string; title: string; detail: string; ok: boolean };
     const rows: Row[] = [];

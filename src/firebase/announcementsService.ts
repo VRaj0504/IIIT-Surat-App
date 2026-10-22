@@ -13,24 +13,13 @@ import {
 import { db } from "./firestore";
 import { persisted } from './liveCache';
 
-// A lightweight, class-targeted announcement — the "today's class is
-// cancelled" case — kept deliberately separate from formal Notices:
-// fewer fields, its own feed, and a data model that's already shaped for
-// a push-notification layer to be added later (targetBranch/Section/Year
-// are exactly what a Cloud Function would query device tokens by, and
-// createdAt gives a stable ordering key). Nothing here needs Blaze; the
-// push fan-out is the only part that will, and it's purely additive.
 export type Announcement = {
   id: string;
   message: string;
   targetBranch: string;
   targetSection: string | null;
   targetAdmissionYear: number | null;
-  // Only meaningful when the targeted section actually mixes
-  // specializations — null means "everyone in this section", not
-  // "nobody". A student with no specialization set (unsplit section)
-  // never matches a specialization-targeted announcement, which is
-  // correct: that announcement wasn't meant for them anyway.
+
   targetSpecialization: string | null;
   createdBy: string;
   createdByName: string;
@@ -39,24 +28,11 @@ export type Announcement = {
 
 const COLLECTION = "announcements";
 
-// Distinct (branch, section) options actually present in the roster for a
-// given admission year — powers the class picker in AnnouncementsScreen's
-// compose form (and the same picker reused in Notices/Grade Entry) so
-// faculty tap a real class instead of free-typing
-// one (which had to match the stored value byte-for-byte or silently reach
-// nobody). Derived live from roster data, so it self-updates every year as
-// new batches are seeded — nothing about sections is hardcoded. A student
-// with no section on their profile (e.g. a branch with a single unsectioned
-// batch) surfaces as branch-only, targetSection left null.
 export type ClassOption = {
   branch: string;
   section: string | null;
   label: string;
-  // Distinct specializations actually present among students in this
-  // exact class (e.g. ["Core", "AI/ML", "Cyber"] for a mixed section like
-  // CSE B) — empty for an unsplit section like CSE A or ECE. Lets the
-  // picker offer a specialization sub-choice only when one's actually
-  // needed, instead of always asking.
+
   specializations: string[];
 };
 
@@ -71,8 +47,7 @@ export async function getClassOptionsForYear(admissionYear: number): Promise<Cla
     if (!data.branch) return;
     const section = data.section ?? null;
     const key = `${data.branch}||${section ?? ""}`;
-    // M.Tech students share admission years with B.Tech, so mark their
-    // classes clearly instead of mixing them into "1st Year" B.Tech ones.
+
     const pg = data.program === "PG" || /^PG/i.test(d.id);
     const existing = seen.get(key);
     if (existing) {
@@ -90,45 +65,26 @@ export async function getClassOptionsForYear(admissionYear: number): Promise<Cla
   });
   const options = Array.from(seen.values());
   options.forEach((o) => o.specializations.sort());
-  // B.Tech classes first, M.Tech after.
+
   const isPgLabel = (l: string) => l.startsWith("M.Tech");
   return options.sort((a, b) => Number(isPgLabel(a.label)) - Number(isPgLabel(b.label)) || a.label.localeCompare(b.label));
 }
 
-// "CSE D" not "CSE CSE D"; MNC students sitting in CSE D show as
-// "CSE D (MNC)"; M.Tech classes get an "M.Tech" prefix.
 function classLabel(branch: string, section: string | null, pg: boolean): string {
   let label = !section ? branch : /\b(CSE|ECE|MNC)\b/i.test(section) ? section : `${branch} ${section}`;
   if (section && !new RegExp(`\\b${branch}\\b`, "i").test(label)) label += ` (${branch})`;
   return pg ? `M.Tech ${label}` : label;
 }
 
-// Distinct admission years present in the roster, newest first — powers the
-// year picker. Also derived live, so a new batch appears automatically.
-// Turns a raw admission year into a "Nth Year" label computed against
-// today's date — never hardcoded, so it stays correct automatically as
-// each academic year rolls over, instead of silently going stale (an
-// admission year that means "2nd year" today will mean "3rd year" next
-// August). IIIT Surat's academic year starts around July/August each
-// year, so a student is treated as starting their next year of study
-// once July arrives — everyone picking a year sees "1st Year"/"2nd
-// Year"/etc. instead of having to mentally calculate it from a bare
-// admission-year number.
 export function yearOfStudyLabel(admissionYear: number): string {
   const now = new Date();
-  const academicYearStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1; // July = month index 6
+  const academicYearStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
   const yearOfStudy = academicYearStart - admissionYear + 1;
-  if (yearOfStudy < 1) return `Admission ${admissionYear}`; // not yet started — edge case, shouldn't normally show up
+  if (yearOfStudy < 1) return `Admission ${admissionYear}`;
   const suffix = yearOfStudy === 1 ? "1st" : yearOfStudy === 2 ? "2nd" : yearOfStudy === 3 ? "3rd" : `${yearOfStudy}th`;
   return `${suffix} Year (${admissionYear})`;
 }
 
-// The actual semester number (1-8) a student is in RIGHT NOW, computed
-// the same way as yearOfStudyLabel above — July onward is the odd
-// semester of that year of study, January onward is the even one. Used
-// to avoid querying curriculum/attendance for all 8 semesters when only
-// one or two are ever actually relevant (see MyAttendanceScreen, which
-// used to do exactly that and was measurably slow as a result).
 export function getCurrentSemesterNumber(admissionYear: number): number {
   const now = new Date();
   const academicYearStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
@@ -148,10 +104,7 @@ export async function getAdmissionYears(): Promise<number[]> {
   return Array.from(years).sort((a, b) => b - a);
 }
 
-// Auto-hidden from the feed after this long (client-side only, same
-// approach as notices) — a "class cancelled today" notice is worthless a
-// week later, so the feed stays about what's current.
-const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export async function postAnnouncement(params: {
   message: string;
@@ -174,23 +127,11 @@ export async function postAnnouncement(params: {
   });
 }
 
-// Students see only announcements matching their own branch (required) and
-// — when set — their section and admission year. Unlike notices, branch is
-// always required here, since a quick class announcement is inherently
-// class-specific; there's no "everyone" broadcast in this feed.
-// Faculty/admin (pass viewer as null) see every announcement so they can
-// review what's been posted.
 export function subscribeToAnnouncements(
   onUpdate: (items: Announcement[]) => void,
   viewer: { branch?: string; section?: string; admissionYear?: number; specialization?: string } | null,
 ): () => void {
-  // Enforced here, not just in the .filter() below — without this, the
-  // query synced (and kept live-updating) EVERY announcement ever
-  // created, for every connected student, forever; the client-side age
-  // filter only decided what got shown afterward, not what got
-  // downloaded. A quick class announcement is only ever relevant for a
-  // few days, so there's no reason this collection's whole multi-year
-  // history should ride along on every phone's connection.
+
   const cutoffTimestamp = Timestamp.fromMillis(Date.now() - MAX_AGE_MS);
   const q = query(
     collection(db, COLLECTION),
@@ -203,7 +144,7 @@ export function subscribeToAnnouncements(
       const items: Announcement[] = snapshot.docs
         .map((d) => ({ id: d.id, ...(d.data() as Omit<Announcement, "id">) }))
         .filter((a) => {
-          if (viewer === null) return true; // faculty/admin see all
+          if (viewer === null) return true;
           if (a.targetBranch && a.targetBranch !== viewer.branch) return false;
           if (a.targetSection && a.targetSection !== viewer.section) return false;
           if (a.targetAdmissionYear && a.targetAdmissionYear !== viewer.admissionYear) return false;
@@ -219,8 +160,6 @@ export function subscribeToAnnouncements(
   ), onUpdate);
 }
 
-// Only the faculty who posted it (or an admin) can delete — enforced in
-// firestore.rules.
 export async function deleteAnnouncement(id: string): Promise<void> {
   await deleteDoc(doc(db, COLLECTION, id));
 }

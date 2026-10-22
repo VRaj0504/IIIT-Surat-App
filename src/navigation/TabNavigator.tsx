@@ -23,11 +23,6 @@ const iconMap: Record<keyof RootTabParamList, keyof typeof Ionicons.glyphMap> = 
   Profile: 'person',
 };
 
-// C-style bar: a dark rounded pill; the active tab is a white circle.
-// It floats over the page with NO background strip behind it, so the
-// rounded pill stays soft. Every tab screen keeps TAB_BAR_SPACE of padding
-// at the bottom of its scroll content so the last item can be scrolled
-// clear of the pill. Plain views — switching tabs is instant.
 export const TAB_BAR_SPACE = 110;
 
 function AppTabBar({ state, navigation }: BottomTabBarProps) {
@@ -66,7 +61,7 @@ function AppTabBar({ state, navigation }: BottomTabBarProps) {
 }
 
 export default function TabNavigator() {
-  // On a wide browser the website header carries the navigation instead.
+
   const { isDesktop } = useWebLayout();
   return (
     <Tab.Navigator

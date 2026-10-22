@@ -26,8 +26,6 @@ type Contact = {
   address?: string;
 };
 
-// Source: Hostel Warden Information page, iiitsurat.ac.in (Hostel
-// Facilities > Hostel Committee), captured 2026-09-10.
 const HOSTEL_CONTACTS: Contact[] = [
   { role: "Chief Warden", name: "Dr. Sivavenkateswara Rao V.", email: "chief.warden@iiitsurat.ac.in", phone: "+916203075101" },
   { role: "Faculty Warden (Boys Hostel)", name: "Dr. Manish Kumar Rai", email: "manish.rai@iiitsurat.ac.in", phone: "+919161336525" },
@@ -37,11 +35,6 @@ const HOSTEL_CONTACTS: Contact[] = [
   { role: "Faculty Warden (Girls Hostel)", name: "Dr. Shikha Maurya", email: "shikha.maurya@iiitsurat.ac.in" },
 ];
 
-// Source: Health Issue Escalation & Management page, iiitsurat.ac.in,
-// captured 2026-09-24. Only entries with an actual phone/email are
-// included — the page also lists several Faculty In-Charge and Student
-// Coordinator names with no contact info given, which would just be
-// dead cards here (see the Faculty Directory instead for those names).
 const MEDICAL_CONTACTS: Contact[] = [
   { role: "Medical Officer", name: "Dr. Paresh Chhotala", phone: "+919824270476" },
   { role: "Medical Emergency (Ambulance)", name: "Dial 108", phone: "108" },

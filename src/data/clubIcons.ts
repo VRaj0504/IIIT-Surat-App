@@ -4,12 +4,9 @@ import type { ImageSourcePropType } from 'react-native';
 export type ClubIconEntry = {
   icon: keyof typeof Ionicons.glyphMap;
   color: string;
-  image?: ImageSourcePropType; // drop a real logo in assets/clubs/ and wire it here later
+  image?: ImageSourcePropType;
 };
 
-// Matched by a normalized (lowercase, no-punctuation) version of club.name.
-// Add entries as new clubs are created — anything unmatched falls back to
-// a generated letter tile (see getClubIcon below).
 const CLUB_ICON_MAP: Record<string, ClubIconEntry> = {
   saras: { icon: 'sparkles', color: '#EC4899' },
   'abstract art and design club': { icon: 'color-palette', color: '#F97316' },
@@ -34,8 +31,6 @@ const CLUB_ICON_MAP: Record<string, ClubIconEntry> = {
 
   inspire: { icon: 'bulb', color: '#F5A623' },
 
-  // Indominous sub-clubs — normalize() strips punctuation, so "Kho-Kho"
-  // becomes "kho kho" (matches the key below).
   cricket: { icon: 'baseball', color: '#22A559' },
   volleyball: { icon: 'basketball', color: '#0EA5E9' },
   kabaddi: { icon: 'body', color: '#E5484D' },

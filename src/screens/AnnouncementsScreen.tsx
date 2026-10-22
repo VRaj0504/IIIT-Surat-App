@@ -38,7 +38,6 @@ export default function AnnouncementsScreen() {
 
   const isFaculty = profile?.role === "faculty";
 
-  // --- Feed (both roles) ---
   useEffect(() => {
     const viewer = isFaculty
       ? null
@@ -75,9 +74,6 @@ export default function AnnouncementsScreen() {
   const targetLabel = (a: Announcement) =>
     [a.targetBranch, a.targetSection, a.targetSpecialization, a.targetAdmissionYear].filter(Boolean).join(" · ");
 
-  // --- Compose form (faculty only — was PostAnnouncementScreen, merged in
-  // here so there's one screen instead of two near-identically-named ones
-  // cluttering Home). ---
   const [years, setYears] = useState<number[]>([]);
   const [yearsLoading, setYearsLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
@@ -135,9 +131,7 @@ export default function AnnouncementsScreen() {
         createdBy: profile.uid,
         createdByName: profile.name,
       });
-      // Reset the form in place rather than navigating away — the new
-      // announcement shows up in the list right below automatically via
-      // the live subscription above.
+
       setMessage("");
       setSelectedYear(null);
       setSelectedClass(null);
@@ -313,7 +307,6 @@ const styles = StyleSheet.create({
   cardFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: spacing.sm },
   author: { fontSize: 12, color: colors.textSecondary, fontStyle: "italic" },
 
-  // Compose form (faculty only)
   composeCard: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg },
   composeHeader: { ...typography.h3, color: colors.textPrimary },
   helper: { ...typography.caption, color: colors.textSecondary, marginTop: 4, marginBottom: spacing.sm },

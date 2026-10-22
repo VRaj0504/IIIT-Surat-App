@@ -41,9 +41,6 @@ const categoryColors: Record<string, string> = {
   Other: colors.textSecondary,
 };
 
-// Relative rather than absolute ("2h ago" instead of a full timestamp) —
-// what someone actually wants to know at a glance is roughly how stale a
-// posting is, not the exact minute it went up.
 function timeAgo(timestamp: { toMillis: () => number } | null): string {
   if (!timestamp) return "";
   const diffMs = Date.now() - timestamp.toMillis();
@@ -164,9 +161,7 @@ export default function LostFoundScreen() {
   const [type, setType] = useState<LostFoundType>("lost");
   const [items, setItems] = useState<LostFoundItem[]>([]);
   const [loading, setLoading] = useState(true);
-  // Resolved items are excluded at the query level (subscribeToLostFoundItems
-  // only fetches status "open") — nobody, including the original poster, can
-  // browse a history of resolved posts anymore.
+
   const [blocked, setBlocked] = useState<string[]>([]);
   const visibleItems = items.filter((i) => !blocked.includes(i.postedBy));
   const [reportItem, setReportItem] = useState<LostFoundItem | null>(null);
@@ -225,17 +220,6 @@ export default function LostFoundScreen() {
     return () => unsubscribe();
   }, [type]);
 
-  // Firebase/WhatsApp deep links need a country code — a plain 10-digit
-  // Indian number typed without one is the overwhelmingly common case for
-  // this specific college app, so that's the one assumption made here.
-  // A number already starting with a country code (11+ digits, or
-  // already has a + typed) is left as-is.
-  // mailto:/wa.me links only HAND OFF to the Mail/WhatsApp app — there's no
-  // signal back to a React Native app for "the user actually pressed Send"
-  // versus "they backed out without sending" (that decision happens fully
-  // inside the other app). The nearest real proxy is: wait until they
-  // return to this app, then ask. This deliberately does NOT cover "call",
-  // since a phone call has no equivalent "did you actually send it" step.
   const pendingContactRef = useRef<{
     itemId: string;
     itemTitle: string;
@@ -296,8 +280,7 @@ export default function LostFoundScreen() {
       if (!profile) return;
 
       if (method === "call") {
-        // Dialing already happened by the time openURL resolves — same
-        // fire-and-forget notify as before, no "did you send it" step.
+
         notifyLostFoundContact({
           itemId: item.id,
           itemTitle: item.title,
@@ -309,9 +292,6 @@ export default function LostFoundScreen() {
         return;
       }
 
-      // email / whatsapp: hold off notifying until they're back in this
-      // app and have confirmed they actually sent it (see the AppState
-      // listener above).
       pendingContactRef.current = {
         itemId: item.id,
         itemTitle: item.title,

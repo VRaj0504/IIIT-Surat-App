@@ -46,12 +46,6 @@ export default function PostLostFoundScreen() {
   const [photo, setPhoto] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [posting, setPosting] = useState(false);
 
-  // Opens the camera directly — no gallery/camera choice dialog — since
-  // reporting a lost/found item is almost always "take a photo of the
-  // thing right now", not picking an existing one. quality is capped a
-  // bit below max to keep the upload quick without a visible loss of
-  // detail; not resizing dimensions here since Firebase Storage handles
-  // arbitrary sizes fine for this use case.
   const pickPhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
