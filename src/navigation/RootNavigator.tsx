@@ -18,6 +18,7 @@ import LeaveRequestsScreen from "../screens/LeaveRequestsScreen";
 import AnnouncementsScreen from "../screens/AnnouncementsScreen";
 import TranscriptScreen from "../screens/TranscriptScreen";
 import ExamScheduleScreen from "../screens/ExamScheduleScreen";
+import ExamStatusScreen from "../screens/ExamStatusScreen";
 import GradeEntryScreen from "../screens/GradeEntryScreen";
 import ScanPosterScreen from "../screens/ScanPosterScreen";
 import MarkAttendanceScreen from "../screens/MarkAttendanceScreen";
@@ -150,6 +151,11 @@ export default function RootNavigator() {
   component={ExamScheduleScreen}
   options={{ title: "Exam Schedule" }}
 />
+      <Stack.Screen
+        name="ExamStatus"
+        component={ExamStatusScreen}
+        options={{ title: "Exam Status" }}
+      />
       <Stack.Screen
         name="GradeEntry"
         component={GradeEntryScreen}

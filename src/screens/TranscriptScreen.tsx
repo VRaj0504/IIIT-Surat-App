@@ -52,7 +52,7 @@ export default function TranscriptScreen() {
               <View style={styles.cgpaCard}>
                 <Text style={styles.cgpaLabel}>Overall CGPA</Text>
                 <Text style={styles.cgpaValue}>{transcript.cgpa?.toFixed(2) ?? "—"}</Text>
-                <Text style={styles.cgpaCredits}>{transcript.totalCredits} credits completed</Text>
+                <Text style={styles.cgpaCredits}>{transcript.totalCredits} earned credits</Text>
               </View>
 
               {transcript.semesters.map((sem) => (

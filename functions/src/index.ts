@@ -22,6 +22,7 @@ export {sendComplaintResolutionPush} from "./sendComplaintResolutionPush";
 
 export {sendExamSchedulePush} from "./sendExamSchedulePush";
 export {sendGradePush} from "./sendGradePush";
+export {sendExamEventPush} from "./sendExamEventPush";
 export {extractExamSchedule} from "./extractExamSchedule";
 
 export {sendDayStatusPush} from "./sendDayStatusPush";

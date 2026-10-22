@@ -26,6 +26,7 @@ export type FacultyMember = {
   additionalDepartments?: string[];
 
   tnpInCharge?: boolean;
+  hideFromDirectory?: boolean;
 
   signedUp: boolean;
 };
@@ -49,6 +50,7 @@ function liveFacultyDirectory(
     for (const f of fromUsers) byEmail.set(f.email, f);
 
     const merged = Array.from(byEmail.values())
+      .filter((f) => !f.hideFromDirectory)
       .filter((f) => !f.email?.toLowerCase().endsWith("@gmail.com"))
             .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
     onUpdate(merged);
@@ -82,6 +84,7 @@ function liveFacultyDirectory(
           shortForm: data.shortForm,
           additionalDepartments: data.additionalDepartments,
           tnpInCharge: data.tnpInCharge,
+          hideFromDirectory: data.hideFromDirectory === true,
           signedUp: true,
         };
       });
@@ -107,6 +110,7 @@ function liveFacultyDirectory(
         shortForm: docSnap.data().shortForm,
         additionalDepartments: docSnap.data().additionalDepartments,
         tnpInCharge: docSnap.data().tnpInCharge,
+        hideFromDirectory: docSnap.data().hideFromDirectory === true,
         aboutMe: docSnap.data().aboutMe,
         photoUrl: docSnap.data().photoUrl,
         signedUp: false,

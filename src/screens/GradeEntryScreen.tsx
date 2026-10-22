@@ -16,6 +16,9 @@ import { useAuth } from "../context/AuthContext";
 import { getAdmissionYears, getClassOptionsForYear, yearOfStudyLabel, ClassOption } from "../firebase/announcementsService";
 import { subscribeToCurriculum, CurriculumSubject } from "../firebase/curriculumService";
 import { getClassRoster, getExistingGrades, setGrade, GRADES, RosterStudent, GradeEntry } from "../firebase/gradesService";
+import { ATTEMPT_TYPES, ATTEMPT_LABELS, AttemptType } from "../utils/examRules";
+
+const ENTRY_SPECIAL_GRADES = ["II", "NA", "XX", "WW"];
 import LoadingSpinner from "../components/LoadingSpinner";
 
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
@@ -33,7 +36,7 @@ const StudentGradeRow = memo(function StudentGradeRow({
 }) {
   return (
     <View style={styles.studentRow}>
-      <View style={{ flex: 1 }}>
+      <View>
         <Text style={styles.studentName}>{item.name}</Text>
         <Text style={styles.studentReg}>{item.enrollmentNumber}</Text>
       </View>
@@ -48,6 +51,15 @@ const StudentGradeRow = memo(function StudentGradeRow({
               onPress={() => onSetGrade(item, g)}
             >
               <Text style={[styles.gradeChipText, currentGrade === g && styles.gradeChipTextActive]}>{g}</Text>
+            </TouchableOpacity>
+          ))}
+          {ENTRY_SPECIAL_GRADES.map((g) => (
+            <TouchableOpacity
+              key={g}
+              style={[styles.gradeChip, styles.gradeChipSpecial, currentGrade === g && styles.gradeChipSpecialActive]}
+              onPress={() => onSetGrade(item, g)}
+            >
+              <Text style={[styles.gradeChipText, { color: colors.danger }, currentGrade === g && styles.gradeChipTextActive]}>{g}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -70,6 +82,7 @@ export default function GradeEntryScreen() {
   const [subjects, setSubjects] = useState<CurriculumSubject[]>([]);
   const [selectedSubject, setSelectedSubject] = useState<CurriculumSubject | null>(null);
   const [creditsOverride, setCreditsOverride] = useState("");
+  const [attempt, setAttempt] = useState<AttemptType>("regular");
 
   const [roster, setRoster] = useState<RosterStudent[]>([]);
   const [rosterLoading, setRosterLoading] = useState(false);
@@ -158,6 +171,7 @@ export default function GradeEntryScreen() {
           subjectSemester: semester,
           credits: resolvedCredits,
           grade,
+          attempt,
           enteredBy: profile.uid,
           enteredByName: profile.name,
         });
@@ -167,7 +181,7 @@ export default function GradeEntryScreen() {
         setSaving((prev) => ({ ...prev, [student.enrollmentNumber]: false }));
       }
     },
-    [profile, selectedClass, selectedYear, selectedSubject, semester, resolvedCredits],
+    [profile, selectedClass, selectedYear, selectedSubject, semester, resolvedCredits, attempt],
   );
 
   return (
@@ -288,6 +302,23 @@ export default function GradeEntryScreen() {
             </>
           )}
 
+          {selectedSubject && (
+            <>
+              <Text style={styles.label}>Exam attempt</Text>
+              <View style={styles.chipRow}>
+                {ATTEMPT_TYPES.map((a) => (
+                  <TouchableOpacity
+                    key={a}
+                    style={[styles.chip, attempt === a && styles.chipActive]}
+                    onPress={() => setAttempt(a)}
+                  >
+                    <Text style={[styles.chipText, attempt === a && styles.chipTextActive]}>{ATTEMPT_LABELS[a]}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+
           {selectedSubject && !selectedSubject.credits && (
             <>
               <Text style={styles.label}>Credits (not set for this subject yet)</Text>
@@ -352,8 +383,9 @@ const styles = StyleSheet.create({
   },
   listContent: { padding: spacing.lg, paddingTop: spacing.md, gap: spacing.sm },
   studentRow: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "column",
+    alignItems: "stretch",
+    gap: spacing.sm,
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     padding: spacing.sm,
@@ -362,7 +394,7 @@ const styles = StyleSheet.create({
   },
   studentName: { ...typography.body, color: colors.textPrimary, fontWeight: "600" },
   studentReg: { fontSize: 11, color: colors.textSecondary },
-  gradeChipRow: { flexDirection: "row", gap: 4 },
+  gradeChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   gradeChip: {
     width: 30,
     height: 30,
@@ -372,6 +404,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   gradeChipActive: { backgroundColor: colors.primary },
+  gradeChipSpecial: { backgroundColor: colors.dangerBg },
+  gradeChipSpecialActive: { backgroundColor: colors.danger },
   gradeChipText: { fontSize: 11, fontWeight: "700", color: colors.textSecondary },
   gradeChipTextActive: { color: colors.surface },
 });

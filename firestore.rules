@@ -35,13 +35,31 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email.lower();
     }
 
+    function validGradeShape() {
+      return request.resource.data.enteredBy == request.auth.uid &&
+        request.resource.data.grade in ['AA', 'AB', 'BB', 'BC', 'CC', 'CD', 'DD', 'FF', 'II', 'NA', 'XX', 'WW', 'SS', 'ZZ'] &&
+        request.resource.data.credits is number &&
+        request.resource.data.credits >= 0 &&
+        request.resource.data.studentEnrollmentNumber is string &&
+        request.resource.data.subjectCode is string;
+    }
+
     function validGradeWrite() {
       return request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty' &&
-        request.resource.data.enteredBy == request.auth.uid &&
-        request.resource.data.grade in ['AA', 'AB', 'BB', 'BC', 'CC', 'CD', 'DD', 'FF'] &&
-        request.resource.data.credits is number &&
-        request.resource.data.credits > 0;
+        validGradeShape();
+    }
+
+    function isExamCell() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/config/exams) &&
+        myEmail() in get(/databases/$(database)/documents/config/exams).data.get('examCellEmails', []);
+    }
+
+    function isHodFor(branch) {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/config/medicalLeave) &&
+        get(/databases/$(database)/documents/config/medicalLeave).data.get('hodByBranch', {}).get(branch, {}).get('email', '') == myEmail();
     }
 
     match /enrollmentClaims/{enrollmentNumber} {
@@ -320,18 +338,81 @@ service cloud.firestore {
     }
 
     match /grades/{gradeId} {
-      allow read: if isAdmin() ||
+      allow read: if isAdmin() || isExamCell() ||
         (request.auth != null &&
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty') ||
         (request.auth != null &&
           resource.data.studentEnrollmentNumber ==
             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrollmentNumber);
-      allow create: if isAdmin() || validGradeWrite();
+      allow create: if isAdmin() || validGradeWrite() || (isExamCell() && validGradeShape());
 
       allow update: if isAdmin() ||
+        (isExamCell() && validGradeShape()) ||
         (validGradeWrite() && resource.data.enteredBy == request.auth.uid);
       allow delete: if isAdmin() ||
         (request.auth != null && resource.data.enteredBy == request.auth.uid);
+    }
+
+    match /examEvents/{eventId} {
+      allow read: if isMember();
+      allow create, update: if (isAdmin() || isExamCell()) &&
+        request.resource.data.title is string &&
+        request.resource.data.title.size() > 0 &&
+        request.resource.data.type in ['supplementary', 'makeup', 'endsem', 'midsem', 'other'] &&
+        request.resource.data.registration in ['none', 'backlogs', 'subjects'] &&
+        request.resource.data.branches is list &&
+        request.resource.data.admissionYears is list &&
+        request.resource.data.active is bool;
+      allow delete: if isAdmin() || isExamCell();
+    }
+
+    function examEvent(eventId) {
+      return get(/databases/$(database)/documents/examEvents/$(eventId)).data;
+    }
+
+    function examRegistrationOpen(eventId) {
+      return exists(/databases/$(database)/documents/examEvents/$(eventId)) &&
+        examEvent(eventId).active == true &&
+        examEvent(eventId).registration != 'none' &&
+        (examEvent(eventId).get('deadline', null) == null || request.time < examEvent(eventId).deadline);
+    }
+
+    match /examRegistrations/{regId} {
+      allow read: if isAdmin() || isExamCell() ||
+        (request.auth != null && resource.data.studentUid == request.auth.uid) ||
+        isHodFor(resource.data.branch);
+
+      allow create: if isMember() &&
+        request.resource.data.studentUid == request.auth.uid &&
+        request.resource.data.enrollmentNumber ==
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrollmentNumber &&
+        request.resource.data.branch ==
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.branch &&
+        regId == request.resource.data.eventId + '_' + request.resource.data.enrollmentNumber &&
+        request.resource.data.status == 'submitted' &&
+        request.resource.data.subjects is list &&
+        request.resource.data.subjects.size() > 0 &&
+        request.resource.data.subjects.size() <= 20 &&
+        examRegistrationOpen(request.resource.data.eventId);
+
+      allow update: if request.auth != null &&
+        resource.data.studentUid == request.auth.uid &&
+        resource.data.status == 'submitted' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['subjects', 'medicalDeclared', 'updatedAt']) &&
+        request.resource.data.subjects is list &&
+        request.resource.data.subjects.size() > 0 &&
+        request.resource.data.subjects.size() <= 20 &&
+        examRegistrationOpen(resource.data.eventId);
+
+      allow update: if (isAdmin() || isExamCell()) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'remark', 'reviewedBy', 'updatedAt']) &&
+        request.resource.data.status in ['submitted', 'accepted', 'rejected'];
+
+      allow delete: if isAdmin() || isExamCell() ||
+        (request.auth != null &&
+          resource.data.studentUid == request.auth.uid &&
+          resource.data.status == 'submitted' &&
+          examRegistrationOpen(resource.data.eventId));
     }
 
     match /leaveApplications/{appId} {

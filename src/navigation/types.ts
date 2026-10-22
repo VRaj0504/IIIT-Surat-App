@@ -27,6 +27,7 @@ Complaints: undefined;
   Announcements: undefined;
   Transcript: undefined;
   ExamSchedule: undefined;
+  ExamStatus: undefined;
   GradeEntry: undefined;
   ScanPoster: undefined;
   MarkAttendance: undefined;

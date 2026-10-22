@@ -32,6 +32,7 @@ export const linking: LinkingOptions<any> | undefined =
       Announcements: 'announcements',
       Transcript: 'transcript',
       ExamSchedule: 'exam-schedule',
+      ExamStatus: 'exam-status',
       GradeEntry: 'grade-entry',
       ScanPoster: 'scan-poster',
       MarkAttendance: 'mark-attendance',

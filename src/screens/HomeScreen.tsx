@@ -41,6 +41,7 @@ const studentSections: Section[] = [
     tiles: [
       { label: 'My Attendance', icon: 'calendar-outline', route: 'MyAttendance', badge: 'blue' },
       { label: 'Transcript', icon: 'school-outline', route: 'Transcript', badge: 'green' },
+      { label: 'Exam Status', icon: 'ribbon-outline', route: 'ExamStatus', badge: 'pink' },
       { label: 'Exam Schedule', icon: 'reader-outline', route: 'ExamSchedule', badge: 'peach' },
       { label: 'Resources', icon: 'book-outline', route: 'Resources', badge: 'blue' },
       { label: 'Academic Calendar', icon: 'calendar-outline', route: 'AcademicCalendar', badge: 'peach' },

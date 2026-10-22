@@ -12,18 +12,10 @@ import {
 } from "firebase/firestore";
 import { db } from "./firestore";
 import { persisted } from './liveCache';
+import { LETTER_GRADES, summariseSemesters, computeCgpa, type AttemptType } from "../utils/examRules";
 
-export const GRADE_POINTS: Record<string, number> = {
-  AA: 10,
-  AB: 9,
-  BB: 8,
-  BC: 7,
-  CC: 6,
-  CD: 5,
-  DD: 4,
-  FF: 0,
-};
-export const GRADES = Object.keys(GRADE_POINTS);
+export { GRADE_POINTS, SPECIAL_GRADES, GRADE_LABELS, ATTEMPT_TYPES, ATTEMPT_LABELS } from "../utils/examRules";
+export const GRADES: string[] = [...LETTER_GRADES];
 
 export type GradeEntry = {
   id: string;
@@ -38,6 +30,8 @@ export type GradeEntry = {
   subjectSemester: number;
   credits: number;
   grade: string;
+  attempt?: AttemptType | null;
+  history?: { grade: string; attempt?: string | null; enteredByName?: string | null; changedAt?: Timestamp | null }[] | null;
   enteredBy: string;
   enteredByName: string;
   createdAt: Timestamp | null;
@@ -62,11 +56,24 @@ export async function setGrade(params: {
   subjectSemester: number;
   credits: number;
   grade: string;
+  attempt?: AttemptType;
   enteredBy: string;
   enteredByName: string;
 }): Promise<void> {
   const id = gradeDocId(params.studentEnrollmentNumber, params.subjectCode);
   const existing = await getDoc(doc(db, COLLECTION, id));
+  const attempt: AttemptType = params.attempt ?? "regular";
+  const prev = existing.exists() ? (existing.data() as Partial<GradeEntry>) : null;
+  const history = [...(prev?.history ?? [])];
+  const prevAttempt = prev?.attempt ?? "regular";
+  if (prev?.grade && prev.grade !== params.grade && attempt !== prevAttempt) {
+    history.push({
+      grade: prev.grade,
+      attempt: prevAttempt,
+      enteredByName: prev.enteredByName ?? null,
+      changedAt: Timestamp.now(),
+    });
+  }
   await setDoc(
     doc(db, COLLECTION, id),
     {
@@ -81,6 +88,8 @@ export async function setGrade(params: {
       subjectSemester: params.subjectSemester,
       credits: params.credits,
       grade: params.grade,
+      attempt,
+      history,
       enteredBy: params.enteredBy,
       enteredByName: params.enteredByName,
       createdAt: existing.exists() ? existing.data().createdAt : serverTimestamp(),
@@ -146,24 +155,11 @@ export type SemesterResult = { semester: number; sgpa: number; credits: number }
 export type Transcript = { semesters: SemesterResult[]; cgpa: number | null; totalCredits: number };
 
 export function computeTranscript(grades: GradeEntry[]): Transcript {
-  const bySemester = new Map<number, GradeEntry[]>();
-  for (const g of grades) {
-    const list = bySemester.get(g.subjectSemester) ?? [];
-    list.push(g);
-    bySemester.set(g.subjectSemester, list);
-  }
-
-  const semesters: SemesterResult[] = Array.from(bySemester.entries())
-    .map(([semester, gs]) => {
-      const totalCredits = gs.reduce((sum, g) => sum + g.credits, 0);
-      const totalPoints = gs.reduce((sum, g) => sum + g.credits * (GRADE_POINTS[g.grade] ?? 0), 0);
-      return { semester, sgpa: totalCredits > 0 ? totalPoints / totalCredits : 0, credits: totalCredits };
-    })
-    .sort((a, b) => a.semester - b.semester);
-
-  const totalCredits = semesters.reduce((sum, s) => sum + s.credits, 0);
-  const totalPoints = semesters.reduce((sum, s) => sum + s.sgpa * s.credits, 0);
-  const cgpa = totalCredits > 0 ? totalPoints / totalCredits : null;
-
-  return { semesters, cgpa, totalCredits };
+  const semesters = summariseSemesters(grades).map((s) => ({
+    semester: s.semester,
+    sgpa: s.sgpa ?? 0,
+    credits: s.registeredCredits,
+  }));
+  const totalCredits = summariseSemesters(grades).reduce((sum, s) => sum + s.earnedCredits, 0);
+  return { semesters, cgpa: computeCgpa(grades), totalCredits };
 }
