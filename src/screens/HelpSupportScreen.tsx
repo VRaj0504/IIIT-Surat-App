@@ -19,7 +19,7 @@ import {
 } from "../theme/theme";
 import ScreenHeader from "../components/ScreenHeader";
 
-const SUPPORT_EMAIL = "ug25cse114@iiitsurat.ac.in";
+const SUPPORT_EMAIL = "collegego05@gmail.com";
 
 const faqs: { question: string; answer: string }[] = [
   {
