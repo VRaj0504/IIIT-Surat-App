@@ -1,11 +1,5 @@
-// One place that talks to Google's Gemini API, used by both the exam date
-// sheet reader (examSheetExtraction.ts) and the email classifier in
-// ingestFacultyEmail.ts.
-//
-// Model: the one this project's email pipeline already moved to when
-// gemini-2.0-flash was retired. Google retires model names from time to
-// time — if a call ever fails with "model not found" / 404, this constant
-// is the only thing to change.
+
+
 export const GEMINI_MODEL = "gemini-3.6-flash";
 
 export type GeminiPart =
@@ -20,11 +14,6 @@ type GeminiResponse = {
   promptFeedback?: {blockReason?: string};
 };
 
-// Sends one request and returns the model's reply parsed as JSON.
-// responseMimeType makes Gemini emit bare JSON; the fence-stripping below
-// is only a safety net. maxOutputTokens is deliberately generous — on
-// "thinking" models the reasoning tokens can count toward the cap, and a
-// reply cut off mid-JSON is worse than a slightly larger allowance.
 export async function geminiJson(options: {
   apiKey: string;
   parts: GeminiPart[];

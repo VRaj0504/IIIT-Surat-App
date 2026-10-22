@@ -2,7 +2,6 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import { getFirestore, collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 
-// Same public client config as src/firebase/config.ts
 const firebaseConfig = {
   apiKey: 'AIzaSyCF5YItLRNrDtNnO6MgHeLweyzeKwT7ov8',
   authDomain: 'iiit-surat-app-6643d.firebaseapp.com',
@@ -12,7 +11,6 @@ const firebaseConfig = {
   appId: '1:568691830636:web:4be7fd34f4098d1d994d49',
 };
 
-// Edit prices/items to match your actual mess counter before running.
 const ITEMS = [
   { name: 'Veg Thali', category: 'Thali', price: 60 },
   { name: 'Special Thali', category: 'Thali', price: 90 },

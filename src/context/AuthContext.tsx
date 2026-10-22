@@ -466,7 +466,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         await claimPendingClubLead(user.uid, normalizedEmail);
       } catch {
-        // ignore — worst case, a faculty member links them later from the club page
+
       }
     } catch (err) {
       throw new Error(friendlyAuthErrorMessage(err));

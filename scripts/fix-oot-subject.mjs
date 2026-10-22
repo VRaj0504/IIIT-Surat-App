@@ -1,20 +1,4 @@
-// One-off fix for the 2 "Object Oriented Technology (OOT)" resources
-// bulk-upload-pyqs.mjs uploaded under Sem 4 with no curriculum match —
-// you've since confirmed this is the same subject as curriculum's CS302
-// "Object Oriented Programming", which lives under Sem 3, not Sem 4.
-//
-// Same approach as fix-psa-subject.mjs: doesn't touch the actual
-// uploaded PDF, just corrects the Firestore metadata (subject +
-// semester) by deleting the old doc and creating a corrected one
-// pointing at the same file. See that script's header comment for why
-// delete-then-recreate rather than a plain update (faculty can create/
-// delete their own resource, but not directly update one).
-//
-// Usage:
-//   FACULTY_EMAIL=you@iiitsurat.ac.in FACULTY_PASSWORD=... node fix-oot-subject.mjs
-//   FACULTY_EMAIL=... FACULTY_PASSWORD=... node fix-oot-subject.mjs --confirm
-//
-// Defaults to a dry run.
+
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
@@ -41,12 +25,10 @@ const firebaseConfig = {
 
 const CONFIRMED = process.argv.includes('--confirm');
 
-// The wrong values these 2 docs currently have.
 const OLD_BRANCH = 'CSE';
 const OLD_SEMESTER = 4;
 const OLD_SUBJECT = 'Object Oriented Technology';
 
-// The corrected values, matching curriculum's CS302 exactly.
 const NEW_SUBJECT = 'Object Oriented Programming';
 const NEW_SEMESTER = 3;
 
@@ -96,10 +78,7 @@ async function main() {
   console.log('\nFixing...\n');
   for (const d of snap.docs) {
     const old = d.data();
-    // Create the corrected doc FIRST, then delete the old one — so a
-    // crash partway through never leaves a PYQ with no doc pointing at
-    // it at all (worst case if it dies here is a harmless duplicate,
-    // not a lost resource).
+
     await addDoc(collection(db, 'resources'), {
       title: old.title,
       subject: NEW_SUBJECT,

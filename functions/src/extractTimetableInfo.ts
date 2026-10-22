@@ -13,15 +13,13 @@ type ExtractedSlot = {
   day: string;
   startTime: string;
   endTime: string;
-  rawText: string; // everything OCR found in this cell, concatenated — the
-  // uploader splits this into subjectCode/subjectName/faculty/room
-  // themselves, since reliably auto-splitting that from raw text is a
-  // second hard problem on top of the first.
+  rawText: string;
+
 };
 
 type ExtractTimetableResponse = {
-  rawText: string; // the entire page's text, always available as a
-  // fallback reference regardless of how well the bucketing below worked
+  rawText: string;
+
   slots: ExtractedSlot[];
 };
 
@@ -35,20 +33,10 @@ const DAY_PATTERNS: {label: string; pattern: RegExp}[] = [
   {label: "Sunday", pattern: /^su(n(day)?)?$/i},
 ];
 
-// The dash between start and end time is optional, not just
-// tolerant of different dash glyphs — Vision OCR sometimes drops the
-// separator character entirely for a given column (observed: "09:00
-// 10:00AM" with nothing but a space between them, right alongside
-// other columns on the same page that DO read a dash correctly, e.g.
-// "10:00 - 11:00AM"). Requiring a dash meant most of a real page's
-// time columns silently failed to register at all.
 const TIME_RANGE_PATTERN = /(\d{1,2}):?(\d{2})?\s*(AM|PM)?\s*[-–—]?\s*(\d{1,2}):?(\d{2})?\s*(AM|PM)?/i;
 
 type Word = {text: string; x: number; y: number; width: number; height: number};
 
-// Flattens Vision's nested page/block/paragraph/word structure into a
-// flat list of words with their bounding-box centers and sizes — the
-// building block everything else here works from.
 function extractWords(fullTextAnnotation: any): Word[] {
   const words: Word[] = [];
   const pages = fullTextAnnotation?.pages ?? [];
@@ -83,12 +71,10 @@ function normalizeTime(hour: string, minute: string | undefined, meridiem: strin
     if (isPM && h !== 12) h += 12;
     if (!isPM && h === 12) h = 0;
   } else if (h >= 1 && h <= 7) {
-    // No AM/PM on the header ("2:00-3:00"): classes never run 1–7 AM,
-    // so this is the afternoon. Stored as "02:00" before, which the app
-    // read as 2 AM and showed those rooms as empty all afternoon.
+
     h += 12;
   }
-  // Un-padded hour ("9:00"), matching every other timetable writer.
+
   return `${h}:${m}`;
 }
 
@@ -103,14 +89,12 @@ export const extractTimetableInfo = onCall<ExtractTimetableRequest, Promise<Extr
       throw new HttpsError("invalid-argument", "Missing storagePath.");
     }
 
-    // Only faculty/admin import timetables (also keeps Vision costs bounded).
     const callerSnap = await admin.firestore().collection("users").doc(request.auth.uid).get();
     const callerRole = callerSnap.data()?.role;
     if (callerRole !== "faculty" && callerRole !== "admin") {
       throw new HttpsError("permission-denied", "Only faculty can import timetables.");
     }
 
-    // Own scan folder, this project's bucket only (see extractPosterInfo).
     const ownPrefix = `timetableScans/${request.auth.uid}/`;
     if (!storagePath.startsWith(ownPrefix) || storagePath.includes("..")) {
       throw new HttpsError("permission-denied", "You can only scan your own uploads.");
@@ -129,17 +113,6 @@ export const extractTimetableInfo = onCall<ExtractTimetableRequest, Promise<Extr
       const imageWidth = Math.max(...words.map((w) => w.x)) + 50;
       const imageHeight = Math.max(...words.map((w) => w.y)) + 50;
 
-      // Day labels: any word matching a known day pattern, anywhere on
-      // the page. Their Y-centers define each day-row's position. No
-      // position restriction — the day-name patterns are exact,
-      // anchored matches ("Mo", "Tu", ...), specific enough that
-      // nothing else in a timetable (a subject code, room code, faculty
-      // initial) could ever false-positive against them, so there's no
-      // real benefit to also constraining by x-position — only risk,
-      // since the day column's actual width varies (these PDFs often
-      // render day labels in a much larger font than the rest of the
-      // grid, pushing their center further right than a fixed fraction
-      // of page width would assume).
       const dayWords = words.filter((w) =>
         DAY_PATTERNS.some((d) => d.pattern.test(w.text)),
       );
@@ -150,25 +123,6 @@ export const extractTimetableInfo = onCall<ExtractTimetableRequest, Promise<Extr
         })
         .filter((r): r is {label: string; y: number} => r !== null);
 
-      // Time-range headers: words containing a "H:MM - H:MM"-shaped
-      // pattern in the top ~25% of the image. Their X-centers define
-      // each time-column's position. 25% (not a tighter band) because
-      // real timetable exports commonly have a letterhead — a logo plus
-      // "Indian Institute of..." plus a "SEMESTER X BRANCH SECTION"
-      // title — sitting above the actual grid header, pushing it down
-      // further than a bare "just below the top of the page" assumption
-      // would expect. Too narrow a band here means timeColumns comes
-      // back empty and the whole page silently returns zero slots even
-      // though Vision read every cell correctly.
-      //
-      // Grouped into y-rows FIRST, then x-clustered within each row —
-      // a wider band pulls in letterhead/title text too, and since that
-      // text can share an x-range with the real header row while
-      // sitting at a different y, clustering by x alone (ignoring y)
-      // risks merging unrelated words together. Splitting into rows
-      // first keeps each cluster's words on roughly the same line; the
-      // title rows just never produce a TIME_RANGE_PATTERN match and
-      // get silently discarded by flushCluster below, same as before.
       const headerBandWordsRaw = words.filter((w) => w.y < imageHeight * 0.25);
       const headerRows: Word[][] = [];
       for (const w of [...headerBandWordsRaw].sort((a, b) => a.y - b.y)) {
@@ -207,20 +161,10 @@ export const extractTimetableInfo = onCall<ExtractTimetableRequest, Promise<Extr
         flushCluster();
       }
 
-      // If either axis couldn't be detected at all, bucketing is
-      // meaningless — return the raw text only and let the uploader
-      // transcribe manually. A wrong day/time is worse than an empty
-      // pre-fill, since a wrong value looks confident and might not get
-      // double-checked as carefully as an obviously-blank one.
       if (dayRows.length === 0 || timeColumns.length === 0) {
         return {rawText, slots: []};
       }
 
-      // Every other word gets bucketed into whichever (day, time-column)
-      // combination its position is closest to — a simple nearest-center
-      // assignment, not true cell-boundary detection. Good enough to
-      // roughly group text by day/slot; not good enough to trust without
-      // reviewing every cell against the original photo.
       const buckets = new Map<string, Word[]>();
       const contentWords = words.filter(
         (w) => !dayWords.includes(w) && !headerWordsUsed.has(w) && w.y >= imageHeight * 0.25,
@@ -240,9 +184,7 @@ export const extractTimetableInfo = onCall<ExtractTimetableRequest, Promise<Extr
       const slots: ExtractedSlot[] = [];
       for (const [key, bucketWords] of buckets.entries()) {
         const [day, startTime, endTime] = key.split("|");
-        // Words within a bucket are joined left-to-right, top-to-bottom —
-        // approximates natural reading order without needing full layout
-        // analysis.
+
         const sorted = [...bucketWords].sort((a, b) => (a.y - b.y) * 1000 + (a.x - b.x));
         slots.push({day, startTime, endTime, rawText: sorted.map((w) => w.text).join(" ")});
       }

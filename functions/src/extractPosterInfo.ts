@@ -5,38 +5,26 @@ import * as admin from "firebase-admin";
 const visionClient = new ImageAnnotatorClient();
 
 type ExtractPosterInfoRequest = {
-  storagePath: string; // e.g. "posterScans/{uid}/{timestamp}.jpg"
+  storagePath: string;
   bucket: string;
 };
 
 type ExtractPosterInfoResponse = {
   rawText: string;
   guessedTitle: string | null;
-  guessedDate: string | null; // "YYYY-MM-DD" — best-effort, always shown for confirmation client-side
-  guessedTime: string | null; // "HH:mm" (24-hour) — best-effort
+  guessedDate: string | null;
+  guessedTime: string | null;
 };
 
-// Matches "25 August 2026", "25th Aug 2026", "August 25, 2026", "25/08/2026",
-// "25-08-2026" — the handful of date formats actually common on posters.
-// Month names are matched by their first 3-4 letters as a PREFIX inside
-// the OCR'd word, not as an exact full-word match — real posters have
-// typos ("SEPTEMEBER" instead of "SEPTEMBER") and OCR itself
-// misreads characters sometimes, and requiring an exact match breaks on
-// either. A missed date just means the confirm screen's date field
-// starts blank instead of pre-filled, which is a minor inconvenience,
-// not a wrong-data risk — unlike guessing wrong and silently trusting
-// it.
 const MONTH_NAMES = [
   "january", "february", "march", "april", "may", "june",
   "july", "august", "september", "october", "november", "december",
 ];
-const MONTH_PATTERN = "[a-z]{3,12}"; // any word-like token; matched against MONTH_NAMES afterward, not by literal name
+const MONTH_PATTERN = "[a-z]{3,12}";
 
 function monthIndexFromToken(token: string): number {
   const t = token.toLowerCase();
-  // Try each real month name's first 4 letters (3 for "may") as a prefix
-  // of the OCR'd token — catches "SEPTEMEBER" matching "sept", "AUGUST"
-  // matching "augu", etc., without needing an exact full-word match.
+
   return MONTH_NAMES.findIndex((m) => {
     const prefixLen = Math.min(4, m.length);
     return t.startsWith(m.slice(0, prefixLen)) || m.startsWith(t.slice(0, prefixLen));
@@ -46,7 +34,6 @@ function monthIndexFromToken(token: string): number {
 function extractDate(text: string): string | null {
   const lower = text.toLowerCase();
 
-  // "25 August 2026" / "25th Aug 2026" / "1ST SEPTEMEBER,2026"
   const namedMonthMatch = lower.match(
     new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s*,?\\s*(${MONTH_PATTERN})\\s*,?\\s*(\\d{4})\\b`),
   );
@@ -59,7 +46,6 @@ function extractDate(text: string): string | null {
     }
   }
 
-  // "August 25, 2026" / "Aug 25 2026"
   const monthFirstMatch = lower.match(
     new RegExp(`\\b(${MONTH_PATTERN})\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`),
   );
@@ -72,8 +58,6 @@ function extractDate(text: string): string | null {
     }
   }
 
-  // "25/08/2026" or "25-08-2026" — assumes DD/MM/YYYY (Indian convention),
-  // not the US MM/DD/YYYY order.
   const numericMatch = text.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{4})\b/);
   if (numericMatch) {
     const day = numericMatch[1].padStart(2, "0");
@@ -87,7 +71,6 @@ function extractDate(text: string): string | null {
   return null;
 }
 
-// Matches "5:00 PM", "5 PM", "17:00" — again, best-effort only.
 function extractTime(text: string): string | null {
   const twelveHourMatch = text.match(/\b(\d{1,2}):?(\d{2})?\s*(AM|PM|am|pm)\b/);
   if (twelveHourMatch) {
@@ -107,12 +90,6 @@ function extractTime(text: string): string | null {
   return null;
 }
 
-// Guesses the poster's title as the longest line of text within the top
-// third of the image — posters conventionally lead with their biggest,
-// most prominent text at the top. This is a rough heuristic, not a
-// layout/font-size analysis (which Vision's bounding-box data could
-// support with more work) — good enough to pre-fill a field the person
-// is going to review anyway, not good enough to trust blindly.
 function guessTitle(fullTextAnnotation: any): string | null {
   const pages = fullTextAnnotation?.pages;
   if (!pages || pages.length === 0) return null;
@@ -141,13 +118,7 @@ function guessTitle(fullTextAnnotation: any): string | null {
 
 export const extractPosterInfo = onCall<ExtractPosterInfoRequest, Promise<ExtractPosterInfoResponse>>(
   {
-    // Same region as every other callable in this app — this isn't
-    // just a latency nicety: the client's
-    // functionsClient.ts is hardcoded to call the asia-south1 endpoint,
-    // so a function deployed anywhere else genuinely can't be reached at
-    // all (not slower — a real invocation failure), which is exactly
-    // what caused "couldn't scan" the first time this deployed without
-    // a region specified and defaulted to us-central1.
+
     region: "asia-south1",
   },
   async (request) => {
@@ -159,10 +130,6 @@ export const extractPosterInfo = onCall<ExtractPosterInfoRequest, Promise<Extrac
       throw new HttpsError("invalid-argument", "Missing storagePath.");
     }
 
-    // The caller may only scan a file inside THEIR OWN scan folder, in THIS
-    // project's bucket. Without this check the function (which runs with
-    // admin rights) would OCR any file in the bucket the caller names —
-    // including other students' medical reports — and return its text.
     const ownPrefix = `posterScans/${request.auth.uid}/`;
     if (!storagePath.startsWith(ownPrefix) || storagePath.includes("..")) {
       throw new HttpsError("permission-denied", "You can only scan your own uploads.");

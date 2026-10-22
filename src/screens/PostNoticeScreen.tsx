@@ -102,8 +102,7 @@ export default function PostNoticeScreen() {
       })
       .catch(() => setClassOptions([]))
       .finally(() => setClassesLoading(false));
-    // editingNotice is only relevant for this one-time hydration on
-    // mount, not a live dependency — intentionally omitted below.
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedYear]);
 

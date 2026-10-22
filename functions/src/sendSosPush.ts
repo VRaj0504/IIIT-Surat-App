@@ -3,15 +3,6 @@ import {getFirestore} from "firebase-admin/firestore";
 import {sendExpoPush} from "./expoPush";
 import {sendSms, smsKey} from "./sms";
 
-// SOS: a new alert reaches everyone at once —
-//  - an SMS to the doctor, wardens, medical committee, hostel committee
-//    (config/sos, scripts/seed-sos-config.js) and the student's own saved
-//    emergency contacts, with a Google Maps link to where they are;
-//  - an app notification to every responder who has signed in, plus admins. When
-// a responder marks it "on my way" or resolved, the student is told.
-// Notification preferences are deliberately ignored here: an SOS must
-// always get through.
-
 type Sos = {
   studentUid: string;
   studentName: string;
@@ -49,7 +40,6 @@ export const sendSosPush = onDocumentWritten({document: "sosAlerts/{alertId}", s
   const db = getFirestore();
   const tag = "sendSosPush";
 
-  // App-store reviewer account: SOS runs in demo mode — nobody is alerted.
   const reviewer = (await db.collection("users").doc(sos.studentUid).get()).data()?.reviewer === true;
   if (reviewer) {
     if (!before) await after.ref.update({smsSent: 0, smsError: "Demo account — no alerts sent", demo: true}).catch(() => {});
@@ -69,7 +59,6 @@ export const sendSosPush = onDocumentWritten({document: "sosAlerts/{alertId}", s
       .filter(Boolean)
       .join(" · ");
 
-    // SMS first — it's what reaches people without the app.
     const loc = (after.data() as {location?: {lat: number; lng: number} | null}).location;
     const phone = (after.data() as {phone?: string | null}).phone;
     const smsText =

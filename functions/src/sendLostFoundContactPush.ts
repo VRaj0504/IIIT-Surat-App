@@ -7,15 +7,6 @@ const METHOD_LABEL: Record<string, string> = {
   whatsapp: "messaged you on WhatsApp",
 };
 
-// Fires on every new doc in lostFoundContacts (written by
-// notifyLostFoundContact in lostFoundService.ts the moment someone taps
-// Email/Call/WhatsApp on a post) — pushes the poster an immediate
-// notification instead of them having to notice a new email whenever
-// they next happen to check it. Same best-effort shape as
-// sendAnnouncementPush: a poster with no expoPushToken (Expo Go, or
-// hasn't granted permission) is silently skipped, never an error — the
-// mailto/tel/wa.me action the person actually tapped already fired
-// client-side regardless of whether this push succeeds.
 export const sendLostFoundContactPush = onDocumentCreated(
   "lostFoundContacts/{contactId}",
   async (event) => {

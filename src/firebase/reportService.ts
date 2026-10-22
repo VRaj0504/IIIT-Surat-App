@@ -45,7 +45,7 @@ export async function blockUser(myUid: string, theirUid: string): Promise<string
   try {
     await AsyncStorage.setItem(KEY(myUid), JSON.stringify(next));
   } catch {
-    /* hiding still works for this session */
+
   }
   return next;
 }
@@ -54,6 +54,6 @@ export async function unblockAll(myUid: string): Promise<void> {
   try {
     await AsyncStorage.removeItem(KEY(myUid));
   } catch {
-    /* nothing to do */
+
   }
 }

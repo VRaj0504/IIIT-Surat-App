@@ -23,6 +23,6 @@ export async function addToWebDownloadHistory(entry: { name: string; url: string
     ].slice(0, MAX_ENTRIES);
     await AsyncStorage.setItem(KEY, JSON.stringify(next));
   } catch {
-    // intentionally swallowed
+
   }
 }

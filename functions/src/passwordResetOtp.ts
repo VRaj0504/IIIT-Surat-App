@@ -4,13 +4,6 @@ import * as admin from "firebase-admin";
 import * as crypto from "crypto";
 import * as nodemailer from "nodemailer";
 
-// Password reset with a 6-digit code (instead of Firebase's reset link).
-//   firebase functions:secrets:set SMTP_USER   (the sending Gmail address)
-//   firebase functions:secrets:set SMTP_PASS   (a Gmail "App password", not the login password)
-// The code is only ever stored as a salted hash, expires after 10 minutes,
-// and is locked after 5 wrong tries. The request call answers the same
-// whether or not the email has an account, so it can't be used to find out
-// who is registered.
 const smtpUser = defineSecret("SMTP_USER");
 const smtpPass = defineSecret("SMTP_PASS");
 
@@ -53,13 +46,13 @@ export const requestPasswordResetOtp = onCall(
     }
     try {
       const user = await admin.auth().getUserByEmail(email);
-      // Google-only accounts have no password to reset.
+
       if (!user.providerData.some((p) => p.providerId === "password")) return {ok: true};
 
       const ref = admin.firestore().collection(COLLECTION).doc(docIdFor(email));
       const snap = await ref.get();
       const last = snap.exists ? (snap.data()?.sentAt as number | undefined) ?? 0 : 0;
-      if (Date.now() - last < COOLDOWN_MS) return {ok: true}; // too soon — stay quiet
+      if (Date.now() - last < COOLDOWN_MS) return {ok: true};
 
       const code = String(crypto.randomInt(100000, 1000000));
       const salt = crypto.randomBytes(8).toString("hex");

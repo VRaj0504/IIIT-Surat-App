@@ -1,10 +1,5 @@
-// Run automatically after `expo export` (see "build:web" in package.json).
-//
-// The web export puts the icon fonts under dist/assets/node_modules/...
-// Several hosting tools silently skip any folder called node_modules, so the
-// fonts never reach the server and every icon shows as an empty square.
-// This renames that folder to dist/assets/vendor and updates every reference
-// to it, so nothing on the path can be mistaken for a dependency folder.
+
+
 const fs = require("fs");
 const path = require("path");
 

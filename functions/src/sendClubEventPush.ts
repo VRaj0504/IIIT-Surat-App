@@ -1,11 +1,6 @@
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {getFirestore} from "firebase-admin/firestore";
 
-// clubEvents has no branch/section/semester targeting at all (see
-// clubsService.ts's createEvent — any club's events are visible to
-// every student browsing Clubs), so unlike notices/resources/
-// announcements this one has nothing to filter by beyond "is a student
-// with a token" — it's inherently whole-college by design.
 export const sendClubEventPush = onDocumentCreated(
   "clubEvents/{eventId}",
   async (event) => {

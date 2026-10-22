@@ -1,23 +1,11 @@
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import {getFirestore} from "firebase-admin/firestore";
 
-// onDocumentWritten (not onDocumentCreated) so this fires for BOTH a
-// brand-new timetable AND a correction/re-upload to an existing one —
-// "the timetable changed, go check it" applies equally either way. This
-// was missing entirely before: no trigger of any kind watched the
-// timetable collection, so a corrected upload updated Firestore silently
-// with nothing telling affected students.
-//
-// Scoped to students only, not faculty — matching every faculty member
-// teaching a given timetable would need scanning every slot's initials
-// through the same FACULTY_LEGEND duplicated in sendClassReminderPush.ts,
-// and faculty are the ones doing the editing in the first place, so they
-// already know it changed.
 export const sendTimetableUpdatePush = onDocumentWritten(
   "timetable/{timetableId}",
   async (event) => {
     const after = event.data?.after;
-    if (!after?.exists) return; // a delete — nothing to notify about
+    if (!after?.exists) return;
     const timetable = after.data() as {branch: string; semester: number; section: string};
     if (!timetable?.branch || !timetable?.semester || !timetable?.section) return;
 

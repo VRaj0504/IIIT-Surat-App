@@ -1,12 +1,4 @@
-// Seed script for event excusal coordinators — students permitted to
-// submit a participant list for an inter-IIIT event, hackathon, etc. so
-// their attendance for missed classes gets excused once a faculty
-// coordinator approves it. Same admin-managed pattern as
-// seed-tnp-coordinators.js: edit this file, re-run, done. Each run fully
-// replaces the eventCoordinators collection with exactly what's below.
-//
-// Fill in real names/emails before running — everything below is a
-// placeholder.
+
 
 const { initializeApp } = require("firebase-admin/app");
 const { cert } = require("firebase-admin/app");

@@ -70,8 +70,7 @@ export async function createClub(
     if (!snapshot.empty) {
       leadUid = snapshot.docs[0].id;
     }
-    // If no account exists yet, leadUid stays null but resolvedLeadEmail is still
-    // saved — this club is now "pending" that email and will self-link on signup.
+
   }
 
   const docRef = await addDoc(collection(db, CLUBS_COLLECTION), {

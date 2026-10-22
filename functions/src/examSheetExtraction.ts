@@ -1,28 +1,10 @@
-// Turns a scanned/typed exam date sheet (PDF or photo) into the exact
-// shape the `examSchedules` collection stores: one group per
-// branch + semester + exam type, each a sorted list of exams.
-//
-// Two stages, kept deliberately separate:
-//   1. extractRawExamRows() — a vision-model call. It only has to READ the
-//      table (expand merged cells, ignore the guidelines, turn dd/mm/yyyy
-//      into ISO); it is the one non-deterministic step.
-//   2. normalizeExtraction() — plain code that re-validates EVERYTHING the
-//      model returned (real calendar dates, real 24h times, known branches,
-//      semester 1-8), normalizes course codes, drops duplicates and groups
-//      the rows. Nothing the model says reaches Firestore without passing
-//      through this, and a human still reviews the result before students
-//      see it.
-//
-// Used by both entry points: the extractExamSchedule callable (portal
-// upload) and ingestFacultyEmail (a date sheet attached to an email).
+
 
 import {geminiJson} from "./gemini";
 
 export const BASE_EXAM_TYPES = ["quiz", "midsem", "endsem", "supplementary"] as const;
 type BaseExamType = (typeof BASE_EXAM_TYPES)[number];
 
-// Must match EXAM_TYPES in faculty-upload-web/src/examSheetParser.ts and
-// EXAM_TYPE_ORDER in src/firebase/examScheduleService.ts.
 export const EXAM_TYPE_LABELS: Record<string, string> = {
   "quiz": "Quiz / Internal",
   "midsem": "Mid Semester",
@@ -33,9 +15,9 @@ export const EXAM_TYPE_LABELS: Record<string, string> = {
 };
 
 export type ExamEntry = {
-  date: string; // YYYY-MM-DD
-  startTime: string; // HH:MM 24h
-  endTime: string; // HH:MM 24h or ""
+  date: string;
+  startTime: string;
+  endTime: string;
   subjectCode: string;
   subjectName: string;
   venue: string;
@@ -44,7 +26,7 @@ export type ExamEntry = {
 export type ExamGroup = {
   branch: "CSE" | "ECE";
   semester: number;
-  examType: string; // key of EXAM_TYPE_LABELS
+  examType: string;
   examTypeLabel: string;
   entries: ExamEntry[];
 };
@@ -76,21 +58,17 @@ export async function extractRawExamRows(
   fileBuffer: Buffer,
   mimeType: string,
 ): Promise<unknown> {
-  // Gemini reads a PDF (including a scan) or an image straight from
-  // inline base64 — no page rendering needed on our side.
+
   return geminiJson({
     apiKey,
     parts: [
       {text: PROMPT},
       {inline_data: {mime_type: mimeType, data: fileBuffer.toString("base64")}},
     ],
-    // ~55 rows at roughly 60 tokens each is under 4k; the rest is headroom
-    // for a bigger sheet and for any reasoning tokens counted toward the cap.
+
     maxOutputTokens: 16384,
   });
 }
-
-// ---- Stage 2: deterministic validation + grouping --------------------------
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -104,7 +82,7 @@ function toIsoDate(value: unknown): string {
   if (match) {
     [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
   } else {
-    // The model was told ISO, but tolerate the sheet's own dd/mm/yyyy.
+
     match = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
     if (!match) return "";
     [d, m, y] = [Number(match[1]), Number(match[2]), Number(match[3])];
@@ -123,7 +101,6 @@ function toHhmm(value: unknown): string {
   return h > 23 || min > 59 ? "" : `${pad(h)}:${pad(min)}`;
 }
 
-// "CS 301" -> "CS301"; "CS 514 / EC 513" -> "CS514 / EC513".
 function normalizeCode(value: unknown): string {
   if (typeof value !== "string") return "";
   return value
@@ -189,7 +166,7 @@ export function normalizeExtraction(raw: unknown, now: Date = new Date()): Norma
       warnings.push(`${label} skipped: no subject.`);
       return;
     }
-    if (!examType) return; // unreachable: baseType was defaulted above
+    if (!examType) return;
 
     if (endTime && endTime <= startTime) {
       warnings.push(`${label} (${subjectCode || subjectName}): end time wasn't after the start time, so it was left blank.`);

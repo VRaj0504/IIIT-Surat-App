@@ -226,7 +226,7 @@ export default function ResourcesScreen() {
       const safeName = item.title.replace(/[^a-zA-Z0-9 _-]/g, "").trim().replace(/\s+/g, "_") || "resource";
       const destination = new File(Paths.document, `${safeName}${ext}`);
       const downloaded = await File.downloadFileAsync(item.fileUrl, destination, {
-        idempotent: true, // overwrite rather than fail if downloaded before
+        idempotent: true,
       });
       Alert.alert(
         "Downloaded",

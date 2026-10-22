@@ -1,13 +1,7 @@
 import {defineSecret} from "firebase-functions/params";
 
-// SMS through Fast2SMS (an Indian bulk-SMS gateway; the "q" quick route
-// needs no DLT template). Set the key once:
-//   firebase functions:secrets:set FAST2SMS_API_KEY
-// Set it to "none" to switch SMS off — the app notifications still go out.
 export const smsKey = defineSecret("FAST2SMS_API_KEY");
 
-// Indian mobile numbers only: keeps the last 10 digits of anything like
-// "+91 98765 43210" / "098765-43210"; drops anything that isn't a mobile.
 export function cleanIndianMobile(raw: string): string | null {
   const digits = String(raw ?? "").replace(/\D/g, "").slice(-10);
   return /^[6-9]\d{9}$/.test(digits) ? digits : null;

@@ -1,11 +1,6 @@
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {getFirestore} from "firebase-admin/firestore";
 
-// Mirrors sendAnnouncementPush.ts's exact targeting logic, applied to the
-// `notices` collection instead of `announcements` — these are two
-// genuinely separate features in this app (see src/firebase/noticesService.ts
-// vs announcementsService.ts), so each needs its own trigger; notices had
-// no push at all before this, only the in-app feed.
 export const sendNoticePush = onDocumentCreated(
   "notices/{noticeId}",
   async (event) => {
@@ -37,8 +32,7 @@ export const sendNoticePush = onDocumentCreated(
         notificationPreferences?: {notices?: boolean};
       };
       if (!student.expoPushToken) return;
-      // Absence of the preferences map (or the notices key) means "on" —
-      // same opt-out-not-opt-in default as the settings screen itself.
+
       if (student.notificationPreferences?.notices === false) return;
       if (notice.targetSection && notice.targetSection !== student.section) return;
       if (notice.targetAdmissionYear && notice.targetAdmissionYear !== student.admissionYear) return;

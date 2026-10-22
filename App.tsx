@@ -16,11 +16,9 @@ import { PortalHost } from './src/components/Portal';
 import Constants from 'expo-constants';
 import * as SplashScreen from 'expo-splash-screen';
 
-// Keep the launch screen (logo) up until we know who is signed in, so a
-// returning user goes straight from the logo to Home — no loader in between.
 if (Platform.OS !== 'web') {
   SplashScreen.preventAutoHideAsync().catch(() => {});
-  // A soft fade into the app. Expo Go can't do this (it only warns), so skip it there.
+
   if (Constants.executionEnvironment !== 'storeClient') SplashScreen.setOptions({ duration: 220, fade: true });
 }
 let splashHidden = false;
@@ -29,14 +27,11 @@ function hideSplash() {
   splashHidden = true;
   SplashScreen.hideAsync().catch(() => {});
 }
-// Safety net: never keep the logo up for more than a few seconds.
+
 setTimeout(hideSplash, 4000);
 
 const navigationRef = createNavigationContainerRef<any>();
 
-// React Navigation paints its own card/background colours (visible during
-// screen transitions); match them to the app theme so dark mode never
-// flashes white between screens.
 const navTheme = {
   ...(isDark ? DarkTheme : DefaultTheme),
   colors: {
@@ -54,8 +49,7 @@ function Gate() {
   const { user, profile, initializing, profileLoading, profileLoadFailed, retryProfileLoad, logOut, needsEmailVerification } = useAuth();
 
   const booting = initializing || (user && profileLoading);
-  // Hide the launch screen once the first real screen is ready. (A first
-  // sign-in that still has to fetch the profile shows the loader instead.)
+
   React.useEffect(() => {
     if (!initializing) hideSplash();
   }, [initializing]);
@@ -70,9 +64,6 @@ function Gate() {
 
   if (!user) return <AuthNavigator />;
 
-  // The profile fetch FAILED (offline, timeout). This is not the same as
-  // "no profile yet" — showing CompleteProfileScreen here would treat an
-  // existing user like a first-time sign-in.
   if (!profile && profileLoadFailed) {
     return (
       <View
@@ -100,9 +91,6 @@ function Gate() {
     );
   }
 
-  // Signed in (via Google) but no Firestore profile doc yet — this only
-  // happens on a first-time Google sign-in.
-  // Created with email + password and not verified yet.
   if (!profile && needsEmailVerification) return <VerifyEmailScreen />;
   if (!profile) return <CompleteProfileScreen />;
   return <RootNavigator/>;
@@ -112,11 +100,8 @@ export default function App() {
   const [currentRoute, setCurrentRoute] = React.useState<string | undefined>(undefined);
   const syncRoute = () => setCurrentRoute(navigationRef.getCurrentRoute()?.name);
 
-  // Tapping a notification that carries `data.screen` (e.g. an SOS alert →
-  // "SosAlerts") opens that screen — also when the tap launched the app.
   React.useEffect(() => {
-    // Never load expo-notifications in Expo Go (it throws on import on
-    // Android since SDK 53 — same rule as src/firebase/pushService.ts).
+
     if (Platform.OS === 'web' || Constants.executionEnvironment === 'storeClient') return;
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Notifications = require('expo-notifications');

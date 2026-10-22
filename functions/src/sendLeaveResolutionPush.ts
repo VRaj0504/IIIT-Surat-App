@@ -1,25 +1,12 @@
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import {getFirestore} from "firebase-admin/firestore";
 
-// Fires only on the actual pending -> approved/rejected transition, not on
-// every write to a leaveApplications doc — resolveLeaveApplication()
-// (leaveService.ts) is the only thing that ever changes `status`, but a
-// document write could in principle touch this doc for other reasons
-// later, and re-pushing "your leave was approved" on an unrelated edit
-// would be a real annoyance, not just a redundant push.
-//
-// This is a single targeted push to the one student whose own request
-// this is (studentUid), unlike the class-wide fan-outs elsewhere in this
-// folder — there's no notificationPreferences gate here on purpose: a
-// student should never be able to silence "did my own leave get
-// approved", the way they reasonably can for a broadcast category like
-// Announcements or Club Events.
 export const sendLeaveResolutionPush = onDocumentWritten(
   "leaveApplications/{applicationId}",
   async (event) => {
     const before = event.data?.before;
     const after = event.data?.after;
-    if (!after?.exists) return; // a delete — nothing to notify about
+    if (!after?.exists) return;
 
     const beforeData = before?.exists
       ? (before.data() as {status?: string})
@@ -36,9 +23,7 @@ export const sendLeaveResolutionPush = onDocumentWritten(
     const justResolved =
       wasPending && (afterData.status === "approved" || afterData.status === "rejected");
     if (!justResolved) return;
-    // Medical leave is a multi-step chain with its own notifications at
-    // every step (medicalLeaveWorkflow.ts) — "approved" there only means
-    // the HOD approved, which this generic message would misreport.
+
     if (afterData.type === "medical") return;
 
     const db = getFirestore();

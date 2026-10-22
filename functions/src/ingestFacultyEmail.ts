@@ -7,14 +7,9 @@ import {extractRawExamRows, normalizeExtraction} from "./examSheetExtraction";
 import {geminiJson} from "./gemini";
 
 const ingestSecret = defineSecret("INGEST_SHARED_SECRET");
-// Google Gemini (see gemini.ts) reads and classifies the emails: a
-// low-volume task — a handful of emails at a time — that suits the fast,
-// inexpensive Flash tier. The key lives in Secret Manager as GEMINI_API_KEY.
+
 const geminiKey = defineSecret("GEMINI_API_KEY");
 
-// One attachment as the Apps Script bridge (see apps-script/Code.gs) sends
-// it: base64-encoded bytes plus enough metadata to store and later render
-// it, exactly like resourceService.ts's `storagePath` convention.
 type IncomingAttachment = {
   filename: string;
   mimeType: string;
@@ -22,24 +17,18 @@ type IncomingAttachment = {
 };
 
 type IngestBody = {
-  messageId: string; // Gmail message id — used as the pendingImports doc
-  // id, so re-processing the same email (a retried Apps Script run, e.g.)
-  // overwrites the same draft instead of creating a duplicate.
+  messageId: string;
+
   from: string;
   to: string;
   cc: string;
   subject: string;
   bodyText: string;
   attachments: IncomingAttachment[];
-  // The "Authentication-Results" header Gmail stamps on every received
-  // message (SPF/DKIM/DMARC verdicts). Sent by the Apps Script bridge.
+
   authResults?: string;
 };
 
-// The From: line of an email is trivially forgeable, so it proves nothing
-// by itself. Gmail's own verdicts do: accept only if the message passed
-// DMARC, a DKIM signature, or SPF — in each case for the SAME domain as
-// the From address (so a spoofer can't pass using their own domain).
 function senderIsAuthenticated(authResults: string | undefined, fromEmail: string): boolean {
   if (!authResults) return false;
   const domain = fromEmail.split("@")[1]?.toLowerCase();
@@ -73,30 +62,8 @@ type ClassificationResult = {
   reasoning: string;
 };
 
-// Structured subject-tag fast path — see the format documented in chat:
-// "[R-CSE-3-A] title" etc. This is parsed with a plain regex, not
-// inferred, so when it matches, the audience is CERTAIN rather than a
-// probabilistic AI guess — that's the whole point of offering it. An
-// unmatched or malformed tag (typo'd type letter, unrecognized branch,
-// missing brackets) falls through to the normal AI classification path
-// below rather than silently misparsing — this only ever activates when
-// the format is followed exactly.
 const STRUCTURED_TAG_PATTERN = /^\[(R|N)-(CSE|ECE|MNC|ALL)(?:-(\d))?(?:-([A-Za-z0-9]+))?\]\s*(.*)$/i;
 
-// The real section values actually stored on student profiles (confirmed
-// against live Firestore roster data, not assumed) are NOT a bare letter
-// or bare digit — they're branch-prefixed, and the prefix rule itself
-// differs by which kind of section a year uses:
-//   - CSE's 2nd-year digit split: "CSE1" / "CSE2" — branch + digit, NO space.
-//   - Every letter-based split (1st-year CSE: B/C/D, 1st-year ECE: A):
-//     "<BRANCH> <LETTER>" — branch + a SPACE + the letter, e.g. "CSE B", "ECE A".
-//   - MNC has no letter-sections of its own — its 2026 students are
-//     physically co-located inside CSE's own "D" section for classes,
-//     so their real roster section is "CSE D", not "MNC D". Any MNC
-//     letter-section input maps through CSE's prefix, not MNC's.
-// Years/branches with no split at all (3rd year onward, currently) have
-// no section value whatsoever — that case is handled by the callers
-// (sectionRaw absent entirely), not by this function.
 function resolveRosterSection(branch: string, rawSection: string): string {
   if (/^\d+$/.test(rawSection)) {
     return `${branch.toUpperCase()}${rawSection}`;
@@ -148,33 +115,9 @@ function parseStructuredTag(subject: string): StructuredTagResult | null {
   };
 }
 
-// Second deterministic fast path — this is the professor's actual
-// workflow: he emails his real class distribution list like he always
-// has, and just CCs (or BCCs) the ingestion inbox on it. No tag, no
-// change to his habit at all. The distribution list's own address
-// already encodes the exact audience — e.g. "cse_b_2026@iiitsurat.ac.in"
-// means CSE, section B, admitted 2026 — so recognizing that pattern is a
-// parse, not a guess, and gets the same certainty as the subject tag.
-//
-// Deliberately conservative about WHICH patterns count as certain,
-// because the real list names in use aren't fully consistent (confirmed
-// from an actual forwarded email seen during development): some end in
-// a section letter ("cse_b_2026"), some are just branch+year with no
-// section ("ece_2024" — whole cohort), and some end in a bare number
-// ("cse_2025_1") where it's genuinely unclear whether that's a section
-// number or something else entirely. Only the first two are matched
-// here; the ambiguous number-suffix form and anything with an "mtech_"
-// prefix (a graduate-program list, outside this undergraduate app's
-// scope) are deliberately left unmatched, falling through to the AI
-// path (which still has the full recipient list as context) rather than
-// risking a confident wrong guess.
 const SECTION_LIST_PATTERN = /^(?:iiits_)?(cse|ece|mnc)_([a-z])_(\d{4})$/i;
 const BRANCH_YEAR_LIST_PATTERN = /^(?:iiits_)?(cse|ece|mnc)_(\d{4})$/i;
 
-// Mirrors src/utils/academicInfo.ts's getCurrentSemester — duplicated
-// for the same cross-project-import reason as sendClassReminderPush.ts
-// and sendResourcePush.ts (functions/ is a separate TypeScript project
-// from the mobile app's src/, so it can't import that file directly).
 function getCurrentSemester(admissionYear: number, today: Date): number {
   const currentMonth = today.getMonth() + 1;
   const currentYear = today.getFullYear();
@@ -186,9 +129,7 @@ function getCurrentSemester(admissionYear: number, today: Date): number {
 }
 
 function parseDistributionListTarget(toAndCc: string): TargetScope | null {
-  // Addresses arrive comma-separated, each possibly with a display name
-  // like `"CSE Sem 3" <cse_b_2026@iiitsurat.ac.in>` — extract just the
-  // local part (before @) of each actual address.
+
   const addresses = toAndCc
     .split(",")
     .map((entry) => {
@@ -200,7 +141,7 @@ function parseDistributionListTarget(toAndCc: string): TargetScope | null {
 
   const matches: TargetScope[] = [];
   for (const localPart of addresses) {
-    if (localPart.startsWith("mtech_") || localPart.startsWith("mtech")) continue; // out of scope for this app
+    if (localPart.startsWith("mtech_") || localPart.startsWith("mtech")) continue;
 
     const sectionMatch = localPart.match(SECTION_LIST_PATTERN);
     if (sectionMatch) {
@@ -234,28 +175,11 @@ function parseDistributionListTarget(toAndCc: string): TargetScope | null {
 
   if (matches.length === 0) return null;
 
-  // Every matched address has to agree on the exact same target — if the
-  // same email went to two genuinely different lists (e.g. both
-  // "cse_b_2026" and "ece_a_2026"), that's two different real audiences
-  // this pipeline can't merge into one document, so it's treated as not
-  // confidently resolved rather than arbitrarily picking one.
   const first = JSON.stringify(matches[0]);
   const allAgree = matches.every((m) => JSON.stringify(m) === first);
   return allAgree ? matches[0] : null;
 }
 
-// Tries to resolve free text (an email subject line, or the model's own
-// guess) to the exact curriculum subject name Firestore has on file for
-// this branch+semester — matching by the literal string
-// ResourcesScreen.tsx compares against is what actually determines
-// whether a student sees this in its real subject section or in the
-// "Other" catch-all. Deliberately conservative: a course CODE match
-// (e.g. "CS304" appearing in the text) is treated as certain; a full
-// course NAME match is certain too; anything looser (partial word
-// overlap) is only accepted if it's unambiguous — exactly one curriculum
-// subject plausibly matches, not several. No match at all returns null,
-// which is fine — the app's "Other" section still catches it, so a
-// missed match here never means a lost resource, only a less-precise one.
 async function matchCurriculumSubject(
   db: FirebaseFirestore.Firestore,
   branch: string,
@@ -270,23 +194,16 @@ async function matchCurriculumSubject(
   const text = normalize(candidateText);
   const subjects = snap.docs.map((d) => d.data() as {code: string; name: string});
 
-  // Pass 1: exact course-code appearance (as a whole word, not a
-  // substring of some longer token) — the strongest possible signal.
   for (const s of subjects) {
     const code = normalize(s.code);
     if (code && new RegExp(`\\b${code}\\b`).test(text)) return s.name;
   }
 
-  // Pass 2: the full course name appears in the text, or vice versa.
   for (const s of subjects) {
     const name = normalize(s.name);
     if (name && (text.includes(name) || name.includes(text))) return s.name;
   }
 
-  // Pass 3: strong word overlap — every significant word (4+ letters,
-  // skipping common connector words) in the course name also appears in
-  // the text, and this is true for exactly one subject. If two or more
-  // subjects would both qualify, that's ambiguous, not a match.
   const stopwords = new Set(["and", "of", "the", "for", "to", "in", "with"]);
   const matches = subjects.filter((s) => {
     const words = normalize(s.name).split(" ").filter((w) => w.length >= 4 && !stopwords.has(w));
@@ -294,12 +211,6 @@ async function matchCurriculumSubject(
   });
   if (matches.length === 1) return matches[0].name;
 
-  // Pass 4: common conventional abbreviations that don't reduce to
-  // initials cleanly ("DBMS" for "Database Management Systems" — the
-  // actual initials would be "DMS"). A small fixed list rather than a
-  // general algorithm, since these are genuinely idiomatic, not
-  // mechanically derivable — but worth having, since these are exactly
-  // the terms people actually type in a subject line.
   const KNOWN_ABBREVIATIONS: Record<string, string[]> = {
     dbms: ["database", "management"],
     oop: ["object", "oriented"],
@@ -325,11 +236,6 @@ async function matchCurriculumSubject(
   return abbrevMatches.length === 1 ? abbrevMatches[0].name : null;
 }
 
-// An exam date sheet email: the subject or the attachment's own filename
-// names BOTH an exam word and a schedule word ("Time Table Mid Sem exam
-// Sept 2026.pdf"), and there's a PDF/photo to read. Requiring both keeps
-// this from grabbing a PYQ email ("Mid sem exam paper 2024") that merely
-// mentions an exam — that one is a resource, not a schedule.
 const EXAM_WORDS = /exam|mid.?sem|end.?sem|quiz|internal/i;
 const SCHEDULE_WORDS = /date.?sheet|time.?table|schedule/i;
 const EXAM_SHEET_MIME_TYPES = ["application/pdf", "image/jpeg", "image/png"];
@@ -339,8 +245,7 @@ function findExamSheetAttachment(body: IngestBody): IncomingAttachment | null {
   if (attachments.length === 0) return null;
   const haystack = `${body.subject ?? ""} ${attachments.map((a) => a.filename).join(" ")}`;
   if (!EXAM_WORDS.test(haystack) || !SCHEDULE_WORDS.test(haystack)) return null;
-  // A date sheet email carries one sheet; several attachments means
-  // something else (a bundle of papers), so it isn't handled here.
+
   return attachments.length === 1 ? attachments[0] : null;
 }
 
@@ -386,8 +291,8 @@ async function classifyEmail(
     `Cc: ${ccRecipients || "(none)"}`,
     `Attachments: ${attachmentNames.length > 0 ? attachmentNames.join(", ") : "(none)"}`,
     "Body:",
-    bodyText.slice(0, 4000), // plenty for a routine email; guards against
-    // an unusually long forwarded thread blowing up the prompt.
+    bodyText.slice(0, 4000),
+
   ].join("\n");
 
   const result = await geminiJson({
@@ -403,12 +308,10 @@ export const ingestFacultyEmail = onRequest(
   {
     secrets: [ingestSecret, geminiKey],
     region: "asia-south1",
-    // Low-volume, bursty at most around exam/notice season — no need
-    // for extra throughput headroom here.
+
     concurrency: 10,
     maxInstances: 5,
-    // Attachments can be a few MB of base64; give this more room than the
-    // 256MB default other functions here don't need to think about.
+
     memory: "512MiB",
     timeoutSeconds: 120,
   },
@@ -431,9 +334,6 @@ export const ingestFacultyEmail = onRequest(
     const db = admin.firestore();
     const fromEmail = body.from.toLowerCase().trim();
 
-    // Reject forged senders BEFORE anything else: without this, anyone who
-    // can email the inbox could pose as a faculty member (or club lead) and
-    // have notices auto-published to every student.
     if (!senderIsAuthenticated(body.authResults, fromEmail)) {
       logger.warn("ingestFacultyEmail: sender could not be authenticated", {fromEmail});
       await db.collection("emailImportAlerts").doc(body.messageId).set({
@@ -446,30 +346,9 @@ export const ingestFacultyEmail = onRequest(
       return;
     }
 
-    // Sender must be a real, currently-allowlisted faculty member — this
-    // is the actual security boundary here, independent of whatever the
-    // Apps Script side already filtered. An unrecognized sender never
-    // reaches pendingImports; it's flagged instead: return 200 so
-    // nothing retries forever, but leave a clear trail for staff.
     const allowlistSnap = await db.collection("allowlist").doc(fromEmail).get();
     if (!allowlistSnap.exists || allowlistSnap.data()?.role !== "faculty") {
-      // Not faculty — but before rejecting outright, check whether this
-      // sender is a registered club lead. Unlike the faculty resource/
-      // notice path above, this needs no AI classification and no tag:
-      // a club lead's email uniquely identifies which club they lead, so
-      // "who is this for" is a database lookup, not a guess — it
-      // publishes immediately with full certainty whenever exactly one
-      // club matches.
-      //
-      // Checked against TWO fields: the original single `leadEmail`
-      // (clubsService.ts's primary lead, tied to in-app edit
-      // permissions — untouched, still works exactly as before) AND a
-      // new `additionalLeadEmails` array, for clubs genuinely run by
-      // more than one person where only the email-posting path needs to
-      // recognize them all, not the app's ownership/edit-permission
-      // model. Two separate queries merged and de-duplicated by doc id,
-      // since Firestore can't OR across two different fields in one
-      // query the way `where` combines conditions with AND.
+
       const [byPrimaryLead, byAdditionalLead] = await Promise.all([
         db.collection("clubs").where("leadEmail", "==", fromEmail).get(),
         db.collection("clubs").where("additionalLeadEmails", "array-contains", fromEmail).get(),
@@ -502,10 +381,7 @@ export const ingestFacultyEmail = onRequest(
       }
 
       if (clubMatches.length > 1) {
-        // Same email leads more than one club — genuinely ambiguous which
-        // one this is for, so this is the one case where a club-lead
-        // email doesn't auto-publish. Flagged rather than guessed, same
-        // principle as everywhere else in this pipeline.
+
         logger.warn("ingestFacultyEmail: sender leads multiple clubs, ambiguous target", {fromEmail, clubCount: clubMatches.length});
         await db.collection("emailImportAlerts").doc(body.messageId).set({
           reason: `sender leads ${clubMatches.length} clubs — ambiguous which one this email is for`,
@@ -517,11 +393,6 @@ export const ingestFacultyEmail = onRequest(
         return;
       }
 
-      // Neither faculty nor a club lead — this is the actual security
-      // boundary here, independent of whatever the Apps Script side
-      // already filtered. An unrecognized sender never reaches
-      // pendingImports; it's flagged instead: return 200 so
-      // nothing retries forever, but leave a clear trail for staff.
       logger.warn("ingestFacultyEmail: sender not an allowlisted faculty member or club lead", {fromEmail});
       await db.collection("emailImportAlerts").doc(body.messageId).set({
         reason: "sender not an allowlisted faculty member or club lead",
@@ -534,13 +405,6 @@ export const ingestFacultyEmail = onRequest(
     }
     const facultyName = allowlistSnap.data()?.name ?? fromEmail;
 
-    // Exam date sheet: read the PDF/photo into per-class drafts and file
-    // them for review. Never auto-published — a wrong exam date reaches a
-    // whole semester, so a person confirms it against the PDF first (the
-    // same reason timetable emails are always reviewed). If reading the
-    // file fails for any reason, this falls through to the normal path
-    // below, which still files the email (with its attachment) for a
-    // human — the email is never lost.
     const examAttachment = findExamSheetAttachment(body);
     if (examAttachment) {
       try {
@@ -569,8 +433,7 @@ export const ingestFacultyEmail = onRequest(
             bodySnippet: (body.bodyText ?? "").slice(0, 500),
             attachments: [{filename: examAttachment.filename, storagePath, mimeType: examAttachment.mimeType, downloadUrl}],
             contentType: "examSchedule",
-            // Always "medium": this is a machine reading of a scan, and
-            // the reviewer should treat it that way even with no warnings.
+
             confidence: "medium",
             title: body.subject,
             targetScope: {scope: "all", branch: null, semester: null, section: null, admissionYear: null, specialization: null},
@@ -605,23 +468,16 @@ export const ingestFacultyEmail = onRequest(
     }
 
     const structuredTag = parseStructuredTag(body.subject);
-    // Only meaningful when there's no explicit tag — the tag is more
-    // specific and always wins if both are somehow present.
+
     const distributionListTarget = structuredTag
       ? null
       : parseDistributionListTarget(`${body.to ?? ""},${body.cc ?? ""}`);
-    // A timetable file needs row-by-row OCR/Excel review no matter how
-    // certain the audience is — recognizing "who this is for" from the
-    // distribution list is a different problem from verifying "is every
-    // row of the schedule correct," so this path only ever auto-publishes
-    // resources/notices, never something that looks like a timetable.
+
     const looksLikeTimetable = /timetable|time.?table|schedule/i.test(body.subject ?? "");
 
     let classification: ClassificationResult;
     if (structuredTag && !looksLikeTimetable) {
-      // The tag is a deterministic parse, not a guess — "high" here means
-      // something different than the AI path's "high": it's certainty
-      // about what the sender typed, not a probability estimate.
+
       classification = {
         contentType: structuredTag.contentType,
         confidence: "high",
@@ -634,10 +490,7 @@ export const ingestFacultyEmail = onRequest(
         reasoning: `Parsed directly from the structured subject tag: "${body.subject}".`,
       };
     } else if (distributionListTarget && !looksLikeTimetable) {
-      // Same certainty as the tag path, just resolved from the real
-      // distribution list address instead of a tag the sender typed —
-      // this is the "CC/BCC the ingestion inbox on your normal class
-      // email" workflow, with zero change to how faculty already send.
+
       const hasAttachment = (body.attachments ?? []).length > 0;
       classification = {
         contentType: hasAttachment ? "resource" : "notice",
@@ -661,10 +514,7 @@ export const ingestFacultyEmail = onRequest(
           body.cc ?? "",
         );
       } catch (err: any) {
-      // A classification failure shouldn't lose the email — file it as
-      // "unclear" with low confidence so a human still sees it, rather
-      // than silently dropping it or endlessly retrying on Apps Script's
-      // side.
+
       logger.error("ingestFacultyEmail: classification failed", {messageId: body.messageId, error: err.message});
       classification = {
         contentType: "unclear",
@@ -680,10 +530,6 @@ export const ingestFacultyEmail = onRequest(
       }
     }
 
-    // Store each attachment's bytes in Storage; a download token is set
-    // on each so a client-compatible download URL can be built directly
-    // (needed for auto-publish below — it can't rely on the reviewer's
-    // browser calling getDownloadURL, since there may be no reviewer).
     const bucket = admin.storage().bucket();
     const storedAttachments: {filename: string; storagePath: string; mimeType: string; downloadUrl: string}[] = [];
     for (const attachment of body.attachments ?? []) {
@@ -700,14 +546,6 @@ export const ingestFacultyEmail = onRequest(
       storedAttachments.push({filename: attachment.filename, storagePath, mimeType: attachment.mimeType, downloadUrl});
     }
 
-    // Auto-publish only when the model is confident AND it actually
-    // resolved a concrete target — never when it's guessing. A "high"
-    // confidence resource/notice with a real branch/section goes straight
-    // into the collections the app reads from; anything else (including
-    // every timetable email, which always needs the OCR/Excel review
-    // step) still lands in pendingImports for a human glance. This is the
-    // one place in the pipeline that can put something in front of
-    // students unreviewed, so it stays deliberately narrow.
     const scope = classification.targetScope;
     const hasConcreteTarget = scope.scope === "all" || !!scope.branch;
     const eligibleForAutoPublish =
@@ -716,12 +554,7 @@ export const ingestFacultyEmail = onRequest(
       (classification.contentType === "resource" || classification.contentType === "notice");
 
     if (eligibleForAutoPublish) {
-      // uploadedBy/createdBy needs a uid the way the web reviewer's
-      // Firebase Auth session provides one — this function has no signed-
-      // in user, so it looks up whichever `users` doc (if any) belongs to
-      // this email. A faculty member who's never opened the app yet
-      // simply gets uploadedBy: null, same as facultyService.ts already
-      // treats not-yet-signed-up allowlist entries.
+
       const userSnap = await db.collection("users").where("email", "==", fromEmail).limit(1).get();
       const uploaderUid = userSnap.empty ? null : userSnap.docs[0].id;
       const branches: ("CSE" | "ECE" | "MNC")[] = scope.scope === "all" ? ["CSE", "ECE", "MNC"] : [scope.branch!];
@@ -730,14 +563,7 @@ export const ingestFacultyEmail = onRequest(
         if (storedAttachments.length === 0) {
           logger.warn("ingestFacultyEmail: high-confidence resource had no attachment, falling back to review", {messageId: body.messageId});
         } else {
-          // A single-attachment email keeps the previous behavior exactly
-          // (one resource, titled from the email itself). Multiple
-          // attachments — the actual "20 PDFs in one email" case — get one
-          // resource PER FILE, each titled from its own filename (stripping
-          // the extension) rather than all 20 sharing one identical title,
-          // and each independently matched against the curriculum: a
-          // filename like "DBMS_Unit5.pdf" is often a stronger subject
-          // signal per-file than the one shared email subject line.
+
           const stripExtension = (filename: string) => filename.replace(/\.[^.]+$/, "");
           await Promise.all(
             branches.flatMap((branch) =>
@@ -754,12 +580,7 @@ export const ingestFacultyEmail = onRequest(
                   subject: matchedSubject ?? classification.resourceSubject ?? perFileTitle,
                   branch,
                   semester: scope.semester ?? 1,
-                  // The tag/distribution-list parsers already resolve a
-                  // section into targetScope — it was simply never written
-                  // here, so every "[R-CSE-3-B]" resource silently reached
-                  // all of CSE Sem 3. null stays null and still means "the
-                  // whole semester", which is the right default for a tag
-                  // like [R-CSE-3] that names no section at all.
+
                   section: scope.section ?? null,
                   type: classification.resourceType ?? "Notes",
                   fileUrl: attachment.downloadUrl,

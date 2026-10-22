@@ -22,9 +22,9 @@ module.exports = ({ config }) => {
     plugins,
     ios: {
       ...config.ios,
-      // iPhone only — avoids iPad screenshots and iPad review.
+
       supportsTablet: false,
-      // Only standard HTTPS — so App Store Connect doesn't ask about export compliance on every build.
+
       config: { ...(config.ios?.config ?? {}), usesNonExemptEncryption: false },
     },
   };

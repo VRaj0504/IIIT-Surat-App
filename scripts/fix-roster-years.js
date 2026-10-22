@@ -1,8 +1,4 @@
-// Shows which classes the roster has under each batch, and fixes students
-// whose admissionYear doesn't match their reg. no. (UG25… → 2025).
-//
-//   node scripts/fix-roster-years.js            (report only, changes nothing)
-//   node scripts/fix-roster-years.js --apply    (fixes roster + users)
+
 
 const { initializeApp, cert } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
@@ -17,7 +13,7 @@ const yearOf = (regNo) => {
 
 async function main() {
   const snap = await db.collection("roster").get();
-  const classes = {}; // year -> "branch section" -> count
+  const classes = {};
   const wrong = [];
   snap.docs.forEach((d) => {
     const r = d.data();
@@ -48,7 +44,7 @@ async function main() {
     wrong.slice(i, i + 400).forEach((w) => batch.update(db.collection("roster").doc(w.id), { admissionYear: w.correct }));
     await batch.commit();
   }
-  // Signed-in students carry their own copy of admissionYear (it decides their semester).
+
   let users = 0;
   for (const w of wrong) {
     const u = await db.collection("users").where("enrollmentNumber", "==", w.id).limit(1).get();

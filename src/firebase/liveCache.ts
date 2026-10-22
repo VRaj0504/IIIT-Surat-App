@@ -93,6 +93,6 @@ export async function clearCache() {
     const keys = await AsyncStorage.getAllKeys();
     await AsyncStorage.multiRemove(keys.filter((k) => k.startsWith(PREFIX)));
   } catch {
-    // nothing to clear
+
   }
 }

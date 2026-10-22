@@ -1,28 +1,4 @@
-// One script for every club change — replaces clubs.mjs,
-// set-club-leads.js, set-club-extra-leads.js, set-club-parents.js, and
-// seed-indominous-subclubs.js, which all touched the same `clubs`
-// collection from five different places (one to create a club, a
-// different one to set its real lead, a third for extra leads, a fourth
-// for nesting under a parent). That meant one real change — like adding
-// a new club with a lead — meant editing and running up to three files
-// in the right order. Everything now lives in one CLUBS object below;
-// edit an entry and re-run this one script.
-//
-// Uses the admin SDK (serviceAccountKey.json), same as the old
-// set-club-*.js scripts — bypasses auth/security rules entirely, so
-// unlike the old clubs.mjs there's no FACULTY_EMAIL/FACULTY_PASSWORD or
-// --env-file needed. Just:
-//
-//   node manage-clubs.js
-//
-// Safe to re-run any time — every club is created if missing, or
-// updated in place if it already exists (the old clubs.mjs used to
-// SKIP existing clubs entirely, so editing a description or fixing a
-// lead's email after creation silently did nothing unless you knew to
-// use a different script; this always applies what's below).
-//
-// Parents are resolved by name in a second pass, so a sub-club can list
-// its parent's exact name below without worrying about lookup order.
+
 
 const { initializeApp } = require("firebase-admin/app");
 const { cert } = require("firebase-admin/app");
@@ -32,14 +8,8 @@ const serviceAccount = require("./serviceAccountKey.json");
 initializeApp({ credential: cert(serviceAccount) });
 const db = getFirestore();
 
-// name -> {
-//   category, description,
-//   leadName, leadEmail?,             (leadEmail omitted = name-only lead, no account link/permissions)
-//   extraLeads?: [{ name, email? }],  (co-leads; email optional per person, same name-only rule)
-//   parent?: "Exact Parent Club Name",
-// }
 const CLUBS = {
-  // ---------------- Cultural (mother club: SARAS) ----------------
+
   "SARAS": {
     category: "Cultural",
     description: "Cultural club of IIIT Surat.",
@@ -91,7 +61,6 @@ const CLUBS = {
     ],
   },
 
-  // ---------------- Technical ----------------
   "Google Developers Group (GDG) IIIT Surat": {
     category: "Technical",
     description: "Student-led developer community supported by Google; workshops, hackathons, and project-based learning.",
@@ -108,21 +77,15 @@ const CLUBS = {
   },
   "Inspire": {
     category: "Spritual", description: "Spritual club of IIIT Surat.",
-    // Email derived from the "UI24EC68" enrollment number following the
-    // ui24<branch><roll>@iiitsurat.ac.in pattern every other real lead
-    // below uses — not given as a literal email, confirm before relying on it.
+
     leadName: "Yashvardhan Gautam", leadEmail: "ui24ec68@iiitsurat.ac.in",
   },
 
-  // ---------------- Entrepreneur ----------------
   "Ruminate": {
     category: "Entrepreneur", description: "Entrepreneurship cell of IIIT Surat, founded 2019.",
     leadName: "Nityam Dave", leadEmail: "ui24cs52@iiitsurat.ac.in",
   },
 
-  // ---------------- Academic ----------------
-  // Both still carry a placeholder test-*@iiitsurat.ac.in email — nobody's
-  // given a real lead for these two yet. Fill in leadEmail here once known.
   "Ramanujan Mathematics Club (RMC)": {
     category: "Academic", description: "Mathematics-focused club for problem-solving and analytical thinking.",
     leadName: "Parth Acharya (President)", leadEmail: "ui24cs56@iiitsurat.ac.in",
@@ -132,18 +95,12 @@ const CLUBS = {
     leadName: "TBD", leadEmail: "test-astra@iiitsurat.ac.in",
   },
 
-  // ---------------- Sports (mother club: Indominous Club) ----------------
   "Indominous Club": {
     category: "Sports", description: "Sports club of IIIT Surat.",
     leadName: "Akash Kumar", leadEmail: "ui24ec04@iiitsurat.ac.in",
     extraLeads: [{ name: "Jatin Gajraj", email: "ui24ec30@iiitsurat.ac.in" }],
   },
-  // Indominous sub-clubs — every head below is name-only on purpose (no
-  // leadEmail/extraLeads email), same reasoning as the old
-  // seed-indominous-subclubs.js: display via formatClubLeads() in
-  // clubsService.ts, no in-app edit permissions, no email-posting access
-  // via ingestFacultyEmail.ts. Add a real email to any of these the same
-  // way the clubs above do it if a head later needs real posting access.
+
   "Cricket": { category: "Sports", description: "Cricket team under Indominous Club.", parent: "Indominous Club", leadName: "Avanish Kumar", extraLeads: [{ name: "Abhishek" }] },
   "Volleyball": { category: "Sports", description: "Volleyball team under Indominous Club.", parent: "Indominous Club", leadName: "Vikash Pooniya", extraLeads: [{ name: "Nanda Kishore" }] },
   "Kabaddi": { category: "Sports", description: "Kabaddi team under Indominous Club.", parent: "Indominous Club", leadName: "Vivek" },
@@ -178,8 +135,6 @@ async function main() {
   let updated = 0;
   const placeholders = [];
 
-  // Pass 1: create or update every club, without parentClubId yet — a
-  // sub-club's parent needs to exist (and have a real doc ID) first.
   for (const [name, club] of Object.entries(CLUBS)) {
     const leadEmail = club.leadEmail ? club.leadEmail.trim().toLowerCase() : null;
     const data = {
@@ -213,7 +168,6 @@ async function main() {
     }
   }
 
-  // Pass 2: resolve and set parentClubId for anything that declared one.
   for (const [name, club] of Object.entries(CLUBS)) {
     if (!club.parent) continue;
     const parentDoc = await findByName(club.parent);

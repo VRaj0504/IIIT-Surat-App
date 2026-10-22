@@ -1,11 +1,7 @@
-// functions/src/sendComplaintResolutionPush.ts
+
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import {getFirestore} from "firebase-admin/firestore";
 
-// Same pending -> resolved/rejected transition guard as
-// sendLeaveResolutionPush/sendExcusalResolutionPush, and the same
-// reasoning for skipping the notificationPreferences gate — a student
-// should never be able to silence "was my own complaint resolved".
 export const sendComplaintResolutionPush = onDocumentWritten(
   "complaints/{complaintId}",
   async (event) => {
@@ -19,8 +15,7 @@ export const sendComplaintResolutionPush = onDocumentWritten(
     const afterData = after.data() as {
       studentUid: string;
       status: "pending" | "resolved" | "rejected";
-      // Missing on docs written before `type` existed — treated as
-      // "complaint" below, the original meaning of this collection.
+
       type?: "complaint" | "doubt";
       subject: string;
       resolvedByName: string | null;

@@ -53,7 +53,7 @@ export default function MyDownloadsScreen() {
           const contentUri = await getContentUriAsync(file.uri);
           await IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
             data: contentUri,
-            flags: 1, // Intent.FLAG_GRANT_READ_URI_PERMISSION
+            flags: 1,
             type: guessMimeType(file.name),
           });
           return;
@@ -99,7 +99,7 @@ export default function MyDownloadsScreen() {
           }
           snapshots.push({ uri: e.uri, name: e.name, size });
         } catch {
-          // unreadable entry — skip it rather than break the whole list
+
         }
       }
       setFiles(snapshots);

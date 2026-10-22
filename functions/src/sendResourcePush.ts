@@ -1,10 +1,6 @@
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {getFirestore} from "firebase-admin/firestore";
 
-// Mirrors src/utils/academicInfo.ts's getCurrentSemester — duplicated for
-// the same cross-project-import reason as sendClassReminderPush.ts (this
-// is a separate TypeScript project from the mobile app's src/, so it
-// can't import that file directly).
 function getCurrentSemester(admissionYear: number, today: Date): number {
   const currentMonth = today.getMonth() + 1;
   const currentYear = today.getFullYear();
@@ -15,12 +11,6 @@ function getCurrentSemester(admissionYear: number, today: Date): number {
   return academicYearIndex * 2 + 1 + (isOddSemesterPeriod ? 0 : 1);
 }
 
-// Resources have no push at all before this — every upload (manual, via
-// faculty-upload-web, or auto-published through the email pipeline in
-// ingestFacultyEmail.ts) only ever showed up silently in the in-app feed.
-// Resources only carry branch + semester (no section — see
-// resourceService.ts), so matching is coarser than notices/announcements:
-// everyone in that branch+semester gets it, regardless of section.
 export const sendResourcePush = onDocumentCreated(
   "resources/{resourceId}",
   async (event) => {

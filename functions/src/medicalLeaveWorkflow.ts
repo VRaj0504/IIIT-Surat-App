@@ -14,21 +14,6 @@ import {
   TTDay,
 } from "./medicalLeaveTeachers";
 
-// MEDICAL LEAVE CHAIN
-//
-//   student submits ──► doctor ──► HOD (student's branch) ──► teachers ──► done
-//                         │            │
-//                         └────────────┴──► rejected
-//
-// The app/portal move `stage` forward for the doctor and HOD steps
-// (firestore.rules checks each person can only act on their own step).
-// This function does everything else:
-//   • pushes whoever's turn it now is, and keeps the student informed;
-//   • after HOD approval, works out which teachers' classes the student
-//     missed (timetable × leave dates) and creates one teacherAcks doc
-//     per teacher for them to confirm;
-//   • when the last teacher confirms, marks the leave "done".
-
 type Decision = {decision: "approved" | "rejected"; remark?: string | null; by: string; byName?: string};
 
 type MedicalLeave = {
@@ -60,8 +45,6 @@ async function tokensForUid(db: FirebaseFirestore.Firestore, uid: string): Promi
   return t ? [t] : [];
 }
 
-// Faculty are addressed by email (they may not even have signed in yet),
-// so their push tokens are looked up by the email on their profile.
 async function tokensForEmails(db: FirebaseFirestore.Firestore, emails: string[]): Promise<string[]> {
   const tokens: string[] = [];
   const unique = Array.from(new Set(emails.map((e) => e.toLowerCase()).filter(Boolean)));
@@ -79,7 +62,6 @@ function range(l: MedicalLeave): string {
   return l.fromDate === l.toDate ? l.fromDate : `${l.fromDate} → ${l.toDate}`;
 }
 
-// Step 3 setup: who has to confirm, for which classes.
 async function createTeacherAcks(
   db: FirebaseFirestore.Firestore,
   leaveRef: FirebaseFirestore.DocumentReference,
@@ -91,7 +73,6 @@ async function createTeacherAcks(
     return {teacherEmails: [], note: "Student profile has no branch/batch, so their timetable couldn't be found."};
   }
 
-  // Same doc-id scheme as timetableService.ts (MNC shares CSE's timetable).
   const ttBranch = student.branch.toUpperCase() === "MNC" ? "CSE" : student.branch;
   const semester = semesterOn(student.admissionYear, leave.fromDate);
   let ttSnap = await db.collection("timetable").doc(`${ttBranch}-${semester}-${student.section ?? ""}`).get();
@@ -129,7 +110,6 @@ async function createTeacherAcks(
     (d) => isNoClassDay(d) || overrides.has(d),
   );
 
-  // Idempotent: a retried run never resets a teacher who already confirmed.
   const existing = await leaveRef.collection("teacherAcks").get();
   const have = new Set(existing.docs.map((d) => d.id));
   const batch = db.batch();
@@ -163,8 +143,7 @@ async function createTeacherAcks(
       ...(tasks.length === 0 ? {stage: "done", teacherNote: "No classes fell within these dates."} : {}),
     });
   } else {
-    // A retried run: acks already exist and some may be confirmed — never
-    // reset the progress counters (the confirm trigger owns those).
+
     batch.update(leaveRef, {
       teacherEmails: Array.from(new Set([...existing.docs.map((d) => d.id), ...teacherEmails])),
       teachersTotal: new Set([...existing.docs.map((d) => d.id), ...teacherEmails]).size,
@@ -186,7 +165,7 @@ export const medicalLeaveWorkflow = onDocumentWritten("leaveApplications/{leaveI
   if (leave.type !== "medical" || !leave.stage) return;
   const before = event.data?.before;
   const prevStage = before?.exists ? (before.data() as MedicalLeave).stage : undefined;
-  if (prevStage === leave.stage) return; // not a stage change
+  if (prevStage === leave.stage) return;
 
   const db = getFirestore();
   const who = `${leave.studentName}${leave.studentEnrollmentNumber ? ` (${leave.studentEnrollmentNumber})` : ""}`;
@@ -221,8 +200,7 @@ export const medicalLeaveWorkflow = onDocumentWritten("leaveApplications/{leaveI
   }
   case "teachers": {
     const {teacherEmails} = await createTeacherAcks(db, after.ref, leave);
-    // With no teachers, createTeacherAcks already moved the leave to
-    // "done", whose own push tells the student — don't send two.
+
     if (teacherEmails.length === 0) return;
     await Promise.all([
       sendExpoPush(
@@ -265,8 +243,6 @@ export const medicalLeaveWorkflow = onDocumentWritten("leaveApplications/{leaveI
   }
 });
 
-// A teacher confirmed: recount from scratch (safe to retry), record the
-// excused sessions, and close the leave when everyone has confirmed.
 export const medicalLeaveTeacherConfirmed = onDocumentUpdated(
   "leaveApplications/{leaveId}/teacherAcks/{teacherEmail}",
   async (event) => {

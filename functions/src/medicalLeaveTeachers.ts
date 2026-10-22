@@ -1,7 +1,4 @@
-// Pure logic for the last step of a medical leave: given the student's
-// timetable and the leave dates, which teachers' classes did they miss,
-// and on which dates? No Firebase in here, so it can be tested on its own
-// against the real seed timetable.
+
 
 export type TTSlot = {
   startTime: string;
@@ -23,15 +20,11 @@ export type TeacherTask = {email: string; name: string; subjects: TeacherSubject
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-// "YYYY-MM-DD" -> "Monday". Pure calendar arithmetic in UTC, so the
-// server's own timezone can never shift a date by one.
 export function weekdayOf(dateIso: string): string {
   const [y, m, d] = dateIso.split("-").map(Number);
   return WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
 }
 
-// Every calendar date from..to inclusive. Capped so a typo like a
-// 2062 end date can't make the function loop for decades.
 export function datesInRange(fromIso: string, toIso: string, maxDays = 62): string[] {
   const parse = (s: string) => {
     const [y, m, d] = s.split("-").map(Number);
@@ -47,7 +40,6 @@ export function datesInRange(fromIso: string, toIso: string, maxDays = 62): stri
   return out;
 }
 
-// "DN/PJM", "DN, PJM", "DN & PJM" -> ["DN", "PJM"]
 export function splitFaculty(faculty: string): string[] {
   return String(faculty ?? "")
     .split(/[/,&;]+/)
@@ -60,10 +52,8 @@ export function sameDay(a: string, b: string): boolean {
   return norm(a) !== "" && norm(a) === norm(b);
 }
 
-// Initials as printed in a timetable -> a comparable key ("D.N" == "DN").
 export const initialsKey = (s: string) => String(s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 
-// Names -> a comparable key ("Dr. Nidhi  Desai" == "nidhi desai").
 export function nameKey(name: string): string {
   return String(name ?? "")
     .toLowerCase()
@@ -72,11 +62,6 @@ export function nameKey(name: string): string {
     .trim();
 }
 
-// Builds "timetable initials -> faculty account" from the faculty
-// allowlist. Two routes, first match wins:
-//   1. the allowlist entry's own shortForm ("DN") — the most reliable;
-//   2. the shared initials legend (facultyLegend.ts) gives a full name,
-//      matched against the allowlist entry's name.
 export function buildFacultyResolver(
   allowlist: {email: string; name?: string; shortForm?: string}[],
   legendLookup: (initials: string) => string | undefined,
@@ -104,10 +89,7 @@ export function buildFacultyResolver(
       const key = nameKey(legendName);
       const viaName = byName.get(key);
       if (viaName) return viaName;
-      // Middle names differ between sources ("Manish Rai" in the legend,
-      // "Dr. Manish Kumar Rai" on the allowlist): accept a match when
-      // every word of the legend name appears in exactly ONE allowlist
-      // name — never guess between two candidates.
+
       const words = key.split(" ").filter(Boolean);
       if (words.length >= 2) {
         const hits = Array.from(byName.entries()).filter(([k]) => {
@@ -121,14 +103,6 @@ export function buildFacultyResolver(
   };
 }
 
-// The core of step 3. For every leave date the college actually holds
-// classes (isNoClassDay filters holidays/weekends-with-no-slots), every
-// slot in the student's timetable that day is a class they missed; each
-// person named in that slot's faculty field gets it on their list.
-//
-// A lab split into Group 1 / Group 2 has no record of which group THIS
-// student is in, so both groups' teachers are included — a teacher
-// whose group the student isn't in simply confirms nothing changes.
 export function computeTeacherTasks(
   days: TTDay[],
   dates: string[],
@@ -162,7 +136,7 @@ export function computeTeacherTasks(
           subj = {code, name: String(slot.subjectName ?? "").trim() || code, dates: []};
           entry.subjects.set(code, subj);
         }
-        // A lab and its lecture often share one code ("PPS Lab" + "PPS").
+
         const slotName = String(slot.subjectName ?? "").trim();
         if (slotName && !subj.name.split(" / ").includes(slotName)) subj.name = `${subj.name} / ${slotName}`;
         if (!subj.dates.includes(date)) subj.dates.push(date);
@@ -181,16 +155,12 @@ export function computeTeacherTasks(
   return {tasks, unmatched: Array.from(unmatched).sort()};
 }
 
-// "CS304|2026-10-19" — one excused class session. Used by the app's
-// attendance calculation (attendanceService.ts) once a teacher confirms.
 export function excusedSessionKeys(subjects: TeacherSubject[]): string[] {
   const out: string[] = [];
   for (const s of subjects) for (const d of s.dates) out.push(`${s.code}|${d}`);
   return out;
 }
 
-// Mirrors src/utils/academicInfo.ts's getCurrentSemester (functions/ is
-// a separate TS project and can't import from src/).
 export function semesterOn(admissionYear: number, dateIso: string): number {
   const [y, m] = dateIso.split("-").map(Number);
   const isOdd = m >= 7;

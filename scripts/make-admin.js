@@ -1,12 +1,4 @@
-// Gives an account full admin access (faculty portal + admin rights in the
-// app and database) WITHOUT changing their normal role — a student stays a
-// student in the app, with their own timetable and attendance.
-//
-// Run:    node scripts/make-admin.js ug25cse114@iiitsurat.ac.in
-// Remove: node scripts/make-admin.js ug25cse114@iiitsurat.ac.in --remove
-//
-// The account must have signed in to the app at least once.
-// Needs scripts/serviceAccountKey.json.
+
 
 const { initializeApp, cert } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");

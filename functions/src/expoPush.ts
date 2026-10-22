@@ -1,6 +1,5 @@
-// Sends one Expo push message per token, 100 per request (Expo's batch
-// limit). Shared by the exam-schedule and grade triggers; the older push
-// functions each carry their own inline copy of this same loop.
+
+
 export async function sendExpoPush(
   tokens: string[],
   title: string,

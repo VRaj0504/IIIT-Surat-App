@@ -1,7 +1,6 @@
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {getFirestore} from "firebase-admin/firestore";
 
-
 export const sendAnnouncementPush = onDocumentCreated(
   "announcements/{announcementId}",
   async (event) => {
@@ -21,11 +20,7 @@ export const sendAnnouncementPush = onDocumentCreated(
     if (announcement.targetBranch) {
       query = query.where("branch", "==", announcement.targetBranch);
     }
-    // section/admissionYear/specialization are matched in-memory below
-    // rather than chained onto the query, since Firestore only allows one
-    // range/array field per composite without a matching index — doing it
-    // this way needs no new composite index, same reasoning as everywhere
-    // else in this app that targets a class.
+
     const snapshot = await query.get();
 
     const tokens: string[] = [];
@@ -57,8 +52,6 @@ export const sendAnnouncementPush = onDocumentCreated(
 
     if (tokens.length === 0) return;
 
-    // Expo's push API accepts up to 100 messages per request — chunk to
-    // stay under that regardless of how big a class is.
     const CHUNK_SIZE = 100;
     const chunks: string[][] = [];
     for (let i = 0; i < tokens.length; i += CHUNK_SIZE) {

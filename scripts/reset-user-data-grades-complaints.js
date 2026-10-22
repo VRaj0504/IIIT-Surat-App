@@ -1,12 +1,4 @@
-// Resets test data across the app back to a clean slate.
-// Touches ONLY: grades (transcript) and complaints (complaints + doubts,
-// same collection). Nothing in Storage is tied to either of these, so
-// this script only needs Firestore.
-//
-//   node reset-user-data.js            (dry run — just counts/lists)
-//   node reset-user-data.js --confirm  (actually deletes everything)
-//
-// Irreversible. Run only when you actually want a clean slate.
+
 
 const { initializeApp, cert } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");

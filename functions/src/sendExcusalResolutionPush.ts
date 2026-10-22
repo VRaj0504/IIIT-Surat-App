@@ -1,19 +1,6 @@
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import {getFirestore} from "firebase-admin/firestore";
 
-// Same pending -> approved/rejected transition guard as
-// sendLeaveResolutionPush, and same reasoning for skipping the
-// notificationPreferences gate.
-//
-// An excusal is submitted BY a student coordinator ON BEHALF OF a list of
-// students (studentEnrollmentNumbers) — there's no single "requester uid"
-// the way leaveApplications has, and enrollment numbers alone aren't
-// enough to look up push tokens (see resolveRosterSection-style scoping
-// elsewhere for why enrollment number isn't the same thing as a uid).
-// submittedBy (the coordinator's own uid) is the one account that
-// actually tracks this request end to end, so that's who gets pushed —
-// matches the existing model where only the coordinator sees this in
-// their own submission history, not each individual excused student.
 export const sendExcusalResolutionPush = onDocumentWritten(
   "eventExcusals/{excusalId}",
   async (event) => {

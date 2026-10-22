@@ -1,37 +1,4 @@
-// Bulk-uploads PYQs organized as:
-//
-//   ECE/
-//     END-SEM/
-//       SEM-2/
-//         Electronic Devices and Circuits (EDC).pdf
-//         Yoga Practice (YP).pdf
-//       SEM-4/
-//         Analog Circuits (AC).pdf
-//         ...
-//     MID-SEM/
-//       SEM-2/
-//         ...
-//
-// This is a DIFFERENT shape than bulk-upload-pyqs.mjs handles (that one
-// expects {SEM N}/{Subject folder}/{MID SEM|END SEM}/{file with year in
-// the name}) — here exam type comes before semester, the subject lives
-// in the FILENAME itself rather than a folder, and critically there's no
-// year anywhere in the folder names or filenames at all. Rather than
-// make one script silently auto-detect two different layouts (real risk
-// of misreading one as the other), this is its own script for this
-// exact shape. The exam year has to be told to it explicitly, as a
-// second argument.
-//
-// Subject matching (curriculum lookup, fuzzy name matching, cross-
-// semester detection using curriculum's CURRENT semester when a subject
-// moved) works exactly like bulk-upload-pyqs.mjs — see that script's
-// comments for the reasoning.
-//
-// Usage:
-//   FACULTY_EMAIL=... FACULTY_PASSWORD=... node bulk-upload-pyqs-v2.mjs ./ECE 2024
-//   FACULTY_EMAIL=... FACULTY_PASSWORD=... node bulk-upload-pyqs-v2.mjs ./ECE 2024 --confirm
-//
-// Defaults to a dry run.
+
 
 import fs from 'fs';
 import path from 'path';
@@ -85,22 +52,15 @@ function listFiles(dir) {
     .map((e) => e.name);
 }
 
-// "Electronic Devices and Circuits (EDC).pdf" -> "EDC"
-// Handles both "Name (ABBR).pdf" and "Name(ABBR).pdf" (no space) —
-// several files in the real ECE folder have no space before the paren.
 function extractCode(fileNameNoExt) {
   const match = fileNameNoExt.match(/\(([^)]+)\)\s*$/);
   return match ? match[1].trim() : null;
 }
 
-// "Electronic Devices and Circuits (EDC).pdf" -> "Electronic Devices and Circuits"
 function stripCode(fileNameNoExt) {
   return fileNameNoExt.replace(/\s*\([^)]+\)\s*$/, '').trim();
 }
 
-// Tolerates spelling drift — "Database Management Systems" vs
-// "DataBase Management System" — without being so loose it starts
-// matching genuinely different subjects.
 function normalizeForMatch(str) {
   return str
     .toLowerCase()
@@ -153,10 +113,6 @@ async function main() {
   console.log(`Branch (from folder name): ${branch}`);
   console.log(`Exam year (given): ${EXAM_YEAR}\n`);
 
-  // Fetched once for the whole branch — lets a subject that moved
-  // semesters in a curriculum revision still be found and correctly
-  // re-assigned to its CURRENT semester, same reasoning as
-  // bulk-upload-pyqs.mjs.
   const curriculumSnap = await getDocs(query(collection(db, 'curriculum'), where('branch', '==', branch)));
   const allCurriculum = curriculumSnap.docs.map((d) => d.data());
   const bySemester = new Map();

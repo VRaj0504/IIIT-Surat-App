@@ -1,23 +1,4 @@
-// One-time repair script: rebuilds users/{uid} for every faculty account
-// whose Firestore profile got deleted in the full `users` collection wipe
-// earlier, without needing each of them to individually sign back into
-// the mobile app first.
-//
-// How it works: lists every real Firebase Auth account, and for each one
-// whose email matches an allowlist entry with role == 'faculty', writes
-// exactly the same fields onto users/{uid} that AuthContext.ts's signup
-// flow would have written for them — department, designation, roleEmail,
-// shortForm, name, email, role. Uses set(..., { merge: true }), so it
-// only adds/overwrites these specific fields — it will NOT touch or
-// delete anything else already on their profile (like officeHours/
-// officeLocation/phone a faculty member self-edited via EditProfileScreen)
-// if their doc happens to already exist and just needs these fields
-// filled back in.
-//
-// Safe to re-run: for a faculty member whose profile is already correct,
-// this just rewrites the same values, changing nothing in practice.
-//
-// Run: node scripts/fix-faculty-profiles.js
+
 
 const { initializeApp } = require("firebase-admin/app");
 const { cert } = require("firebase-admin/app");
@@ -61,7 +42,7 @@ async function main() {
     const allowSnap = await db.collection("allowlist").doc(email).get();
     if (!allowSnap.exists) {
       skipped++;
-      continue; // not a faculty allowlist entry — leave students etc. alone
+      continue;
     }
     const allowData = allowSnap.data();
     if (allowData.role !== "faculty") {

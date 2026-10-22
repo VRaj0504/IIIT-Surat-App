@@ -2,16 +2,10 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // ---- helpers -------------------------------------------------------
     function signedIn() {
       return request.auth != null;
     }
 
-    // Signed in AND has a profile in Firestore. Any Firebase account counts
-    // as "signedIn" — including one made by calling the public sign-up API
-    // with a personal Gmail — but a users/{uid} profile can only be created
-    // with a verified @iiitsurat.ac.in address (see firestore.rules). So
-    // this is what actually means "a member of the college".
     function isMember() {
       return signedIn() &&
         firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
@@ -29,8 +23,6 @@ service firebase.storage {
       return signedIn() && (userRole() == 'faculty' || userRole() == 'admin');
     }
 
-    // NOTE: request.resource is null on delete, so every size/type check
-    // below lives on `create, update` only — delete rules are separate.
     function smallImage(maxMb) {
       return request.resource.size < maxMb * 1024 * 1024 &&
         request.resource.contentType.matches('image/.*');
@@ -40,17 +32,12 @@ service firebase.storage {
       return request.resource.size < maxMb * 1024 * 1024;
     }
 
-    // ---- resources: notes / PYQs / slides filed by faculty ---------------
     match /resources/{allPaths=**} {
       allow read: if isMember();
       allow create, update: if isFaculty() && underMb(50);
       allow delete: if isFaculty();
     }
 
-    // ---- Lost & Found photos ---------------------------------------------
-    // Anyone signed in can browse; you can only write/delete inside your OWN
-    // folder (the app uploads to lostFound/{postedBy}/...). Faculty/admin can
-    // delete for moderation.
     match /lostFound/{allPaths=**} {
       allow read: if isMember();
     }
@@ -59,42 +46,34 @@ service firebase.storage {
       allow delete: if isMember() && (request.auth.uid == uid || isStaff());
     }
 
-    // ---- temporary OCR inputs ---------------------------------------------
     match /posterScans/{uid}/{allPaths=**} {
       allow read, delete: if isMember() && request.auth.uid == uid;
       allow create, update: if isMember() && request.auth.uid == uid && smallImage(8);
     }
 
-    // Only faculty/admin import timetables, so only they may stage scans.
     match /timetableScans/{uid}/{allPaths=**} {
       allow read, delete: if isMember() && request.auth.uid == uid;
       allow create, update: if isStaff() && request.auth.uid == uid && smallImage(10);
     }
 
-    // ---- inbound-email attachments (written only by the Admin SDK) -------
     match /pendingImports/{allPaths=**} {
       allow read: if isStaff();
       allow create, update: if false;
       allow delete: if isStaff();
     }
 
-    // ---- profile photos ----------------------------------------------------
     match /profilePhotos/{uid}/{allPaths=**} {
       allow read: if isMember();
       allow create, update: if isMember() && request.auth.uid == uid && smallImage(5);
       allow delete: if isMember() && request.auth.uid == uid;
     }
 
-    // ---- medical leave attachments (sensitive) -----------------------------
-    // Readable only by the student and faculty/admin. The old broad-read
-    // `leaveDocuments/` rule was removed: the app only ever uses this path.
     match /medicalReports/{uid}/{allPaths=**} {
       allow read: if isMember() && (request.auth.uid == uid || isStaff());
       allow create, update: if isMember() && request.auth.uid == uid && underMb(10);
       allow delete: if isMember() && request.auth.uid == uid;
     }
 
-    // ---- exam date sheet originals -----------------------------------------
     match /examSheets/{uid}/{allPaths=**} {
       allow read: if isMember();
       allow create, update: if isStaff() && request.auth.uid == uid && underMb(10);

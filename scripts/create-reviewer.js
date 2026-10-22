@@ -1,13 +1,4 @@
-// Creates (or resets) the single app-store reviewer login.
-//
-//   node scripts/create-reviewer.js "SomeStrongPassword123"
-//
-// Email: reviewer@collegego.app  (the only non-institute address the app accepts)
-// Signs in as a CSE2 (2025 batch) student "App Reviewer", UG25CSE999, so the
-// reviewer sees a real timetable, notices and attendance. It is hidden from
-// faculty class lists, and SOS from it runs in demo mode (nobody is alerted).
-// Needs serviceAccountKey.json, and Email/Password enabled in
-// Firebase Console → Authentication → Sign-in method.
+
 
 const { initializeApp, cert } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");

@@ -19,14 +19,9 @@ type ExtractExamScheduleResponse = {
 };
 
 const ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png"];
-// A callable request body is capped at 10 MB and base64 adds ~33%, so the
-// real file has to stay under roughly 7 MB.
+
 const MAX_BYTES = 6.5 * 1024 * 1024;
 
-// The faculty portal's "Upload PDF" path for a date sheet. Same reading
-// logic as the email path (examSheetExtraction.ts) — the difference is
-// only where the file comes from. Returns DRAFT groups; nothing is
-// written to Firestore here, the portal shows them for review first.
 export const extractExamSchedule = onCall<ExtractExamScheduleRequest, Promise<ExtractExamScheduleResponse>>(
   {region: "asia-south1", secrets: [geminiKey], memory: "512MiB", timeoutSeconds: 120},
   async (request) => {

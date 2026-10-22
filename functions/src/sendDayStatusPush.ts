@@ -5,16 +5,6 @@ import {loadHolidayOverrides} from "./holidayOverrides";
 import {loadExamDocs, examDayMessage, currentSemester, sheetBranchFor} from "./examPeriod";
 import {sendExpoPush} from "./expoPush";
 
-// The replacement for "Class in 3 minutes" on days there ARE no classes.
-// sendClassReminderPush stays silent on a holiday or while a class's
-// exams run; this is the one message that says why, instead of leaving
-// people wondering whether the app broke:
-//   holiday      -> everyone (students and faculty): "Holiday today: ..."
-//   exam period  -> each class: what's on today, if anything
-// Nothing is sent on an ordinary class day, and nothing on a weekend
-// (there are no classes to be confused about). Follows the same
-// "Class reminders" switch in Notification Settings — someone who turned
-// those off doesn't get this either.
 function istDateIso(now: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kolkata",
@@ -22,7 +12,7 @@ function istDateIso(now: Date = new Date()): string {
     month: "2-digit",
     day: "2-digit",
   }).format(now);
-  return parts; // en-CA formats as YYYY-MM-DD
+  return parts;
 }
 
 type NotifiableUser = {
@@ -36,12 +26,7 @@ type NotifiableUser = {
 
 export const sendDayStatusPush = onSchedule(
   {
-    // 7:30 AM IST, Monday to Friday.
-    // Runs every day, not just Mon-Fri — exams (unlike regular classes,
-    // which really are Mon-Fri only in this data) sometimes land on a
-    // Saturday or Sunday, and a weekday-only schedule would silently
-    // never announce one. The function's own holiday/no-class checks
-    // below already handle a genuine day off correctly either way.
+
     schedule: "30 7 * * *",
     timeZone: "Asia/Kolkata",
     region: "asia-south1",
@@ -50,11 +35,7 @@ export const sendDayStatusPush = onSchedule(
     const db = admin.firestore();
     const todayIso = istDateIso();
     const holidayOverrides = await loadHolidayOverrides(db);
-    // A fixed-calendar holiday and an ad-hoc one should never both be
-    // set for the same date in practice, but if they somehow were, the
-    // fixed calendar's name wins — it's the one that went through
-    // review when the year's dates were first entered, not a same-day
-    // manual add.
+
     const holiday = getNoClassReason(todayIso) ?? holidayOverrides.get(todayIso) ?? null;
 
     const snap = await db.collection("users").where("role", "in", ["student", "faculty"]).get();
@@ -77,7 +58,6 @@ export const sendDayStatusPush = onSchedule(
     const docs = await loadExamDocs(db);
     if (docs.length === 0) return;
 
-    // One message per class (branch + semester), sent to that class only.
     const byClass = new Map<string, {title: string; body: string; tokens: string[]}>();
     for (const u of users) {
       if (u.role !== "student" || !u.branch || !u.admissionYear) continue;
@@ -88,7 +68,7 @@ export const sendDayStatusPush = onSchedule(
       if (!entry) {
         const message = examDayMessage(docs, branch, semester, todayIso);
         if (!message) {
-          byClass.set(key, {title: "", body: "", tokens: []}); // remember "nothing to say" for this class
+          byClass.set(key, {title: "", body: "", tokens: []});
           continue;
         }
         entry = {...message, tokens: []};

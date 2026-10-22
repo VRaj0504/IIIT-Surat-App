@@ -1,9 +1,4 @@
-// Finds students whose app profile is missing branch / section / admission
-// year (the app then says "Your branch, section, and admission year aren't
-// set on your profile yet") and copies the values from the roster.
-//
-//   node scripts/fix-incomplete-profiles.js            (report only)
-//   node scripts/fix-incomplete-profiles.js --apply    (fix profiles from the roster)
+
 
 const { initializeApp, cert } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");

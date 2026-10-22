@@ -1,17 +1,5 @@
-// One-off: publishes the Mid Semester date sheet (Sept 2026) for 3rd, 5th and
-// 7th semester CSE + ECE, including the Repeaters page, exactly as printed
-// on "Time Table Mid Sem exam Sept 2026 (3rd, 5th & 7th ECE, CSE).pdf"
-// (dated 07/09/2026). It writes the same `examSchedules` documents the
-// faculty portal's PDF import would, so it's a safe fallback if that import
-// is unavailable — and running it again just overwrites the same 9 docs.
-//
-// Run from the repo root:
-//   FACULTY_EMAIL=... FACULTY_PASSWORD=... node --env-file=.env scripts/seed-exam-schedule-midsem-sept-2026.mjs
-// Optional, to attach the original PDF so students can open it from the app:
-//   ... PDF_PATH="/path/to/that.pdf" node --env-file=.env scripts/seed-exam-schedule-midsem-sept-2026.mjs
-//
-// Transcribed by hand from the scan — compare against the PDF before you
-// rely on it (a few minutes: 54 rows, 9 sheets).
+
+
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { initializeApp } from 'firebase/app';
@@ -33,8 +21,6 @@ const firebaseConfig = {
   appId: '1:568691830636:web:4be7fd34f4098d1d994d49',
 };
 
-// "CS514 / EC513" cells are the sheet's "Subject A OR Subject B" cells: one
-// exam slot, the student sits whichever elective they took.
 const GROUPS = [
   {
     branch: 'CSE', semester: 3, examType: 'midsem', examTypeLabel: 'Mid Semester',

@@ -1,5 +1,4 @@
-// Server-side copy of src/data/facultyLegend.ts — functions/ is a separate
-// TypeScript project and cannot import from src/. KEEP THE MAP IN SYNC BY HAND.
+
 
 export const FACULTY_LEGEND: Record<string, string> = {
   "K.D.": "Kaustubh Dhondge",
@@ -35,13 +34,6 @@ export const FACULTY_LEGEND: Record<string, string> = {
   "VP": "Vijay K Patel",
 };
 
-// The keys above are typed with dots/spaces ("R.N", "D.N", "T.G.", "N B")
-// but the timetables store bare initials ("RN", "DN", "TG", "NB"), so an
-// exact lookup missed most faculty — their classes never showed in their
-// own timetable and they never got class reminders. Lookup is now:
-// exact key first (so "RK" -> Rahul K Patel and "R.K." -> Ritesh Kumar
-// stay distinct), then the key with dots/spaces/hyphens stripped.
-// KEEP IN SYNC with src/data/facultyLegend.ts.
 const initialsKey = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
 const BY_EXACT = new Map<string, string>();
 const BY_LOOSE = new Map<string, string>();
@@ -58,7 +50,6 @@ export function lookupFacultyInitials(initials: string): string | undefined {
   return BY_EXACT.get(t.toUpperCase()) ?? BY_LOOSE.get(initialsKey(t));
 }
 
-// "DN/PJM", "DN, PJM", "DN & PJM" -> ["DN", "PJM"]
 export function splitFaculty(faculty: string): string[] {
   return String(faculty ?? "")
     .split(/[/,&;]+/)
@@ -72,9 +63,6 @@ export function expandFaculty(faculty: string): string {
     .join(" / ");
 }
 
-// For comparing a profile name against a legend name: ignores case,
-// "Dr."/"Prof." prefixes, dots and extra spaces ("Dr. Reema  Patel" ==
-// "reema patel").
 export function facultyNameKey(name: string): string {
   return String(name ?? "")
     .toLowerCase()
@@ -83,8 +71,6 @@ export function facultyNameKey(name: string): string {
     .trim();
 }
 
-// True if `facultyName` (a profile"s name) is one of the people teaching
-// a slot whose faculty field is `slotFaculty`.
 export function slotTaughtBy(slotFaculty: string, facultyName: string): boolean {
   const target = facultyNameKey(facultyName);
   if (!target) return false;
