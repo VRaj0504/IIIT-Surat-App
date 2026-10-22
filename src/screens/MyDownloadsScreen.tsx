@@ -12,7 +12,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { File, Paths } from "expo-file-system";
+import { File } from "expo-file-system";
+import { getDownloadsDir, migrateOldDownloads } from "../utils/downloadsDir";
 import { getContentUriAsync } from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
 import * as Sharing from "expo-sharing";
@@ -85,7 +86,8 @@ export default function MyDownloadsScreen() {
 
   const refresh = useCallback(() => {
     try {
-      const entries = Paths.document.list();
+      migrateOldDownloads();
+      const entries = getDownloadsDir().list();
       const snapshots: SavedFile[] = [];
       for (const e of entries) {
         if (!(e instanceof File)) continue;

@@ -11,7 +11,8 @@ import {
   ActivityIndicator,
   Platform,
 } from "react-native";
-import { File, Paths } from "expo-file-system";
+import { File } from "expo-file-system";
+import { getDownloadsDir } from "../utils/downloadsDir";
 import { addToWebDownloadHistory } from "../utils/webDownloadHistory";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -224,7 +225,7 @@ export default function ResourcesScreen() {
       const ext = extMatch ? `.${extMatch[1]}` : "";
 
       const safeName = item.title.replace(/[^a-zA-Z0-9 _-]/g, "").trim().replace(/\s+/g, "_") || "resource";
-      const destination = new File(Paths.document, `${safeName}${ext}`);
+      const destination = new File(getDownloadsDir(), `${safeName}${ext}`);
       const downloaded = await File.downloadFileAsync(item.fileUrl, destination, {
         idempotent: true,
       });
