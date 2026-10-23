@@ -52,7 +52,16 @@
         }
       ],
       "expo-status-bar",
-      "expo-sharing",
+            "expo-sharing",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ],
       [
         "expo-location",
         {
