@@ -18,7 +18,7 @@ type Decision = {decision: "approved" | "rejected"; remark?: string | null; by: 
 
 type MedicalLeave = {
   type: "medical" | "casual";
-  stage?: "doctor" | "hod" | "teachers" | "done" | "rejected";
+  stage?: "doctor" | "dr" | "dean" | "hod" | "teachers" | "done" | "rejected";
   studentUid: string;
   studentName: string;
   studentEnrollmentNumber?: string;
@@ -26,17 +26,27 @@ type MedicalLeave = {
   doctorName?: string;
   hodEmail: string;
   hodName?: string;
+  drEmail?: string;
+  drName?: string;
+  deanEmail?: string;
+  deanName?: string;
   fromDate: string;
   toDate: string;
   doctorDecision?: Decision;
+  drDecision?: Decision;
+  deanDecision?: Decision;
   hodDecision?: Decision;
   teachersTotal?: number;
+  autoExcused?: boolean;
 };
 
 type AckDoc = {
   email: string;
-  status: "pending" | "confirmed";
+  name?: string;
+  status: "pending" | "confirmed" | "excused" | "declined";
   subjects: TeacherSubject[];
+  declinedSessions?: string[];
+  studentUid?: string;
 };
 
 async function tokensForUid(db: FirebaseFirestore.Firestore, uid: string): Promise<string[]> {
@@ -66,11 +76,11 @@ async function createTeacherAcks(
   db: FirebaseFirestore.Firestore,
   leaveRef: FirebaseFirestore.DocumentReference,
   leave: MedicalLeave,
-): Promise<{teacherEmails: string[]; note: string | null}> {
+): Promise<{teacherEmails: string[]; note: string | null; fallback?: boolean}> {
   const studentSnap = await db.collection("users").doc(leave.studentUid).get();
   const student = studentSnap.data() as {branch?: string; section?: string; admissionYear?: number} | undefined;
   if (!student?.branch || !student.admissionYear) {
-    return {teacherEmails: [], note: "Student profile has no branch/batch, so their timetable couldn't be found."};
+    return {teacherEmails: [], note: "Student profile has no branch/batch, so their timetable couldn't be found.", fallback: true};
   }
 
   const ttBranch = student.branch.toUpperCase() === "MNC" ? "CSE" : student.branch;
@@ -89,6 +99,7 @@ async function createTeacherAcks(
     return {
       teacherEmails: [],
       note: `No timetable found for ${ttBranch} Sem ${semester} ${student.section ?? ""} — teachers couldn't be worked out automatically.`,
+      fallback: true,
     };
   }
   const days = ((ttSnap.data() as {days?: TTDay[]}).days ?? []);
@@ -125,7 +136,8 @@ async function createTeacherAcks(
       fromDate: leave.fromDate,
       toDate: leave.toDate,
       subjects: t.subjects,
-      status: "pending",
+      status: "excused",
+      declinedSessions: [],
       createdAt: FieldValue.serverTimestamp(),
       confirmedAt: null,
       confirmedBy: null,
@@ -137,10 +149,12 @@ async function createTeacherAcks(
     batch.update(leaveRef, {
       teacherEmails,
       teachersTotal: tasks.length,
-      teachersConfirmed: 0,
-      excusedSessions: [],
+      teachersConfirmed: tasks.length,
+      excusedSessions: Array.from(new Set(tasks.flatMap((t) => excusedSessionKeys(t.subjects)))).sort(),
       unmatchedFaculty: unmatched,
-      ...(tasks.length === 0 ? {stage: "done", teacherNote: "No classes fell within these dates."} : {}),
+      autoExcused: true,
+      stage: "done",
+      ...(tasks.length === 0 ? {teacherNote: "Approved. No classes fell within these dates."} : {}),
     });
   } else {
 
@@ -181,46 +195,70 @@ export const medicalLeaveWorkflow = onDocumentWritten("leaveApplications/{leaveI
     );
     return;
   }
+  case "dr":
+  case "dean":
   case "hod": {
+    const target = leave.stage === "dr" ?
+      {email: leave.drEmail ?? "", name: leave.drName || "the Deputy Registrar"} :
+      leave.stage === "dean" ?
+        {email: leave.deanEmail ?? "", name: leave.deanName || "the Dean"} :
+        {email: leave.hodEmail, name: leave.hodName ?? "your HOD"};
+    const last = prevStage === "dean" ?
+      {d: leave.deanDecision, label: "Dean"} :
+      prevStage === "dr" ?
+        {d: leave.drDecision, label: "Deputy Registrar"} :
+        {d: leave.doctorDecision, label: "Doctor"};
     await Promise.all([
       sendExpoPush(
-        await tokensForEmails(db, [leave.hodEmail]),
+        await tokensForEmails(db, [target.email]),
         "Medical leave needs your approval",
-        `${who} · ${range(leave)} · approved by ${leave.doctorDecision?.byName ?? leave.doctorName ?? "the doctor"}.`,
+        `${who} · ${range(leave)} · approved by ${last.d?.byName ?? last.label}.`,
         tag,
       ),
       sendExpoPush(
         await tokensForUid(db, leave.studentUid),
-        "Doctor approved your medical leave",
-        `Now waiting for ${leave.hodName ?? "your HOD"}.`,
+        `${last.label} approved your medical leave`,
+        `Now waiting for ${target.name}.`,
         tag,
       ),
     ]);
     return;
   }
   case "teachers": {
-    const {teacherEmails} = await createTeacherAcks(db, after.ref, leave);
+    const {teacherEmails, fallback} = await createTeacherAcks(db, after.ref, leave);
+    if (fallback) {
+      await after.ref.update({
+        stage: "done",
+        autoExcused: true,
+        excuseAllDates: true,
+        teacherNote: "Approved. Every class in these dates counts as present.",
+      });
+    }
 
-    if (teacherEmails.length === 0) return;
     await Promise.all([
       sendExpoPush(
         await tokensForUid(db, leave.studentUid),
-        "HOD approved your medical leave",
-        `Your ${teacherEmails.length} teacher(s) are being asked to excuse the classes you missed.`,
+        "Medical leave approved",
+        teacherEmails.length > 0 ?
+          `Your classes from ${range(leave)} now count as present.` :
+          `Approved. No classes of yours fell within ${range(leave)}.`,
         tag,
       ),
-      sendExpoPush(
-        await tokensForEmails(db, teacherEmails),
-        "Excuse missed classes",
-        `${who} was on approved medical leave ${range(leave)}. Confirm the classes of yours they missed.`,
-        tag,
-      ),
+      teacherEmails.length > 0 ?
+        sendExpoPush(
+          await tokensForEmails(db, teacherEmails),
+          "Classes excused for medical leave",
+          `${who} was on approved medical leave ${range(leave)}. Their classes with you count as present. You can change this in Leave Requests.`,
+          tag,
+        ) :
+        Promise.resolve(),
     ]);
     return;
   }
   case "rejected": {
-    const d = leave.hodDecision?.decision === "rejected" ? leave.hodDecision : leave.doctorDecision;
-    const by = d?.byName ?? (d === leave.hodDecision ? leave.hodName : leave.doctorName) ?? "Your approver";
+    const d = [leave.hodDecision, leave.deanDecision, leave.drDecision, leave.doctorDecision]
+      .find((x) => x?.decision === "rejected");
+    const by = d?.byName ?? "Your approver";
     await sendExpoPush(
       await tokensForUid(db, leave.studentUid),
       "Medical leave rejected",
@@ -230,6 +268,7 @@ export const medicalLeaveWorkflow = onDocumentWritten("leaveApplications/{leaveI
     return;
   }
   case "done": {
+    if (leave.autoExcused || prevStage === "teachers") return;
     await sendExpoPush(
       await tokensForUid(db, leave.studentUid),
       "Medical leave complete",
@@ -248,23 +287,45 @@ export const medicalLeaveTeacherConfirmed = onDocumentUpdated(
   async (event) => {
     const before = event.data?.before.data() as AckDoc | undefined;
     const after = event.data?.after.data() as AckDoc | undefined;
-    if (!after || before?.status === after.status || after.status !== "confirmed") return;
+    if (!after) return;
+    const sameDeclined = JSON.stringify(before?.declinedSessions ?? []) === JSON.stringify(after.declinedSessions ?? []);
+    if (before?.status === after.status && sameDeclined) return;
 
     const db = getFirestore();
     const leaveRef = db.collection("leaveApplications").doc(event.params.leaveId);
+    let studentUid: string | null = null;
     await db.runTransaction(async (tx) => {
       const leaveSnap = await tx.get(leaveRef);
       if (!leaveSnap.exists) return;
       const leave = leaveSnap.data() as MedicalLeave;
+      studentUid = leave.studentUid;
       const acks = await tx.get(leaveRef.collection("teacherAcks"));
-      const confirmed = acks.docs.map((d) => d.data() as AckDoc).filter((a) => a.status === "confirmed");
-      const excused = Array.from(new Set(confirmed.flatMap((a) => excusedSessionKeys(a.subjects ?? [])))).sort();
+      const all = acks.docs.map((d) => d.data() as AckDoc);
+      const excused = new Set<string>();
+      for (const a of all) {
+        if (a.status !== "confirmed" && a.status !== "excused") continue;
+        const declined = new Set(a.declinedSessions ?? []);
+        for (const k of excusedSessionKeys(a.subjects ?? [])) if (!declined.has(k)) excused.add(k);
+      }
+      const decided = all.filter((a) => a.status !== "pending").length;
       const total = leave.teachersTotal ?? acks.size;
       tx.update(leaveRef, {
-        teachersConfirmed: confirmed.length,
-        excusedSessions: excused,
-        ...(leave.stage === "teachers" && confirmed.length >= total ? {stage: "done"} : {}),
+        teachersConfirmed: decided,
+        excusedSessions: Array.from(excused).sort(),
+        ...(leave.stage === "teachers" && decided >= total ? {stage: "done"} : {}),
       });
     });
+
+    const newlyDeclined = after.status === "declined" ?
+      excusedSessionKeys(after.subjects ?? []).length :
+      (after.declinedSessions ?? []).filter((k) => !(before?.declinedSessions ?? []).includes(k)).length;
+    if (studentUid && newlyDeclined > 0 && before?.status !== "pending") {
+      await sendExpoPush(
+        await tokensForUid(db, studentUid),
+        "A class wasn't excused",
+        `${after.name ?? "A teacher"} chose not to excuse ${newlyDeclined} of your classes from your medical leave.`,
+        "medicalLeaveTeacherConfirmed",
+      );
+    }
   },
 );

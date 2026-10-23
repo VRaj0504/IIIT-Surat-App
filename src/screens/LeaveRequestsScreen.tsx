@@ -23,10 +23,30 @@ import {
   subscribeToMyTeacherAcks,
   resolveLeaveApplication,
   decideMedicalLeave,
-  confirmTeacherAck,
+  setTeacherAckDecision,
+  approvalChain,
+  nextMedicalStage,
+  approverName,
+  sessionKey,
+  APPROVER_LABEL,
+  ApproverRole,
   LeaveApplication,
   TeacherAck,
 } from "../firebase/leaveService";
+
+const ROLES: ApproverRole[] = ["doctor", "dr", "dean", "hod"];
+
+const ROLE_SECTION: Record<ApproverRole, { icon: keyof typeof Ionicons.glyphMap; title: string }> = {
+  doctor: { icon: "medkit-outline", title: "Medical leaves to check" },
+  dr: { icon: "document-text-outline", title: "Approve as Deputy Registrar" },
+  dean: { icon: "ribbon-outline", title: "Approve as Dean" },
+  hod: { icon: "shield-checkmark-outline", title: "Approve as HOD" },
+};
+
+function isoDaysAgo(days: number): string {
+  const d = new Date(Date.now() - days * 86400000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 
 const statusColors: Record<LeaveApplication["status"], string> = {
@@ -70,9 +90,14 @@ export default function LeaveRequestsScreen() {
   const { profile } = useAuth();
   const email = profile?.email?.toLowerCase() ?? "";
   const [casual, setCasual] = useState<LeaveApplication[] | null>(null);
-  const [asDoctor, setAsDoctor] = useState<LeaveApplication[] | null>(null);
-  const [asHod, setAsHod] = useState<LeaveApplication[] | null>(null);
+  const [byRole, setByRole] = useState<Record<ApproverRole, LeaveApplication[] | null>>({
+    doctor: null,
+    dr: null,
+    dean: null,
+    hod: null,
+  });
   const [acks, setAcks] = useState<TeacherAck[] | null>(null);
+  const [declinedDraft, setDeclinedDraft] = useState<Record<string, string[]>>({});
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -82,23 +107,33 @@ export default function LeaveRequestsScreen() {
     const unsubs = [
 
       subscribeToLeaveRequestsForFaculty(email, (apps) => setCasual(apps.filter((a) => a.type !== "medical" || !a.stage))),
-      subscribeToMedicalLeavesFor("doctor", email, setAsDoctor),
-      subscribeToMedicalLeavesFor("hod", email, setAsHod),
+      ...ROLES.map((role) =>
+        subscribeToMedicalLeavesFor(role, email, (apps) => setByRole((prev) => ({ ...prev, [role]: apps }))),
+      ),
       subscribeToMyTeacherAcks(email, setAcks),
     ];
     return () => unsubs.forEach((u) => u());
   }, [email]);
 
-  const loading = casual === null || asDoctor === null || asHod === null || acks === null;
+  const loading = casual === null || ROLES.some((r) => byRole[r] === null) || acks === null;
 
-  const pendingDoctor = useMemo(() => (asDoctor ?? []).filter((a) => a.stage === "doctor"), [asDoctor]);
-  const pendingHod = useMemo(() => (asHod ?? []).filter((a) => a.stage === "hod"), [asHod]);
+  const pendingByRole = useMemo(() => {
+    const out = {} as Record<ApproverRole, LeaveApplication[]>;
+    for (const r of ROLES) out[r] = (byRole[r] ?? []).filter((a) => a.stage === r);
+    return out;
+  }, [byRole]);
+  const pendingApprovals = ROLES.reduce((n, r) => n + pendingByRole[r].length, 0);
+  const recentCutoff = isoDaysAgo(30);
   const pendingAcks = useMemo(() => (acks ?? []).filter((a) => a.status === "pending"), [acks]);
+  const recentAcks = useMemo(
+    () => (acks ?? []).filter((a) => a.status !== "pending" && a.toDate >= recentCutoff),
+    [acks, recentCutoff],
+  );
   const pendingCasual = useMemo(() => (casual ?? []).filter((a) => a.status === "pending"), [casual]);
 
   const setRemark = (id: string, text: string) => setRemarks((prev) => ({ ...prev, [id]: text }));
 
-  const decideMedical = (app: LeaveApplication, role: "doctor" | "hod", decision: "approved" | "rejected") => {
+  const decideMedical = (app: LeaveApplication, role: ApproverRole, decision: "approved" | "rejected") => {
     if (!profile?.uid) return;
     const remark = remarks[app.id]?.trim();
     if (decision === "rejected" && !remark) {
@@ -109,7 +144,7 @@ export default function LeaveRequestsScreen() {
       setBusyId(app.id);
       try {
         await decideMedicalLeave({
-          appId: app.id,
+          app,
           role,
           decision,
           remark,
@@ -122,7 +157,11 @@ export default function LeaveRequestsScreen() {
         setBusyId(null);
       }
     };
-    const next = role === "doctor" ? `${app.hodName ?? "the HOD"} for approval` : "the student's teachers";
+    const nextStage = nextMedicalStage(role, app);
+    const next =
+      nextStage === "teachers"
+        ? "final approval. The student's classes in these dates will count as present"
+        : `${approverName(nextStage as ApproverRole, app)} for approval`;
     Alert.alert(
       decision === "approved" ? "Approve this leave?" : "Reject this leave?",
       decision === "approved" ? `It will go to ${next}.` : "The student will be notified with your remark.",
@@ -137,34 +176,37 @@ export default function LeaveRequestsScreen() {
     );
   };
 
-  const confirmAck = (ack: TeacherAck) => {
+  const declinedFor = (ack: TeacherAck): string[] => declinedDraft[ack.leaveId + ack.id] ?? ack.declinedSessions ?? [];
+
+  const toggleSession = (ack: TeacherAck, key: string) => {
+    const k = ack.leaveId + ack.id;
+    const cur = declinedFor(ack);
+    setDeclinedDraft((prev) => ({ ...prev, [k]: cur.includes(key) ? cur.filter((x) => x !== key) : [...cur, key] }));
+  };
+
+  const saveAck = async (ack: TeacherAck, status: "excused" | "declined") => {
     if (!profile?.uid) return;
     const key = ack.leaveId + ack.id;
-    Alert.alert(
-      "Classes excused?",
-      `Confirm you've marked ${ack.studentName}'s attendance as excused for the classes listed.`,
-      [
-        { text: "Not yet", style: "cancel" },
-        {
-          text: "Confirm",
-          onPress: async () => {
-            setBusyId(key);
-            try {
-              await confirmTeacherAck({
-                leaveId: ack.leaveId,
-                teacherEmail: ack.id,
-                uid: profile.uid,
-                remark: remarks[key],
-              });
-            } catch (err: any) {
-              Alert.alert("Couldn't confirm", err.message ?? "Please try again.");
-            } finally {
-              setBusyId(null);
-            }
-          },
-        },
-      ],
-    );
+    setBusyId(key);
+    try {
+      await setTeacherAckDecision({
+        leaveId: ack.leaveId,
+        teacherEmail: ack.id,
+        uid: profile.uid,
+        status,
+        declinedSessions: declinedFor(ack),
+        remark: remarks[key],
+      });
+      setDeclinedDraft((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    } catch (err: any) {
+      Alert.alert("Couldn't save", err.message ?? "Please try again.");
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const resolveCasual = async (app: LeaveApplication, status: "approved" | "rejected") => {
@@ -179,13 +221,18 @@ export default function LeaveRequestsScreen() {
     }
   };
 
-  const renderMedicalCard = (app: LeaveApplication, role: "doctor" | "hod") => (
+  const renderMedicalCard = (app: LeaveApplication, role: ApproverRole) => {
+    const chain = approvalChain(app);
+    const step = chain.indexOf(role) + 1;
+    const nextStage = nextMedicalStage(role, app);
+    const prior = chain.slice(0, chain.indexOf(role));
+    return (
     <View key={`${role}-${app.id}`} style={styles.card}>
       <View style={styles.cardHeaderRow}>
         <Text style={styles.studentName}>{app.studentName}</Text>
         <View style={[styles.statusPill, { backgroundColor: colors.warning + "20" }]}>
           <Text style={[styles.statusPillText, { color: colors.warning }]}>
-            {role === "doctor" ? "Step 1 · Doctor" : "Step 2 · HOD"}
+            Step {step} of {chain.length} · {APPROVER_LABEL[role]}
           </Text>
         </View>
       </View>
@@ -200,15 +247,19 @@ export default function LeaveRequestsScreen() {
           <Text style={styles.reportButtonText}>Open medical report</Text>
         </TouchableOpacity>
       )}
-      {role === "hod" && app.doctorDecision && (
-        <View style={styles.priorStep}>
-          <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-          <Text style={styles.priorStepText}>
-            Approved by {app.doctorDecision.byName}
-            {app.doctorDecision.remark ? `: "${app.doctorDecision.remark}"` : ""}
-          </Text>
-        </View>
-      )}
+      {prior.map((r) => {
+        const d = app[`${r}Decision` as const];
+        if (!d) return null;
+        return (
+          <View key={r} style={styles.priorStep}>
+            <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+            <Text style={styles.priorStepText}>
+              {APPROVER_LABEL[r]}: approved by {d.byName}
+              {d.remark ? `: "${d.remark}"` : ""}
+            </Text>
+          </View>
+        );
+      })}
       <TextInput
         style={styles.remarkInput}
         value={remarks[app.id] ?? ""}
@@ -222,7 +273,9 @@ export default function LeaveRequestsScreen() {
           disabled={busyId === app.id}
           onPress={() => decideMedical(app, role, "approved")}
         >
-          <Text style={styles.approveButtonText}>{role === "doctor" ? "Approve → HOD" : "Approve → Teachers"}</Text>
+          <Text style={styles.approveButtonText}>
+            {nextStage === "teachers" ? "Final approve" : `Approve → ${APPROVER_LABEL[nextStage as ApproverRole]}`}
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionButton, styles.rejectButton]}
@@ -233,45 +286,97 @@ export default function LeaveRequestsScreen() {
         </TouchableOpacity>
       </View>
     </View>
-  );
+    );
+  };
 
   const renderAckCard = (ack: TeacherAck) => {
     const key = ack.leaveId + ack.id;
+    const declined = declinedFor(ack);
+    const allDeclined = ack.status === "declined";
+    const total = ack.subjects.reduce((n, s) => n + s.dates.length, 0);
+    const excusedCount = allDeclined ? 0 : total - declined.length;
+    const dirty = declinedDraft[key] !== undefined;
     return (
       <View key={key} style={styles.card}>
         <View style={styles.cardHeaderRow}>
           <Text style={styles.studentName}>{ack.studentName}</Text>
-          <View style={[styles.statusPill, { backgroundColor: colors.success + "20" }]}>
-            <Text style={[styles.statusPillText, { color: colors.success }]}>Medical · approved</Text>
+          <View style={[styles.statusPill, { backgroundColor: (allDeclined ? colors.danger : colors.success) + "20" }]}>
+            <Text style={[styles.statusPillText, { color: allDeclined ? colors.danger : colors.success }]}>
+              {allDeclined ? "Not excused" : ack.status === "pending" ? "Waiting for you" : `${excusedCount}/${total} excused`}
+            </Text>
           </View>
         </View>
         {ack.studentEnrollmentNumber && <Text style={styles.meta}>{ack.studentEnrollmentNumber}</Text>}
         <Text style={styles.meta}>
-          On approved medical leave {prettyDate(ack.fromDate)} → {prettyDate(ack.toDate)}
+          Approved medical leave {prettyDate(ack.fromDate)} → {prettyDate(ack.toDate)}
         </Text>
-        <Text style={styles.ackLead}>Your classes they missed:</Text>
+        <Text style={styles.ackLead}>
+          Your classes in these dates count as present automatically. Tap a class to not excuse it.
+        </Text>
         {ack.subjects.map((s) => (
           <View key={s.code} style={styles.subjectRow}>
             <Text style={styles.subjectName}>
               {s.name} <Text style={styles.subjectCode}>({s.code})</Text>
             </Text>
-            <Text style={styles.subjectDates}>{s.dates.map(prettyDate).join(" · ")}</Text>
+            <View style={styles.sessionRow}>
+              {s.dates.map((d) => {
+                const k = sessionKey(s.code, d);
+                const off = allDeclined || declined.includes(k);
+                return (
+                  <TouchableOpacity
+                    key={k}
+                    disabled={allDeclined}
+                    onPress={() => toggleSession(ack, k)}
+                    style={[styles.sessionChip, off ? styles.sessionChipOff : styles.sessionChipOn]}
+                  >
+                    <Ionicons name={off ? "close" : "checkmark"} size={14} color={off ? colors.danger : colors.success} />
+                    <Text style={[styles.sessionChipText, { color: off ? colors.danger : colors.success }]}>{prettyDate(d)}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
         ))}
         <TextInput
           style={styles.remarkInput}
-          value={remarks[key] ?? ""}
+          value={remarks[key] ?? ack.remark ?? ""}
           onChangeText={(t) => setRemark(key, t)}
-          placeholder="Optional note"
+          placeholder="Optional note for the student"
           placeholderTextColor={colors.textSecondary}
         />
-        <TouchableOpacity
-          style={[styles.actionButton, styles.approveButton, { marginTop: spacing.sm }]}
-          disabled={busyId === key}
-          onPress={() => confirmAck(ack)}
-        >
-          <Text style={styles.approveButtonText}>Mark these classes excused</Text>
-        </TouchableOpacity>
+        <View style={styles.actionRow}>
+          {allDeclined ? (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.approveButton]}
+              disabled={busyId === key}
+              onPress={() => saveAck(ack, "excused")}
+            >
+              <Text style={styles.approveButtonText}>Excuse classes again</Text>
+            </TouchableOpacity>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.approveButton]}
+                disabled={busyId === key || (!dirty && ack.status !== "pending" && remarks[key] === undefined)}
+                onPress={() => saveAck(ack, "excused")}
+              >
+                <Text style={styles.approveButtonText}>{ack.status === "pending" ? "Excuse classes" : "Save changes"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.rejectButton]}
+                disabled={busyId === key}
+                onPress={() =>
+                  Alert.alert("Don't excuse any?", `None of ${ack.studentName}'s classes with you in these dates will count as present.`, [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Don't excuse", style: "destructive", onPress: () => saveAck(ack, "declined") },
+                  ])
+                }
+              >
+                <Text style={styles.rejectButtonText}>Don't excuse any</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
     );
   };
@@ -324,28 +429,33 @@ export default function LeaveRequestsScreen() {
   const historyRows = useMemo(() => {
     type Row = { key: string; title: string; detail: string; ok: boolean };
     const rows: Row[] = [];
-    for (const a of asDoctor ?? []) {
-      if (a.stage === "doctor") continue;
-      const ok = a.doctorDecision?.decision !== "rejected";
-      rows.push({ key: `d-${a.id}`, title: a.studentName, detail: `Medical ${a.fromDate} → ${a.toDate} · you ${ok ? "approved" : "rejected"}`, ok });
-    }
-    for (const a of asHod ?? []) {
-      if (a.stage === "hod" || a.stage === "doctor") continue;
-      const ok = a.hodDecision?.decision !== "rejected";
-      rows.push({ key: `h-${a.id}`, title: a.studentName, detail: `Medical ${a.fromDate} → ${a.toDate} · you ${ok ? "approved" : "rejected"} as HOD`, ok });
+    for (const r of ROLES) {
+      for (const a of byRole[r] ?? []) {
+        if (a.stage === r) continue;
+        const d = a[`${r}Decision` as const];
+        if (!d) continue;
+        const ok = d.decision !== "rejected";
+        rows.push({
+          key: `${r}-${a.id}`,
+          title: a.studentName,
+          detail: `Medical ${a.fromDate} → ${a.toDate} · you ${ok ? "approved" : "rejected"} as ${APPROVER_LABEL[r]}`,
+          ok,
+        });
+      }
     }
     for (const k of acks ?? []) {
-      if (k.status !== "confirmed") continue;
-      rows.push({ key: `t-${k.leaveId}-${k.id}`, title: k.studentName, detail: `Medical ${k.fromDate} → ${k.toDate} · classes excused`, ok: true });
+      if (k.status === "pending" || k.toDate >= recentCutoff) continue;
+      const ok = k.status !== "declined";
+      rows.push({ key: `t-${k.leaveId}-${k.id}`, title: k.studentName, detail: `Medical ${k.fromDate} → ${k.toDate} · ${ok ? "classes excused" : "not excused"}`, ok });
     }
     for (const c of casual ?? []) {
       if (c.status === "pending") continue;
       rows.push({ key: `c-${c.id}`, title: c.studentName, detail: `Casual ${c.fromDate} → ${c.toDate} · ${c.status}`, ok: c.status === "approved" });
     }
     return rows;
-  }, [asDoctor, asHod, acks, casual]);
+  }, [byRole, acks, casual, recentCutoff]);
 
-  const nothingPending = pendingDoctor.length + pendingHod.length + pendingAcks.length + pendingCasual.length === 0;
+  const nothingPending = pendingApprovals + pendingAcks.length + pendingCasual.length === 0;
 
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
@@ -357,22 +467,24 @@ export default function LeaveRequestsScreen() {
             <LoadingSpinner style={{ marginTop: spacing.xl }} />
           ) : (
             <KeyboardAwareScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
-              {pendingDoctor.length > 0 && (
-                <>
-                  <SectionTitle icon="medkit-outline" title="Medical leaves to check" count={pendingDoctor.length} />
-                  {pendingDoctor.map((a) => renderMedicalCard(a, "doctor"))}
-                </>
-              )}
-              {pendingHod.length > 0 && (
-                <>
-                  <SectionTitle icon="shield-checkmark-outline" title="Approve as HOD" count={pendingHod.length} />
-                  {pendingHod.map((a) => renderMedicalCard(a, "hod"))}
-                </>
+              {ROLES.map((r) =>
+                pendingByRole[r].length > 0 ? (
+                  <React.Fragment key={r}>
+                    <SectionTitle icon={ROLE_SECTION[r].icon} title={ROLE_SECTION[r].title} count={pendingByRole[r].length} />
+                    {pendingByRole[r].map((a) => renderMedicalCard(a, r))}
+                  </React.Fragment>
+                ) : null,
               )}
               {pendingAcks.length > 0 && (
                 <>
                   <SectionTitle icon="calendar-outline" title="Excuse missed classes" count={pendingAcks.length} />
                   {pendingAcks.map(renderAckCard)}
+                </>
+              )}
+              {recentAcks.length > 0 && (
+                <>
+                  <SectionTitle icon="medkit-outline" title="Medical leave in your classes" count={0} />
+                  {recentAcks.map(renderAckCard)}
                 </>
               )}
               {pendingCasual.length > 0 && (
@@ -454,6 +566,11 @@ const styles = StyleSheet.create({
   subjectName: { ...typography.body, color: colors.textPrimary, fontWeight: "700" },
   subjectCode: { fontWeight: "400", color: colors.textSecondary },
   subjectDates: { fontSize: 12, color: colors.textPrimary, marginTop: 2 },
+  sessionRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 },
+  sessionChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 8, borderRadius: radius.full, minHeight: 36 },
+  sessionChipOn: { backgroundColor: colors.success + "18" },
+  sessionChipOff: { backgroundColor: colors.danger + "18" },
+  sessionChipText: { fontSize: 12, fontWeight: "700" },
   remarkInput: {
     backgroundColor: colors.background,
     borderRadius: radius.sm,

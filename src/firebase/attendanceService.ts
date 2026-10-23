@@ -168,7 +168,8 @@ export async function getMyAttendance(params: {
     const excused =
       d.excusedEnrollmentNumbers?.includes(params.enrollmentNumber) ||
       isDateWithinExcusal(d.date, excusalRanges) ||
-      params.medicalExcusedSessions?.has(`${d.subjectCode}|${d.date}`);
+      params.medicalExcusedSessions?.has(`${d.subjectCode}|${d.date}`) ||
+      params.medicalExcusedSessions?.has(`*|${d.date}`);
     if (!absent || excused) entry.present += w;
     if (!entry.last || d.date > entry.last) entry.last = d.date;
     bySubject.set(key, entry);

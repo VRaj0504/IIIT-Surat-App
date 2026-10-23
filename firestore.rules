@@ -415,12 +415,22 @@ service cloud.firestore {
           examRegistrationOpen(resource.data.eventId));
     }
 
+    function stageAfterDoctor(data) {
+      return data.get('drEmail', '') != '' ? 'dr' : (data.get('deanEmail', '') != '' ? 'dean' : 'hod');
+    }
+
+    function stageAfterDr(data) {
+      return data.get('deanEmail', '') != '' ? 'dean' : 'hod';
+    }
+
     match /leaveApplications/{appId} {
 
       allow read: if isAdmin() ||
         (request.auth != null && resource.data.studentUid == request.auth.uid) ||
         (request.auth != null && resource.data.facultyEmail == myEmail()) ||
         (request.auth != null && resource.data.doctorEmail == myEmail()) ||
+        (request.auth != null && resource.data.drEmail == myEmail()) ||
+        (request.auth != null && resource.data.deanEmail == myEmail()) ||
         (request.auth != null && resource.data.hodEmail == myEmail());
 
       allow create: if isMember() &&
@@ -445,9 +455,13 @@ service cloud.firestore {
              get(/databases/$(database)/documents/config/medicalLeave).data.hodByBranch[
                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.branch
              ].email &&
+           request.resource.data.get('drEmail', '') ==
+             get(/databases/$(database)/documents/config/medicalLeave).data.get('dr', {}).get('email', '') &&
+           request.resource.data.get('deanEmail', '') ==
+             get(/databases/$(database)/documents/config/medicalLeave).data.get('dean', {}).get('email', '') &&
 
            !request.resource.data.keys().hasAny([
-             'doctorDecision', 'hodDecision', 'teacherEmails', 'teachersTotal',
+             'doctorDecision', 'drDecision', 'deanDecision', 'hodDecision', 'teacherEmails', 'teachersTotal',
              'teachersConfirmed', 'excusedSessions', 'unmatchedFaculty'
            ]))
         );
@@ -471,10 +485,38 @@ service cloud.firestore {
           .hasOnly(['stage', 'status', 'doctorDecision', 'facultyRemark', 'resolvedAt', 'resolvedBy']) &&
         request.resource.data.doctorDecision.by == request.auth.uid &&
         (
-          (request.resource.data.stage == 'hod' && request.resource.data.status == 'pending' &&
+          (request.resource.data.stage == stageAfterDoctor(resource.data) && request.resource.data.status == 'pending' &&
            request.resource.data.doctorDecision.decision == 'approved') ||
           (request.resource.data.stage == 'rejected' && request.resource.data.status == 'rejected' &&
            request.resource.data.doctorDecision.decision == 'rejected')
+        );
+
+      allow update: if request.auth != null &&
+        resource.data.type == 'medical' &&
+        resource.data.stage == 'dr' &&
+        resource.data.get('drEmail', '') == myEmail() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['stage', 'status', 'drDecision', 'facultyRemark', 'resolvedAt', 'resolvedBy']) &&
+        request.resource.data.drDecision.by == request.auth.uid &&
+        (
+          (request.resource.data.stage == stageAfterDr(resource.data) && request.resource.data.status == 'pending' &&
+           request.resource.data.drDecision.decision == 'approved') ||
+          (request.resource.data.stage == 'rejected' && request.resource.data.status == 'rejected' &&
+           request.resource.data.drDecision.decision == 'rejected')
+        );
+
+      allow update: if request.auth != null &&
+        resource.data.type == 'medical' &&
+        resource.data.stage == 'dean' &&
+        resource.data.get('deanEmail', '') == myEmail() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['stage', 'status', 'deanDecision', 'facultyRemark', 'resolvedAt', 'resolvedBy']) &&
+        request.resource.data.deanDecision.by == request.auth.uid &&
+        (
+          (request.resource.data.stage == 'hod' && request.resource.data.status == 'pending' &&
+           request.resource.data.deanDecision.decision == 'approved') ||
+          (request.resource.data.stage == 'rejected' && request.resource.data.status == 'rejected' &&
+           request.resource.data.deanDecision.decision == 'rejected')
         );
 
       allow update: if request.auth != null &&
@@ -499,11 +541,11 @@ service cloud.firestore {
           (request.auth != null && resource.data.studentUid == request.auth.uid);
         allow update: if request.auth != null &&
           resource.data.email == myEmail() &&
-          resource.data.status == 'pending' &&
-          request.resource.data.status == 'confirmed' &&
+          request.resource.data.status in ['confirmed', 'excused', 'declined'] &&
           request.resource.data.confirmedBy == request.auth.uid &&
+          request.resource.data.get('declinedSessions', []) is list &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['status', 'confirmedAt', 'confirmedBy', 'remark']);
+            .hasOnly(['status', 'declinedSessions', 'confirmedAt', 'confirmedBy', 'remark']);
         allow create, delete: if false;
       }
     }

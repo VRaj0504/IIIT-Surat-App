@@ -33,6 +33,10 @@ import {
   LeaveType,
   MedicalLeaveConfig,
   MedicalStage,
+  approvalChain,
+  approverName,
+  APPROVER_LABEL,
+  ApproverRole,
 } from "../firebase/leaveService";
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 import DateField from "../components/DateField";
@@ -62,40 +66,44 @@ function maskDateInput(raw: string): string {
   return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
 }
 
-const MEDICAL_STEPS: { stage: MedicalStage; label: string }[] = [
-  { stage: "doctor", label: "Doctor" },
-  { stage: "hod", label: "HOD" },
-  { stage: "teachers", label: "Teachers" },
-  { stage: "done", label: "Done" },
-];
+const SHORT_LABEL: Record<ApproverRole, string> = { doctor: "Doctor", dr: "DR", dean: "Dean", hod: "HOD" };
 
 function MedicalProgress({ app }: { app: LeaveApplication }) {
   const stage = app.stage ?? "doctor";
-  const rejectedAt: MedicalStage | null =
-    stage !== "rejected" ? null : app.hodDecision?.decision === "rejected" ? "hod" : "doctor";
-  const currentIndex = MEDICAL_STEPS.findIndex((s) => s.stage === (rejectedAt ?? stage));
-  const total = app.teachersTotal ?? 0;
-  const confirmed = app.teachersConfirmed ?? 0;
+  const chain = approvalChain(app);
+  const steps: { stage: MedicalStage; label: string }[] = [
+    ...chain.map((r) => ({ stage: r as MedicalStage, label: SHORT_LABEL[r] })),
+    { stage: "done", label: "Approved" },
+  ];
+  const approved = stage === "teachers" || stage === "done";
+  const rejectedRole: ApproverRole | null =
+    stage !== "rejected" ? null : [...chain].reverse().find((r) => app[`${r}Decision` as const]?.decision === "rejected") ?? "doctor";
+  const currentIndex = approved
+    ? steps.length - 1
+    : steps.findIndex((s) => s.stage === (rejectedRole ?? stage));
+  const rejectedAt: MedicalStage | null = rejectedRole;
 
   let caption: string;
-  if (stage === "doctor") caption = `Waiting for ${app.doctorName ?? "the doctor"} to check your report.`;
-  else if (stage === "hod") caption = `Doctor approved · waiting for ${app.hodName ?? "your HOD"}.`;
-  else if (stage === "teachers")
-    caption = total > 0 ? `HOD approved · ${confirmed} of ${total} teachers have excused your classes.` : "HOD approved · finding your teachers…";
-  else if (stage === "done")
-    caption = total > 0 ? "All teachers confirmed — your missed classes are excused." : app.teacherNote ?? "Approved.";
-  else {
-    const d = rejectedAt === "hod" ? app.hodDecision : app.doctorDecision;
-    caption = `Rejected by ${d?.byName ?? (rejectedAt === "hod" ? app.hodName : app.doctorName) ?? "approver"}${d?.remark ? `: "${d.remark}"` : "."}`;
+  if (approved) {
+    caption = app.teacherNote ?? "Fully approved. Your classes in these dates count as present. A teacher can still choose not to excuse one of their classes.";
+  } else if (rejectedRole) {
+    const d = app[`${rejectedRole}Decision` as const];
+    caption = `Rejected by ${d?.byName ?? approverName(rejectedRole, app)}${d?.remark ? `: "${d.remark}"` : "."}`;
+  } else {
+    const role = stage as ApproverRole;
+    const idx = chain.indexOf(role);
+    const prev = idx > 0 ? `${APPROVER_LABEL[chain[idx - 1]]} approved · ` : "";
+    caption = `${prev}Waiting for ${approverName(role, app)}${role === "doctor" ? " to check your report" : ""}.`;
   }
+  const MEDICAL_STEPS = steps;
 
   return (
     <View style={{ marginTop: spacing.sm }}>
       <View style={progressStyles.row}>
         {MEDICAL_STEPS.map((s, i) => {
           const isRejectedHere = rejectedAt === s.stage;
-          const done = stage === "done" || i < currentIndex;
-          const active = !isRejectedHere && i === currentIndex && stage !== "done";
+          const done = approved || i < currentIndex;
+          const active = !isRejectedHere && i === currentIndex && !approved;
           const color = isRejectedHere ? colors.danger : done ? colors.success : active ? colors.primary : colors.border;
           return (
             <React.Fragment key={s.stage}>
@@ -271,7 +279,12 @@ export default function ApplyLeaveScreen() {
           reason: reasonTrimmed,
           medicalReportUrl: reportUrlTrimmed,
         });
-        sentTo = `${route.doctorName}. After the doctor, it goes to ${route.hodName} (HOD), then to your teachers.`;
+        const after = [
+          route.drName ? `${route.drName} (Deputy Registrar)` : "",
+          route.deanName ? `${route.deanName} (Dean)` : "",
+          `${route.hodName} (HOD)`,
+        ].filter(Boolean);
+        sentTo = `${route.doctorName}. After the doctor, it goes to ${after.join(", then ")}. Once approved, your classes in those dates count as present.`;
       } else {
         const to = selectedFaculty!;
         await applyForLeave({
@@ -336,9 +349,17 @@ export default function ApplyLeaveScreen() {
                 </Text>
               ) : (
                 <>
-                  <Text style={styles.routeStep}>1 · {medicalConfig.doctor.name} (Doctor)</Text>
-                  <Text style={styles.routeStep}>2 · {medicalHod.name} (HOD, {profile?.branch})</Text>
-                  <Text style={styles.routeStep}>3 · Your teachers excuse the classes you missed</Text>
+                  {[
+                    `${medicalConfig.doctor.name} (Doctor)`,
+                    ...(medicalConfig.dr?.email ? [`${medicalConfig.dr.name || "Deputy Registrar"} (Deputy Registrar)`] : []),
+                    ...(medicalConfig.dean?.email ? [`${medicalConfig.dean.name || "Dean"} (Dean, Academics)`] : []),
+                    `${medicalHod.name} (HOD, ${profile?.branch ?? ""})`,
+                    "Approved: your classes in these dates count as present",
+                  ].map((line, i) => (
+                    <Text key={i} style={styles.routeStep}>
+                      {i + 1} · {line}
+                    </Text>
+                  ))}
                 </>
               )}
             </View>
