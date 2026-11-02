@@ -1,16 +1,17 @@
 import React, { useState } from "react";
 import { View, Text, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth, isAllowedEmailDomain, isReviewerEmail, ALLOWED_EMAIL_DOMAIN } from "../../context/AuthContext";
 import { ErrorBox } from "./authUi";
 import { toInstituteEmail } from "./LoginScreen";
-import { GlassScreen, Glass, Reveal, Heading, HintRow, GlassInput, PrimaryButton, RoundBack, g, TEXT, MUTED, EASE } from "./glassUi";
+import { GlassScreen, Glass, Reveal, Heading, HintRow, GlassInput, PrimaryButton, RoundBack, g, TEXT, MUTED, EASE, AuthSpacer, useAuthScroll } from "./glassUi";
 
 type Props = { onNavigateToLogin: () => void };
 
 export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
+  const authScroll = useAuthScroll();
   const { sendPasswordReset } = useAuth();
   const [id, setId] = useState("");
   const [loading, setLoading] = useState(false);
@@ -30,7 +31,15 @@ export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
 
       setSentTo(email);
     } catch (e: any) {
-      setError(e?.code === "auth/network-request-failed" ? "No internet connection right now — try again." : "Couldn't send the email. Please try again.");
+      setError(
+        e?.code === "auth/network-request-failed"
+          ? "No internet connection right now — try again."
+          : e?.code === "auth/too-many-requests"
+            ? "A reset email was sent recently. Check your inbox (and spam), or try again in a few minutes."
+            : e?.code === "auth/user-not-found"
+              ? "There's no account with this ID yet. Create one first."
+              : "Couldn't send the email. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
@@ -40,8 +49,8 @@ export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
     <GlassScreen>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1 }}>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={g.scroll} showsVerticalScrollIndicator={false}>
-            <View style={{ flex: 1, minHeight: 36 }} />
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={authScroll} showsVerticalScrollIndicator={false}>
+            <AuthSpacer min={36} />
 
             <Reveal delay={100} style={{ gap: 18 }}>
               <Heading icon="key-outline" title={"Reset\npassword"} subtitle="We'll email a reset link to your institute inbox." />

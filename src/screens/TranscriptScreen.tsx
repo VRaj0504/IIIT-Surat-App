@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import { usePlus, usePlusAccess } from "../hooks/usePlus";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { subscribeToMyGrades, computeTranscript, GradeEntry } from "../firebase/gradesService";
@@ -12,6 +14,9 @@ export default function TranscriptScreen() {
   const { profile } = useAuth();
   const [grades, setGrades] = useState<GradeEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const navigation = useNavigation<any>();
+  const plusOpen = usePlusAccess();
+  const { plus } = usePlus();
 
   useEffect(() => {
     if (!profile?.enrollmentNumber) {
@@ -37,8 +42,14 @@ export default function TranscriptScreen() {
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.header}>Official Transcript</Text>
           <Text style={styles.subtitle}>Entered by your subject faculty — this is your official record.</Text>
+          {(plusOpen || plus) && (
+            <TouchableOpacity style={styles.plannerBtn} onPress={() => navigation.navigate("CgpaPlanner")} accessibilityRole="button">
+              <Ionicons name="stats-chart-outline" size={18} color={colors.primary} />
+              <Text style={styles.plannerText}>CGPA planner</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          )}
 
           {loading ? (
             <LoadingSpinner style={{ marginTop: spacing.xl }} />
@@ -110,4 +121,6 @@ const styles = StyleSheet.create({
   subjectRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
   subjectName: { ...typography.body, color: colors.textPrimary, flex: 1 },
   subjectMeta: { fontSize: 12, color: colors.textSecondary },
+  plannerBtn: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md },
+  plannerText: { flex: 1, fontSize: 15, fontWeight: "700", color: colors.textPrimary },
 });

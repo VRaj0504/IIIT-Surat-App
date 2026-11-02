@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
@@ -184,7 +184,7 @@ export default function NoticesScreen() {
         </View>
 
         {filters.length > 2 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} style={styles.chipsWrap}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsWrap} contentContainerStyle={styles.chips}>
             {filters.map((f) => {
               const active = f === filter;
               return (
@@ -253,8 +253,8 @@ const styles = StyleSheet.create({
   },
   addText: { color: colors.onPrimary, fontWeight: "800", fontSize: 13 },
 
-  chipsWrap: { flexGrow: 0, flexShrink: 0, height: 40, marginBottom: 12, marginHorizontal: -18 },
-  chips: { gap: 8, paddingHorizontal: 18, alignItems: "center" },
+  chipsWrap: { marginBottom: 12, flexGrow: 0, flexShrink: 0 },
+  chips: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingRight: 16 },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.surface },
   chipActive: { backgroundColor: colors.ink },
   chipText: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },

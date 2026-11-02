@@ -11,7 +11,7 @@ import {
   Linking,
   Platform,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import Animated, {
@@ -33,6 +33,7 @@ import {
   subscribeToMyActiveSos,
   updateSosLocation,
   saveEmergencyContacts,
+  loadEmergencyContacts,
   mapsUrl,
   SOS_TYPES,
   SosAlert,
@@ -45,8 +46,8 @@ import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 
 const HOLD_MS = 1800;
 const RED = "#DC2626";
-const RED_DARK = "#991B1B";
-const RED_BG = "#FEE2E2";
+const RED_DARK = colors.dangerText;
+const RED_BG = colors.dangerBg;
 
 const NATIONAL = [
   { name: "Emergency", role: "Police · Fire · Ambulance", phone: "112" },
@@ -104,6 +105,12 @@ export default function SOSScreen() {
   useEffect(() => {
     getSosConfig().then(setConfig).catch(() => setConfig(null));
   }, []);
+  useEffect(() => {
+    if (!user) return;
+    loadEmergencyContacts(user.uid, profile?.emergencyContacts)
+      .then(setContacts)
+      .catch(() => undefined);
+  }, [user]);
   useEffect(() => {
     if (!user) return;
     return subscribeToMyActiveSos(user.uid, setActive);

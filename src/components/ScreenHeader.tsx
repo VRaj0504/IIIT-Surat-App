@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors, spacing, typography, radius } from '../theme/theme';
 
 type ScreenHeaderProps = {
@@ -8,14 +8,17 @@ type ScreenHeaderProps = {
   subtitle?: string;
   actionIcon?: keyof typeof Ionicons.glyphMap;
   onAction?: () => void;
+  showTitle?: boolean;
 };
 
-export default function ScreenHeader({ title, subtitle, actionIcon, onAction }: ScreenHeaderProps) {
+export default function ScreenHeader({ title, subtitle, actionIcon, onAction, showTitle = false }: ScreenHeaderProps) {
+  const hasAction = !!(actionIcon && onAction);
+  if (!showTitle && !subtitle && !hasAction) return null;
   return (
     <View style={styles.row}>
       <View style={styles.textCol}>
-        <Text style={styles.title}>{title}</Text>
-        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        {showTitle ? <Text style={styles.title}>{title}</Text> : null}
+        {subtitle ? <Text style={[styles.subtitle, !showTitle && { marginTop: 0 }]}>{subtitle}</Text> : null}
       </View>
       {actionIcon && onAction && (
         <TouchableOpacity style={styles.actionBtn} onPress={onAction}>

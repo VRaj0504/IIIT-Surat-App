@@ -2,6 +2,8 @@ import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { colors } from "../theme/theme";
 import type { RootStackParamList } from "./types";
+import { useWebLayout } from "../utils/useWebLayout";
+import DesktopPageHeader, { DESKTOP_CONTENT_MAX } from "../components/web/DesktopPageHeader";
 
 import TabNavigator from "./TabNavigator";
 
@@ -16,7 +18,9 @@ import FacultyDirectoryScreen from "../screens/FacultyDirectoryScreen";
 import ApplyLeaveScreen from "../screens/ApplyLeaveScreen";
 import LeaveRequestsScreen from "../screens/LeaveRequestsScreen";
 import AnnouncementsScreen from "../screens/AnnouncementsScreen";
+import MeetingsScreen from "../screens/MeetingsScreen";
 import TranscriptScreen from "../screens/TranscriptScreen";
+import MarksScreen from "../screens/MarksScreen";
 import ExamScheduleScreen from "../screens/ExamScheduleScreen";
 import ExamStatusScreen from "../screens/ExamStatusScreen";
 import GradeEntryScreen from "../screens/GradeEntryScreen";
@@ -25,11 +29,11 @@ import MarkAttendanceScreen from "../screens/MarkAttendanceScreen";
 import MyAttendanceScreen from "../screens/MyAttendanceScreen";
 import SubmitEventExcusalScreen from "../screens/SubmitEventExcusalScreen";
 import EventExcusalRequestsScreen from "../screens/EventExcusalRequestsScreen";
-import PlaceholderScreen from "../screens/PlaceholderScreen";
 import ClubDetailScreen from "../screens/ClubDetailScreen";
 import EventsScreen from "../screens/EventsScreen";
 import CounsellingScreen from "../screens/CounsellingScreen";
 import RoomAvailabilityScreen from "../screens/RoomAvailabilityScreen";
+import CurriculumScreen from "../screens/CurriculumScreen";
 import CounsellingQueueScreen from "../screens/CounsellingQueueScreen";
 import CreateClubScreen from "../screens/CreateClubScreen";
 import PostEventScreen from "../screens/PostEventScreen";
@@ -43,6 +47,10 @@ import ImportantContactsScreen from "../screens/ImportantContactsScreen";
 import MyDownloadsScreen from "../screens/MyDownloadsScreen";
 import FileViewerScreen from "../screens/FileViewerScreen";
 import AboutScreen from "../screens/AboutScreen";
+import PlusScreen from "../screens/PlusScreen";
+import { PLUS_ENABLED } from "../firebase/plusService";
+import LeavePlannerScreen from "../screens/LeavePlannerScreen";
+import CgpaPlannerScreen from "../screens/CgpaPlannerScreen";
 import SOSScreen from "../screens/SOSScreen";
 import SosAlertsScreen from "../screens/SosAlertsScreen";
 
@@ -52,15 +60,27 @@ import ComplaintsScreen from "../screens/ComplaintsScreen";
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
+  const { isDesktop } = useWebLayout();
   return (
     <Stack.Navigator
-      screenOptions={{
-        headerTintColor: colors.primary,
-        headerTitleStyle: { color: colors.textPrimary },
-        headerShadowVisible: false,
+      screenOptions={
+        isDesktop
+          ? {
+              header: (props) => <DesktopPageHeader {...props} />,
+              contentStyle: { backgroundColor: colors.background, width: "100%", maxWidth: DESKTOP_CONTENT_MAX + 64, alignSelf: "center", paddingHorizontal: 16 },
+              animation: "none",
+            }
+          : {
+              headerTintColor: colors.primary,
+              headerTitleStyle: { color: colors.textPrimary, fontWeight: "800", fontSize: 18 },
+              headerStyle: { backgroundColor: colors.background },
+              headerShadowVisible: false,
+              headerBackButtonDisplayMode: "minimal",
+              contentStyle: { backgroundColor: colors.background },
 
-        animation: "slide_from_right",
-      }}
+              animation: "slide_from_right",
+            }
+      }
     >
       <Stack.Screen
         name="Tabs"
@@ -141,6 +161,16 @@ export default function RootNavigator() {
         options={{ title: "Announcements" }}
       />
       <Stack.Screen
+        name="Meetings"
+        component={MeetingsScreen}
+        options={{ title: "Meetings" }}
+      />
+      <Stack.Screen
+        name="Marks"
+        component={MarksScreen}
+        options={{ title: "My Marks" }}
+      />
+      <Stack.Screen
         name="Transcript"
         component={TranscriptScreen}
         options={{ title: "Official Transcript" }}
@@ -207,9 +237,14 @@ export default function RootNavigator() {
         options={{ title: "Counselling & Wellness" }}
       />
       <Stack.Screen
+        name="Curriculum"
+        component={CurriculumScreen}
+        options={{ title: "Curriculum" }}
+      />
+      <Stack.Screen
         name="RoomAvailability"
         component={RoomAvailabilityScreen}
-        options={{ title: "Empty Classes" }}
+        options={{ title: "Empty Classrooms" }}
       />
       <Stack.Screen
         name="CounsellingQueue"
@@ -266,6 +301,13 @@ export default function RootNavigator() {
         component={AboutScreen}
         options={{ title: "About" }}
       />
+      {PLUS_ENABLED && (
+        <>
+          <Stack.Screen name="Plus" component={PlusScreen} options={{ title: "CollegeGo Plus" }} />
+          <Stack.Screen name="LeavePlanner" component={LeavePlannerScreen} options={{ title: "Leave planner" }} />
+          <Stack.Screen name="CgpaPlanner" component={CgpaPlannerScreen} options={{ title: "CGPA planner" }} />
+        </>
+      )}
       <Stack.Screen
         name="SOS"
         component={SOSScreen}

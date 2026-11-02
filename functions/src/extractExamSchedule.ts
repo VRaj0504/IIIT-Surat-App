@@ -3,6 +3,7 @@ import {defineSecret} from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import {getFirestore} from "firebase-admin/firestore";
 import {extractRawExamRows, normalizeExtraction, ExamGroup} from "./examSheetExtraction";
+import {useDailyQuota} from "./quota";
 
 const geminiKey = defineSecret("GEMINI_API_KEY");
 
@@ -32,6 +33,7 @@ export const extractExamSchedule = onCall<ExtractExamScheduleRequest, Promise<Ex
     if (role !== "faculty" && role !== "admin") {
       throw new HttpsError("permission-denied", "Only faculty can import a date sheet.");
     }
+    await useDailyQuota(request.auth.uid, "examSheet", 30);
 
     const {fileBase64, mimeType} = request.data ?? {};
     if (!fileBase64 || !mimeType || !ALLOWED_TYPES.includes(mimeType)) {

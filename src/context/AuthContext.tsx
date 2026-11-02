@@ -24,6 +24,8 @@ import { db } from '../firebase/firestore';
 import { claimPendingClubLead } from '../firebase/clubsService';
 import { registerForPushNotificationsAsync, clearPushToken } from '../firebase/pushService';
 import { readCached, writeCached, clearCache } from '../firebase/liveCache';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../firebase/functionsClient';
 
 let GoogleSignin: typeof import('@react-native-google-signin/google-signin').GoogleSignin;
 let isSuccessResponse: typeof import('@react-native-google-signin/google-signin').isSuccessResponse;
@@ -79,6 +81,7 @@ export type UserProfile = {
   publicationsCount?: number | null;
   aboutMe?: string;
   inCabin?: boolean;
+  inCabinAt?: any;
   reviewer?: boolean;
   roleEmail?: string;
   shortForm?: string;
@@ -202,7 +205,13 @@ async function buildGatedProfile(params: {
     if (!rosterSnap.exists()) {
       throw new Error('This enrollment number was not found on the student roster. Contact an admin if you believe this is a mistake.');
     }
-    const rosterData = rosterSnap.data() as { branch: Branch; section: string; admissionYear: number; specialization?: string; program?: 'UG' | 'PG' };
+    const rosterData = rosterSnap.data() as { branch: Branch; section: string; admissionYear: number; specialization?: string; program?: 'UG' | 'PG'; email?: string };
+    const emailLocal = normalizedEmail.split('@')[0].toUpperCase();
+    if (emailLocal !== typedRegNo && (rosterData.email ?? '').trim().toLowerCase() !== normalizedEmail) {
+      throw new Error(
+        `${typedRegNo} doesn't match your institute email (${normalizedEmail}). Sign in with your own institute account, or contact the academic office if your email is different from your enrollment number.`,
+      );
+    }
     enrollmentNumberOut = typedRegNo;
     branchOut = rosterData.branch;
     sectionOut = rosterData.section;
@@ -249,6 +258,30 @@ async function createUserProfileAtomically(uid: string, profile: UserProfile): P
     }
     tx.set(userRef, profile);
   });
+}
+
+const TRANSIENT = new Set(['functions/unavailable', 'functions/deadline-exceeded', 'functions/internal', 'auth/network-request-failed', 'auth/internal-error']);
+const FALLBACK = new Set(['functions/not-found', 'functions/unimplemented']);
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function withRetry<T>(fn: () => Promise<T>, tries = 3): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      last = e;
+      if (!TRANSIENT.has(e?.code) || i === tries - 1) throw e;
+      await wait(600 * 2 ** i + Math.random() * 600);
+    }
+  }
+  throw last;
+}
+
+function authCode(e: any, fallback: string) {
+  const err = new Error(e?.message ?? fallback) as Error & { code?: string };
+  err.code = e?.code;
+  return err;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -368,7 +401,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadProfile]);
 
   const logIn: AuthContextValue['logIn'] = useCallback(async (email, password) => {
-    await signInWithEmailAndPassword(auth, email, password);
+    await withRetry(() => signInWithEmailAndPassword(auth, email, password));
   }, []);
 
   const signUpWithEmail: AuthContextValue['signUpWithEmail'] = useCallback(async ({ name, email, password }) => {
@@ -376,10 +409,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!isAllowedEmailDomain(normalized)) {
       throw new Error(`Use your institute email (${ALLOWED_EMAIL_DOMAIN}).`);
     }
-    const cred = await createUserWithEmailAndPassword(auth, normalized, password);
-    await updateProfile(cred.user, { displayName: name.trim() }).catch(() => {});
+    let created = false;
+    try {
+      await withRetry(() => httpsCallable(functions, 'createAccount')({ name: name.trim(), email: normalized, password }));
+      created = true;
+    } catch (e: any) {
+      if (e?.code === 'functions/already-exists') throw authCode({ ...e, code: 'auth/email-already-in-use' }, e.message);
+      if (!FALLBACK.has(e?.code) && !TRANSIENT.has(e?.code)) throw authCode(e, 'Sign-up failed.');
+    }
+    if (created) {
+      await withRetry(() => signInWithEmailAndPassword(auth, normalized, password));
+    } else {
+      const cred = await createUserWithEmailAndPassword(auth, normalized, password);
+      await updateProfile(cred.user, { displayName: name.trim() }).catch(() => {});
+    }
     setNeedsEmailVerification(true);
-    await sendEmailVerification(cred.user);
+    if (auth.currentUser) await withRetry(() => sendEmailVerification(auth.currentUser!)).catch(() => {});
   }, []);
 
   const resendVerificationEmail = useCallback(async () => {
@@ -508,7 +553,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   const sendPasswordReset = useCallback(async (email: string) => {
-    await sendPasswordResetEmail(auth, email.trim());
+    await withRetry(() => sendPasswordResetEmail(auth, email.trim()));
   }, []);
 
   const updatePhone: AuthContextValue['updatePhone'] = useCallback(async (phone) => {
@@ -526,8 +571,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const setInCabin: AuthContextValue['setInCabin'] = useCallback(async (inCabin) => {
     if (!user) throw new Error('You must be signed in.');
-    await updateDoc(doc(db, 'users', user.uid), { inCabin });
-    setProfile((prev) => (prev ? { ...prev, inCabin } : prev));
+    await updateDoc(doc(db, 'users', user.uid), { inCabin, inCabinAt: serverTimestamp() });
+    setProfile((prev) => (prev ? { ...prev, inCabin, inCabinAt: new Date() } : prev));
   }, [user]);
 
   const value = useMemo<AuthContextValue>(

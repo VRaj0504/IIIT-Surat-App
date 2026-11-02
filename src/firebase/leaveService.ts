@@ -17,15 +17,26 @@ import { persisted } from './liveCache';
 
 export type LeaveType = "medical" | "casual";
 
-export type MedicalStage = "doctor" | "dr" | "dean" | "hod" | "teachers" | "done" | "rejected";
+export type MedicalStage = "doctor" | "hod" | "dean" | "jr" | "administrator" | "teachers" | "done" | "rejected";
 
-export type ApproverRole = "doctor" | "dr" | "dean" | "hod";
+export type ApproverRole = "doctor" | "hod" | "dean" | "jr" | "administrator";
+
+export const APPROVER_ROLES: ApproverRole[] = ["doctor", "hod", "dean", "jr", "administrator"];
 
 export const APPROVER_LABEL: Record<ApproverRole, string> = {
   doctor: "Doctor",
-  dr: "Deputy Registrar",
-  dean: "Dean (Academics)",
   hod: "HOD",
+  dean: "Dean",
+  jr: "Joint Registrar",
+  administrator: "Administrator",
+};
+
+export const APPROVER_SHORT: Record<ApproverRole, string> = {
+  doctor: "Doctor",
+  hod: "HOD",
+  dean: "Dean",
+  jr: "JR",
+  administrator: "Admin",
 };
 
 export type LeaveDecision = {
@@ -56,12 +67,25 @@ export type TeacherAck = {
   confirmedAt: Timestamp | null;
 };
 
+type Person = { name: string; email: string };
+export type HodOption = Person & { department: string };
+
 export type MedicalLeaveConfig = {
-  doctor: { name: string; email: string };
-  dr?: { name: string; email: string } | null;
-  dean?: { name: string; email: string } | null;
-  hodByBranch: Record<string, { name: string; email: string }>;
+  doctor: Person;
+  hods?: HodOption[];
+  hodByBranch?: Record<string, Person>;
+  dean?: Person | null;
+  jr?: Person | null;
+  administrator?: Person | null;
 };
+
+export function hodOptions(cfg: MedicalLeaveConfig | null | undefined): HodOption[] {
+  if (!cfg) return [];
+  if (cfg.hods?.length) return cfg.hods.filter((h) => h.email);
+  return Object.entries(cfg.hodByBranch ?? {})
+    .filter(([, h]) => h?.email)
+    .map(([department, h]) => ({ ...h, department }));
+}
 export type LeaveStatus = "pending" | "approved" | "rejected";
 
 export type LeaveApplication = {
@@ -90,14 +114,17 @@ export type LeaveApplication = {
   doctorName?: string;
   hodEmail?: string;
   hodName?: string;
-  drEmail?: string;
-  drName?: string;
   deanEmail?: string;
   deanName?: string;
+  jrEmail?: string;
+  jrName?: string;
+  administratorEmail?: string;
+  administratorName?: string;
   doctorDecision?: LeaveDecision;
-  drDecision?: LeaveDecision;
-  deanDecision?: LeaveDecision;
   hodDecision?: LeaveDecision;
+  deanDecision?: LeaveDecision;
+  jrDecision?: LeaveDecision;
+  administratorDecision?: LeaveDecision;
   teachersTotal?: number;
   teachersConfirmed?: number;
   excusedSessions?: string[];
@@ -118,20 +145,22 @@ export async function applyForMedicalLeave(params: {
   studentUid: string;
   studentName: string;
   studentEnrollmentNumber?: string;
-  studentBranch: string;
+  hodEmail: string;
   fromDate: string;
   toDate: string;
   reason: string;
   medicalReportUrl: string;
-}): Promise<{ doctorName: string; hodName: string; drName: string; deanName: string }> {
+}): Promise<{ chain: string[] }> {
   const cfg = await getMedicalLeaveConfig();
   if (!cfg?.doctor?.email) {
     throw new Error("Medical leave isn't set up yet (no doctor configured). Please contact the admin.");
   }
-  const hod = cfg.hodByBranch?.[params.studentBranch];
-  if (!hod?.email) {
-    throw new Error(`No HOD is set up for ${params.studentBranch} yet. Please contact the admin.`);
-  }
+  const hod = hodOptions(cfg).find((h) => h.email.toLowerCase() === params.hodEmail.toLowerCase());
+  if (!hod) throw new Error("Pick your department's HOD.");
+  const opt = (p?: Person | null) => ({ email: p?.email ?? "", name: p?.email ? p.name : "" });
+  const dean = opt(cfg.dean);
+  const jr = opt(cfg.jr);
+  const administrator = opt(cfg.administrator);
   await addDoc(collection(db, COLLECTION), {
     studentUid: params.studentUid,
     studentName: params.studentName,
@@ -146,10 +175,12 @@ export async function applyForMedicalLeave(params: {
     doctorName: cfg.doctor.name,
     hodEmail: hod.email,
     hodName: hod.name,
-    drEmail: cfg.dr?.email ?? "",
-    drName: cfg.dr?.name ?? "",
-    deanEmail: cfg.dean?.email ?? "",
-    deanName: cfg.dean?.name ?? "",
+    deanEmail: dean.email,
+    deanName: dean.name,
+    jrEmail: jr.email,
+    jrName: jr.name,
+    administratorEmail: administrator.email,
+    administratorName: administrator.name,
     fromDate: params.fromDate,
     toDate: params.toDate,
     reason: params.reason.trim(),
@@ -160,28 +191,36 @@ export async function applyForMedicalLeave(params: {
     resolvedAt: null,
     resolvedBy: null,
   });
-  return { doctorName: cfg.doctor.name, hodName: hod.name, drName: cfg.dr?.email ? cfg.dr.name : "", deanName: cfg.dean?.email ? cfg.dean.name : "" };
+  return {
+    chain: [
+      `${cfg.doctor.name} (Doctor)`,
+      `${hod.name} (HOD)`,
+      ...(dean.email ? [`${dean.name} (Dean)`] : []),
+      ...(jr.email ? [`${jr.name} (Joint Registrar)`] : []),
+      ...(administrator.email ? [`${administrator.name} (Administrator)`] : []),
+    ],
+  };
 }
 
-export function approvalChain(app: Pick<LeaveApplication, "drEmail" | "deanEmail">): ApproverRole[] {
-  const chain: ApproverRole[] = ["doctor"];
-  if (app.drEmail) chain.push("dr");
+type ChainFields = Pick<LeaveApplication, "deanEmail" | "jrEmail" | "administratorEmail">;
+
+export function approvalChain(app: ChainFields): ApproverRole[] {
+  const chain: ApproverRole[] = ["doctor", "hod"];
   if (app.deanEmail) chain.push("dean");
-  chain.push("hod");
+  if (app.jrEmail) chain.push("jr");
+  if (app.administratorEmail) chain.push("administrator");
   return chain;
 }
 
-export function nextMedicalStage(role: ApproverRole, app: Pick<LeaveApplication, "drEmail" | "deanEmail">): MedicalStage {
+export function nextMedicalStage(role: ApproverRole, app: ChainFields): MedicalStage {
   const chain = approvalChain(app);
   const i = chain.indexOf(role);
   return i >= 0 && i < chain.length - 1 ? chain[i + 1] : "teachers";
 }
 
 export function approverName(role: ApproverRole, app: LeaveApplication): string {
-  if (role === "doctor") return app.doctorName ?? "the doctor";
-  if (role === "dr") return app.drName ?? "the Deputy Registrar";
-  if (role === "dean") return app.deanName ?? "the Dean";
-  return app.hodName ?? "the HOD";
+  const name = app[`${role}Name` as const];
+  return name || `the ${APPROVER_LABEL[role]}`;
 }
 
 function sortNewestFirst<T extends { createdAt: Timestamp | null }>(items: T[]): T[] {

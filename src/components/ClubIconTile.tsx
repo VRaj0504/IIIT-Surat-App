@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@expo/vector-icons/Ionicons";
 import ClayCard from './ClayCard';
 import { colors, spacing, radius, typography } from '../theme/theme';
 import { getClubIcon } from '../data/clubIcons';

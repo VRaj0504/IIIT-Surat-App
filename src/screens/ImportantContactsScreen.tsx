@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import {
   colors,
   spacing,
@@ -87,7 +87,6 @@ export default function ImportantContactsScreen() {
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.title}>Important Contacts</Text>
           <Text style={styles.subtitle}>Hostel administration and campus support</Text>
 
           <Text style={styles.sectionTitle}>Hostel Committee</Text>

@@ -1,6 +1,8 @@
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {ImageAnnotatorClient} from "@google-cloud/vision";
-import * as admin from "firebase-admin";
+import {getFirestore} from "firebase-admin/firestore";
+import {getStorage} from "firebase-admin/storage";
+import {useDailyQuota} from "./quota";
 
 const visionClient = new ImageAnnotatorClient();
 
@@ -89,17 +91,18 @@ export const extractTimetableInfo = onCall<ExtractTimetableRequest, Promise<Extr
       throw new HttpsError("invalid-argument", "Missing storagePath.");
     }
 
-    const callerSnap = await admin.firestore().collection("users").doc(request.auth.uid).get();
+    const callerSnap = await getFirestore().collection("users").doc(request.auth.uid).get();
     const callerRole = callerSnap.data()?.role;
     if (callerRole !== "faculty" && callerRole !== "admin") {
       throw new HttpsError("permission-denied", "Only faculty can import timetables.");
     }
+    await useDailyQuota(request.auth.uid, "timetable", 30);
 
     const ownPrefix = `timetableScans/${request.auth.uid}/`;
     if (!storagePath.startsWith(ownPrefix) || storagePath.includes("..")) {
       throw new HttpsError("permission-denied", "You can only scan your own uploads.");
     }
-    const gcsUri = `gs://${admin.storage().bucket().name}/${storagePath}`;
+    const gcsUri = `gs://${getStorage().bucket().name}/${storagePath}`;
 
     try {
       const [result] = await visionClient.documentTextDetection(gcsUri);

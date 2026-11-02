@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import type { LinkingOptions } from "@react-navigation/native";
+import { PLUS_ENABLED } from "../firebase/plusService";
 
 export const linking: LinkingOptions<any> | undefined =
   Platform.OS === "web"
@@ -30,7 +31,9 @@ export const linking: LinkingOptions<any> | undefined =
       SubmitComplaint: 'submit-complaint',
       Complaints: 'complaints',
       Announcements: 'announcements',
+      Meetings: 'meetings',
       Transcript: 'transcript',
+      Marks: 'marks',
       ExamSchedule: 'exam-schedule',
       ExamStatus: 'exam-status',
       GradeEntry: 'grade-entry',
@@ -44,6 +47,7 @@ export const linking: LinkingOptions<any> | undefined =
       Events: 'events',
       Counselling: 'counselling',
       RoomAvailability: 'room-availability',
+      Curriculum: 'curriculum',
       CounsellingQueue: 'counselling-queue',
       CreateClub: 'create-club',
       PostEvent: 'post-event',
@@ -55,6 +59,7 @@ export const linking: LinkingOptions<any> | undefined =
       MyDownloads: 'my-downloads',
       FileViewer: 'file-viewer',
       About: 'about',
+      ...(PLUS_ENABLED ? { Plus: 'plus', LeavePlanner: 'leave-planner', CgpaPlanner: 'cgpa-planner' } : {}),
           },
         },
       }

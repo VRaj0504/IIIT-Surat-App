@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
-import { colors, spacing, typography } from '../theme/theme';
+import { colors, spacing, typography, isDark } from '../theme/theme';
 import { useAuth } from '../context/AuthContext';
 import { subscribeToClubs, subscribeToAllUpcomingEvents, Club, ClubEvent } from '../firebase/clubsService';
 import { getClubIcon } from '../data/clubIcons';
@@ -145,12 +145,7 @@ export default function ClubsScreen() {
         )}
       </View>
       {categories.length > 2 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.chipsWrap}
-          contentContainerStyle={styles.chips}
-        >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsWrap} contentContainerStyle={styles.chips}>
           {categories.map((c) => (
             <TouchableOpacity
               key={c}
@@ -201,7 +196,7 @@ export default function ClubsScreen() {
           ListHeaderComponent={Header}
           renderItem={({ item: club }) => {
 
-            if (club.id === '__pad') return <View style={{ flex: 1 }} />;
+            if (club.id === '__pad') return <View style={[styles.clubCard, { opacity: 0 }]} pointerEvents="none" />;
             const { icon, color } = getClubIcon(club.name);
             return (
               <TapCard style={styles.clubCard} onPress={() => openClub(club.id, club.name)}>
@@ -256,7 +251,7 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.7)',
+    backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.7)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -285,15 +280,15 @@ const styles = StyleSheet.create({
     height: 46,
   },
   searchInput: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.textPrimary, paddingVertical: 0 },
-  chipsWrap: { marginHorizontal: -18, marginTop: 10, flexGrow: 0, flexShrink: 0, height: 40 },
-  chips: { gap: 8, paddingHorizontal: 18, alignItems: 'center' },
+  chipsWrap: { marginTop: 10, flexGrow: 0, flexShrink: 0 },
+  chips: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingRight: 16 },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.surface },
   chipActive: { backgroundColor: colors.ink },
   chipText: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
   chipTextActive: { color: colors.onInk },
 
   gridRow: { gap: 10, marginTop: 10 },
-  clubCard: { flex: 1, backgroundColor: colors.surface, borderRadius: 20, padding: 14, gap: 4, minHeight: 128 },
+  clubCard: { flex: 1, flexBasis: 0, minWidth: 0, backgroundColor: colors.surface, borderRadius: 20, padding: 14, gap: 4, minHeight: 128 },
   clubIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
   clubName: { fontSize: 14, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.2, lineHeight: 18 },
   clubCat: { fontSize: 12, fontWeight: '600', color: colors.textSecondary },

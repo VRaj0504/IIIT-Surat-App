@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { File } from "expo-file-system";
 import { getDownloadsDir, migrateOldDownloads } from "../utils/downloadsDir";
 import { getContentUriAsync } from "expo-file-system/legacy";

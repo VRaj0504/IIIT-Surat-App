@@ -16,7 +16,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { subscribeToFacultyDirectory, FacultyMember } from "../firebase/facultyService";
@@ -101,6 +101,8 @@ export default function SubmitComplaintScreen() {
       );
       return;
     }
+    const confidential = type === "complaint" && category === "Harassment";
+    const sendTo = confidential ? null : selectedFaculty;
     setSubmitting(true);
     try {
       await submitComplaint({
@@ -109,8 +111,8 @@ export default function SubmitComplaintScreen() {
         studentEnrollmentNumber: profile.enrollmentNumber,
         type,
         category,
-        ...(selectedFaculty
-          ? { facultyEmail: selectedFaculty.email, facultyName: selectedFaculty.name, facultyUid: selectedFaculty.uid }
+        ...(sendTo
+          ? { facultyEmail: sendTo.email, facultyName: sendTo.name, facultyUid: sendTo.uid }
           : {}),
         subject: subjectTrimmed,
         description: descriptionTrimmed,
@@ -121,9 +123,13 @@ export default function SubmitComplaintScreen() {
       const noun = type === "complaint" ? "complaint" : "doubt";
       Alert.alert(
         "Submitted",
-        selectedFaculty
-          ? `Your ${noun} has been sent to ${selectedFaculty.name}.`
-          : `Your ${noun} has been sent to admin/faculty for review.`,
+        confidential
+          ? "Your complaint has been sent confidentially to the complaints committee only."
+          : sendTo
+            ? `Your ${noun} has been sent to ${sendTo.name}.`
+            : type === "complaint"
+              ? "Your complaint has been sent to the complaints committee."
+              : "Your doubt has been sent to faculty for review.",
       );
     } catch (err: any) {
       Alert.alert("Couldn't submit", err.message ?? "Please try again.");
@@ -136,7 +142,6 @@ export default function SubmitComplaintScreen() {
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
         <KeyboardAwareScrollView contentContainerStyle={styles.scrollContent}>
-          <Text style={styles.header}>Complaints & Doubts</Text>
           <Text style={styles.subheader}>
             Raise a facilities or conduct issue, or ask an academic question — addressed to a specific faculty
             member if you know who should see it, or to admin/faculty in general.
@@ -170,6 +175,12 @@ export default function SubmitComplaintScreen() {
             ))}
           </View>
 
+          {type === "complaint" && category === "Harassment" ? (
+            <Text style={styles.helperText}>
+              Harassment complaints are confidential. Only the complaints committee can see them — no other faculty.
+            </Text>
+          ) : (
+          <>
           <Text style={styles.label}>
             {type === "complaint" ? "Send to (optional)" : "Which faculty is this for? (optional)"}
           </Text>
@@ -178,7 +189,7 @@ export default function SubmitComplaintScreen() {
               {selectedFaculty
                 ? selectedFaculty.name
                 : type === "complaint"
-                  ? "Any faculty / admin"
+                  ? "Complaints committee"
                   : "e.g. your subject teacher"}
             </Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
@@ -192,9 +203,15 @@ export default function SubmitComplaintScreen() {
           </TouchableOpacity>
           <Text style={styles.helperText}>
             {selectedFaculty
-              ? `Only ${selectedFaculty.name} and admin will see this.`
-              : "Left blank, any faculty member or admin can pick this up."}
+              ? type === "complaint"
+                ? `${selectedFaculty.name} and the complaints committee will see this.`
+                : `Only ${selectedFaculty.name} will see this.`
+              : type === "complaint"
+                ? "Left blank, it goes to the complaints committee."
+                : "Left blank, any faculty member can pick this up."}
           </Text>
+          </>
+          )}
 
           <Modal visible={pickerOpen} animationType="slide" transparent onRequestClose={() => setPickerOpen(false)}>
             <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>

@@ -1,6 +1,8 @@
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {ImageAnnotatorClient} from "@google-cloud/vision";
-import * as admin from "firebase-admin";
+import {getFirestore} from "firebase-admin/firestore";
+import {getStorage} from "firebase-admin/storage";
+import {useDailyQuota} from "./quota";
 
 const visionClient = new ImageAnnotatorClient();
 
@@ -134,7 +136,10 @@ export const extractPosterInfo = onCall<ExtractPosterInfoRequest, Promise<Extrac
     if (!storagePath.startsWith(ownPrefix) || storagePath.includes("..")) {
       throw new HttpsError("permission-denied", "You can only scan your own uploads.");
     }
-    const gcsUri = `gs://${admin.storage().bucket().name}/${storagePath}`;
+    const member = await getFirestore().collection("users").doc(request.auth.uid).get();
+    if (!member.exists) throw new HttpsError("permission-denied", "Finish setting up your CollegeGo profile first.");
+    await useDailyQuota(request.auth.uid, "poster", 15);
+    const gcsUri = `gs://${getStorage().bucket().name}/${storagePath}`;
 
     try {
       const [result] = await visionClient.documentTextDetection(gcsUri);

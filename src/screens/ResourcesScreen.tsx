@@ -16,7 +16,7 @@ import { getDownloadsDir } from "../utils/downloadsDir";
 import { addToWebDownloadHistory } from "../utils/webDownloadHistory";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
@@ -334,7 +334,6 @@ export default function ResourcesScreen() {
         style={{ flex: 1 }}
       >
         <SafeAreaView style={styles.container} edges={["top"]}>
-          <Text style={styles.title}>Resources</Text>
           <Text style={styles.emptyText}>
             Your branch/admission year haven't been set up yet — contact an
             admin.

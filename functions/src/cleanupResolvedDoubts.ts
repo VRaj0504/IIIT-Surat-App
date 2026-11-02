@@ -1,12 +1,12 @@
 import {onSchedule} from "firebase-functions/v2/scheduler";
-import * as admin from "firebase-admin";
+import {getFirestore, Timestamp} from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
 
 export const cleanupResolvedDoubts = onSchedule(
   {schedule: "every 60 minutes", region: "asia-south1"},
   async () => {
-    const db = admin.firestore();
-    const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - 12 * 60 * 60 * 1000);
+    const db = getFirestore();
+    const cutoff = Timestamp.fromMillis(Date.now() - 12 * 60 * 60 * 1000);
 
     const snap = await db
       .collection("complaints")

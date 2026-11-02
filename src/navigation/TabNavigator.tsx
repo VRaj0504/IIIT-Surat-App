@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Pressable, StyleSheet, Animated, PanResponder, Platform } from 'react-native';
 import { createBottomTabNavigator, BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme/theme';
@@ -204,7 +204,10 @@ export default function TabNavigator() {
   return (
     <Tab.Navigator
       tabBar={(props) => (isDesktop ? null : <AppTabBar {...props} />)}
-      screenOptions={{ headerShown: false }}
+      screenOptions={{
+        headerShown: false,
+        ...(isDesktop ? { sceneStyle: { backgroundColor: colors.background } } : null),
+      }}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Timetable" component={TimetableScreen} />

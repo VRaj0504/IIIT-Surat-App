@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import * as DocumentPicker from "expo-document-picker";
 import {
   colors,
@@ -124,7 +124,6 @@ export default function UploadResourceScreen() {
     >
       <SafeAreaView style={styles.container} edges={["top"]}>
         <KeyboardAwareScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.title}>Upload Resource</Text>
 
           <TouchableOpacity style={styles.filePicker} onPress={pickFile}>
             <Ionicons

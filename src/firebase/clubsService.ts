@@ -28,7 +28,31 @@ export type Club = {
 
   additionalLeadEmails?: string[];
   additionalLeadNames?: string[];
+  coreMembers?: ClubCoreMember[];
 };
+
+export type ClubCoreMember = { name: string; role: string };
+
+export const CORE_ROLES = [
+  "Co-lead",
+  "Secretary",
+  "Treasurer",
+  "Tech head",
+  "Design head",
+  "Events head",
+  "Content head",
+  "PR & Outreach",
+  "Sponsorship head",
+  "Core member",
+];
+
+export async function updateClubCoreMembers(clubId: string, members: ClubCoreMember[]): Promise<void> {
+  const clean = members
+    .map((m) => ({ name: m.name.trim(), role: m.role.trim() || "Core member" }))
+    .filter((m) => m.name)
+    .slice(0, 20);
+  await updateDoc(doc(db, CLUBS_COLLECTION, clubId), { coreMembers: clean });
+}
 
 export function formatClubLeads(club: Club): string {
   const names = [club.leadName, ...(club.additionalLeadNames ?? [])].filter(Boolean);
@@ -128,13 +152,13 @@ export async function claimPendingClubLead(uid: string, email: string): Promise<
 
 export function subscribeToClubs(onUpdate: (clubs: Club[]) => void): () => void {
   const q = query(collection(db, CLUBS_COLLECTION), orderBy('name'));
-  return persisted('clubs', (onUpdate) => onSnapshot(q, (snapshot) => {
+  return persisted('clubs', (onUpdate, fail) => onSnapshot(q, (snapshot) => {
     const clubs: Club[] = snapshot.docs.map((docSnap) => ({
       id: docSnap.id,
       ...(docSnap.data() as Omit<Club, 'id'>),
     }));
     onUpdate(clubs);
-  }), onUpdate);
+  }, () => fail([])), onUpdate);
 }
 
 export async function createEvent(
@@ -186,13 +210,13 @@ export function subscribeToClubEvents(clubId: string, onUpdate: (events: ClubEve
     where('dateTime', '>=', Timestamp.fromDate(new Date())),
     orderBy('dateTime', 'asc')
   );
-  return persisted(`clubev:${clubId}`, (onUpdate) => onSnapshot(q, (snapshot) => {
+  return persisted(`clubev:${clubId}`, (onUpdate, fail) => onSnapshot(q, (snapshot) => {
     const events: ClubEvent[] = snapshot.docs.map((docSnap) => ({
       id: docSnap.id,
       ...(docSnap.data() as Omit<ClubEvent, 'id'>),
     }));
     onUpdate(events);
-  }), onUpdate);
+  }, () => fail([])), onUpdate);
 }
 
 export function subscribeToAllUpcomingEvents(onUpdate: (events: ClubEvent[]) => void): () => void {
@@ -202,11 +226,11 @@ export function subscribeToAllUpcomingEvents(onUpdate: (events: ClubEvent[]) => 
     where('dateTime', '>=', now),
     orderBy('dateTime', 'asc')
   );
-  return persisted('events:upcoming', (onUpdate) => onSnapshot(q, (snapshot) => {
+  return persisted('events:upcoming', (onUpdate, fail) => onSnapshot(q, (snapshot) => {
     const events: ClubEvent[] = snapshot.docs.map((docSnap) => ({
       id: docSnap.id,
       ...(docSnap.data() as Omit<ClubEvent, 'id'>),
     }));
     onUpdate(events);
-  }), onUpdate);
+  }, () => fail([])), onUpdate);
 }

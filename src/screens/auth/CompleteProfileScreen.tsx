@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase/firestore";
@@ -18,6 +18,7 @@ import { colors } from "../../theme/theme";
 import { useAuth, Role } from "../../context/AuthContext";
 import { ErrorBox, authStyles as s } from "./authUi";
 import { KeyboardAwareScrollView } from "../../components/KeyboardAware";
+import { useWebLayout } from "../../utils/useWebLayout";
 
 type RosterMatch =
   | { state: "idle" }
@@ -31,6 +32,7 @@ function looksComplete(n: string): boolean {
 }
 
 export default function CompleteProfileScreen() {
+  const { isDesktop } = useWebLayout();
   const { user, completeGoogleProfile, logOut } = useAuth();
 
   const emailLocal = (user?.email ?? "").split("@")[0].toUpperCase();
@@ -96,7 +98,7 @@ export default function CompleteProfileScreen() {
     <View style={s.page}>
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
         <KeyboardAvoidingView behavior={undefined} style={{ flex: 1 }}>
-          <KeyboardAwareScrollView contentContainerStyle={[s.form, { paddingTop: 16, paddingBottom: 40, gap: 18 }]} keyboardShouldPersistTaps="handled">
+          <KeyboardAwareScrollView contentContainerStyle={[s.form, { paddingTop: 16, paddingBottom: 40, gap: 18 }, isDesktop && { width: "100%", maxWidth: 560, alignSelf: "center", paddingTop: 48 }]} keyboardShouldPersistTaps="handled">
             <View style={styles.topRow}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <View style={styles.stepOn} />
@@ -168,6 +170,7 @@ export default function CompleteProfileScreen() {
                       autoCorrect={false}
                       value={enrollmentNumber}
                       onChangeText={setEnrollmentNumber}
+                      editable={!emailIsRegNo}
                       accessibilityLabel="Enrollment number"
                     />
                     <View style={{ width: 40, alignItems: "center" }}>

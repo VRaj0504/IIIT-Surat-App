@@ -1,9 +1,10 @@
 import {onSchedule} from "firebase-functions/v2/scheduler";
-import * as admin from "firebase-admin";
+import {getFirestore} from "firebase-admin/firestore";
 import {getNoClassReason} from "./holidays";
 import {loadHolidayOverrides} from "./holidayOverrides";
 import {loadExamDocs, examDayMessage, currentSemester, sheetBranchFor} from "./examPeriod";
 import {sendExpoPush} from "./expoPush";
+import {tokensOf} from "./audience";
 
 function istDateIso(now: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -21,6 +22,7 @@ type NotifiableUser = {
   admissionYear?: number;
   program?: 'UG' | 'PG';
   expoPushToken?: string;
+  expoPushTokens?: string[];
   notificationPreferences?: {classReminders?: boolean};
 };
 
@@ -32,7 +34,7 @@ export const sendDayStatusPush = onSchedule(
     region: "asia-south1",
   },
   async () => {
-    const db = admin.firestore();
+    const db = getFirestore();
     const todayIso = istDateIso();
     const holidayOverrides = await loadHolidayOverrides(db);
 
@@ -41,16 +43,17 @@ export const sendDayStatusPush = onSchedule(
     const snap = await db.collection("users").where("role", "in", ["student", "faculty"]).get();
     const users = snap.docs
       .map((d) => d.data() as NotifiableUser)
-      .filter((u) => u.expoPushToken && u.notificationPreferences?.classReminders !== false);
+      .filter((u) => tokensOf(u).length > 0 && u.notificationPreferences?.classReminders !== false);
 
     // eslint-disable-next-line no-console
     console.log(`[sendDayStatusPush] ${todayIso}: holiday=${holiday ?? "none"}, ${snap.size} users, ${users.length} with push token`);
     if (holiday) {
       await sendExpoPush(
-        users.map((u) => u.expoPushToken as string),
+        users.flatMap((u) => tokensOf(u)),
         "No classes today",
         `Holiday today: ${holiday}.`,
         "sendDayStatusPush",
+        {screen: "AcademicCalendar"},
       );
       return;
     }
@@ -74,13 +77,13 @@ export const sendDayStatusPush = onSchedule(
         entry = {...message, tokens: []};
         byClass.set(key, entry);
       }
-      if (entry.title) entry.tokens.push(u.expoPushToken as string);
+      if (entry.title) entry.tokens.push(...tokensOf(u));
     }
 
     await Promise.all(
       Array.from(byClass.values())
         .filter((e) => e.title && e.tokens.length > 0)
-        .map((e) => sendExpoPush(e.tokens, e.title, e.body, "sendDayStatusPush")),
+        .map((e) => sendExpoPush(e.tokens, e.title, e.body, "sendDayStatusPush", {screen: "ExamSchedule"})),
     );
   },
 );

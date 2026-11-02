@@ -1,5 +1,7 @@
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import {getFirestore} from "firebase-admin/firestore";
+import {sendExpoPush} from "./expoPush";
+import {tokensOf} from "./audience";
 
 export const sendLeaveResolutionPush = onDocumentWritten(
   "leaveApplications/{applicationId}",
@@ -8,9 +10,9 @@ export const sendLeaveResolutionPush = onDocumentWritten(
     const after = event.data?.after;
     if (!after?.exists) return;
 
-    const beforeData = before?.exists
-      ? (before.data() as {status?: string})
-      : undefined;
+    const beforeData = before?.exists ?
+      (before.data() as {status?: string}) :
+      undefined;
     const afterData = after.data() as {
       studentUid: string;
       status: "pending" | "approved" | "rejected";
@@ -28,34 +30,15 @@ export const sendLeaveResolutionPush = onDocumentWritten(
 
     const db = getFirestore();
     const studentSnap = await db.collection("users").doc(afterData.studentUid).get();
-    const student = studentSnap.data() as {expoPushToken?: string} | undefined;
-    if (!student?.expoPushToken) return;
+    const tokens = tokensOf(studentSnap.data());
+    if (!tokens.length) return;
 
     const verb = afterData.status === "approved" ? "approved" : "rejected";
     const leaveTypeLabel = "Casual";
-    const body = afterData.facultyRemark
-      ? `${afterData.facultyName} ${verb} your ${leaveTypeLabel} leave: "${afterData.facultyRemark}"`
-      : `${afterData.facultyName} ${verb} your ${leaveTypeLabel} leave request.`;
+    const body = afterData.facultyRemark ?
+      `${afterData.facultyName} ${verb} your ${leaveTypeLabel} leave: "${afterData.facultyRemark}"` :
+      `${afterData.facultyName} ${verb} your ${leaveTypeLabel} leave request.`;
 
-    await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Accept-Encoding": "gzip, deflate",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify([
-        {
-          to: student.expoPushToken,
-          title: afterData.status === "approved" ? "Leave Approved" : "Leave Rejected",
-          body,
-          sound: "default",
-          priority: "high",
-        },
-      ]),
-    }).catch((err) => {
-      // eslint-disable-next-line no-console
-      console.error("[sendLeaveResolutionPush] Expo push API call failed:", err);
-    });
+    await sendExpoPush(tokens, afterData.status === "approved" ? "Leave Approved" : "Leave Rejected", body, "sendLeaveResolutionPush", {screen: "ApplyLeave"});
   },
 );

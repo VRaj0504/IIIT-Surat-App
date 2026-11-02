@@ -1,16 +1,17 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, Alert, Switch, ScrollView, Image, Linking, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, Alert, Switch, ScrollView, Image, Linking, ActivityIndicator, Platform, Appearance } from "react-native";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "../firebase/functionsClient";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
-import { colors, spacing, typography } from "../theme/theme";
+import { colors, spacing, typography, themePreference, saveThemePreference, type ThemePreference } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { getCurrentSemester } from "../utils/academicInfo";
 import TapCard from "../components/TapCard";
+import { usePlusAccess } from "../hooks/usePlus";
 
 export const PRIVACY_URL = "https://collegego-iiitsurat.web.app/privacy.html";
 
@@ -65,6 +66,23 @@ export default function ProfileScreen() {
     : [profile?.role === "faculty" ? profile?.designation || "Faculty" : profile?.role, profile?.department];
 
   const [deleting, setDeleting] = useState(false);
+  const [themeChoice, setThemeChoice] = useState<ThemePreference>(themePreference);
+  const darkOn = themeChoice === "system" ? Appearance.getColorScheme() === "dark" : themeChoice === "dark";
+  const chooseTheme = async (v: ThemePreference) => {
+    setThemeChoice(v);
+    await saveThemePreference(v);
+    if (Platform.OS === "web") globalThis.location?.reload();
+  };
+  const plusOpen = usePlusAccess();
+  const groups = React.useMemo(
+    () =>
+      GROUPS.map((g, i) =>
+        i === 0 && plusOpen && isStudent
+          ? { ...g, rows: [{ label: "CollegeGo Plus", sub: "Extra tools for students", icon: "sparkles-outline" as const, route: "Plus" as const, tone: "blue" as const }, ...g.rows] }
+          : g,
+      ),
+    [plusOpen, isStudent],
+  );
 
   const handleDelete = () => {
     Alert.alert(
@@ -144,7 +162,7 @@ export default function ProfileScreen() {
             </TapCard>
           </View>
 
-          {GROUPS.map((g) => (
+          {groups.map((g) => (
             <View key={g.title}>
               <Text style={styles.groupTitle}>{g.title}</Text>
               <View style={styles.card}>
@@ -182,6 +200,48 @@ export default function ProfileScreen() {
               />
             </View>
           )}
+
+          <Text style={styles.groupTitle}>Appearance</Text>
+          <View style={styles.card}>
+            <View style={styles.row}>
+              <View style={[styles.rowIcon, { backgroundColor: colors.tile.blue.bg }]}>
+                <Ionicons name={darkOn ? "moon" : "sunny-outline"} size={18} color={colors.tile.blue.fg} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowLabel, themeChoice === "system" && { color: colors.textSecondary }]}>Dark theme</Text>
+                <Text style={styles.rowSub}>
+                  {themeChoice === "system" ? `Following your phone (${darkOn ? "dark" : "light"})` : darkOn ? "On" : "Off"}
+                </Text>
+              </View>
+              <Switch
+                value={darkOn}
+                disabled={themeChoice === "system"}
+                onValueChange={(v) => chooseTheme(v ? "dark" : "light")}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor="#fff"
+                accessibilityLabel="Dark theme"
+              />
+            </View>
+            <View style={[styles.row, styles.rowDivider]}>
+              <View style={[styles.rowIcon, { backgroundColor: colors.tile.lilac.bg }]}>
+                <Ionicons name="phone-portrait-outline" size={18} color={colors.tile.lilac.fg} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowLabel}>Match phone setting</Text>
+                <Text style={styles.rowSub}>Switch with your phone's light or dark mode</Text>
+              </View>
+              <Switch
+                value={themeChoice === "system"}
+                onValueChange={(v) => chooseTheme(v ? "system" : darkOn ? "dark" : "light")}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor="#fff"
+                accessibilityLabel="Match phone setting"
+              />
+            </View>
+            {themeChoice !== themePreference && Platform.OS !== "web" ? (
+              <Text style={[styles.rowSub, styles.themeNote]}>Close CollegeGo and open it again to apply.</Text>
+            ) : null}
+          </View>
 
           <Text style={styles.groupTitle}>Privacy & account</Text>
           <View style={styles.card}>
@@ -252,6 +312,7 @@ const styles = StyleSheet.create({
 
   groupTitle: { fontSize: 13, fontWeight: "800", color: colors.textSecondary, marginTop: 20, marginBottom: 8, marginLeft: 4 },
   card: { backgroundColor: colors.surface, borderRadius: 22, paddingHorizontal: 4 },
+  themeNote: { paddingHorizontal: 12, paddingBottom: 12, color: colors.warning, fontWeight: "700" },
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 12 },
   rowDivider: { borderTopWidth: 1, borderTopColor: colors.border },
   rowIcon: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },

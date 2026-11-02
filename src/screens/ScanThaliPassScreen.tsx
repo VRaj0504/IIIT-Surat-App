@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
@@ -54,7 +54,6 @@ export default function ScanThaliPassScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <Text style={styles.header}>Scan Thali Pass</Text>
 
         {!permission ? (
           <LoadingSpinner style={{ marginTop: spacing.xl }} />

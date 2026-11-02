@@ -44,13 +44,13 @@ export function subscribeToTimetable(
   onUpdate: (timetable: Timetable | null) => void
 ): () => void {
   const docId = timetableDocId(branch, semester, section);
-  return persisted(`tt:${docId}`, (onUpdate) => onSnapshot(doc(db, TIMETABLE_COLLECTION, docId), (docSnap) => {
+  return persisted(`tt:${docId}`, (onUpdate, fail) => onSnapshot(doc(db, TIMETABLE_COLLECTION, docId), (docSnap) => {
     if (!docSnap.exists()) {
       onUpdate(null);
       return;
     }
     onUpdate(docSnap.data() as Timetable);
-  }), onUpdate);
+  }, () => fail(null)), onUpdate);
 }
 
 export type FacultyScheduleEntry = TimetableSlot & {
@@ -64,7 +64,7 @@ export function subscribeToFacultyTimetable(
   facultyName: string,
   onUpdate: (entries: FacultyScheduleEntry[]) => void
 ): () => void {
-  return persisted(`ftt:${facultyName}`, (onUpdate) => onSnapshot(collection(db, TIMETABLE_COLLECTION), (snap) => {
+  return persisted(`ftt:${facultyName}`, (onUpdate, fail) => onSnapshot(collection(db, TIMETABLE_COLLECTION), (snap) => {
     const entries: FacultyScheduleEntry[] = [];
     snap.docs.forEach((docSnap) => {
       const tt = docSnap.data() as Timetable;
@@ -83,7 +83,7 @@ export function subscribeToFacultyTimetable(
       });
     });
     onUpdate(entries);
-  }), onUpdate);
+  }, () => fail([])), onUpdate);
 }
 
 export function subscribeToAllTimetables(

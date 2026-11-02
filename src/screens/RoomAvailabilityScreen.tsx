@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors, spacing, radius, typography } from "../theme/theme";
 import { subscribeToAllTimetables, Timetable } from "../firebase/timetableService";
 import { getRoomAvailability, getAllTimeSlots, pickCurrentSlot, RoomStatus } from "../utils/roomAvailability";
@@ -71,6 +71,18 @@ export default function RoomAvailabilityScreen() {
   }, [timeSlots, time, today]);
 
   const [autoTime, setAutoTime] = useState(true);
+  const [timePickerOpen, setTimePickerOpen] = useState(false);
+  const slotIndex = time ? timeSlots.indexOf(time) : -1;
+  const nowSlot = useMemo(() => {
+    if (timeSlots.length === 0) return null;
+    const now = new Date();
+    return pickCurrentSlot(timeSlots, now.getHours() * 60 + now.getMinutes()).slot;
+  }, [timeSlots]);
+  const chooseTime = (t: string | undefined) => {
+    if (!t) return;
+    setTime(t);
+    setAutoTime(false);
+  };
   const showPhaseNote = autoTime && today !== null && day === today;
 
   const statuses: RoomStatus[] = useMemo(() => {
@@ -84,7 +96,6 @@ export default function RoomAvailabilityScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <Text style={styles.header}>Empty Classes</Text>
         {today === null && day === WEEKDAYS[0] ? (
           <Text style={styles.emptyNote}>It's the weekend — showing Monday's timetable.</Text>
         ) : !showPhaseNote ? null : phase === "after" ? (
@@ -96,47 +107,76 @@ export default function RoomAvailabilityScreen() {
         ) : null}
 
         <Text style={styles.pillLabel}>Day</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.pillRow}
-          contentContainerStyle={styles.pillRowContent}
-        >
+        <View style={styles.dayRow}>
           {WEEKDAYS.map((d) => (
             <TouchableOpacity
               key={d}
-              style={[styles.pill, day === d && styles.pillActive]}
+              style={[styles.dayPill, day === d && styles.pillActive]}
               onPress={() => setDay(d)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: day === d }}
             >
               <Text style={[styles.pillText, day === d && styles.pillTextActive]}>{d.slice(0, 3)}</Text>
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
 
         {timeSlots.length > 0 && (
           <>
             <Text style={styles.pillLabel}>Time</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.pillRow}
-              contentContainerStyle={styles.pillRowContent}
-            >
-              {timeSlots.map((t) => (
-                <TouchableOpacity
-                  key={t}
-                  style={[styles.pill, time === t && styles.pillActive]}
-                  onPress={() => {
-                    setTime(t);
-                    setAutoTime(false);
-                  }}
-                >
-                  <Text style={[styles.pillText, time === t && styles.pillTextActive]}>{formatSlotLabel(t)}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            <View style={styles.timeRow}>
+              <TouchableOpacity
+                style={[styles.stepButton, slotIndex <= 0 && styles.stepDisabled]}
+                disabled={slotIndex <= 0}
+                onPress={() => chooseTime(timeSlots[slotIndex - 1])}
+                accessibilityLabel="Earlier period"
+              >
+                <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.timeField} onPress={() => setTimePickerOpen(true)} accessibilityLabel="Choose a time">
+                <Ionicons name="time-outline" size={18} color={colors.primary} />
+                <Text style={styles.timeFieldText}>{time ? formatSlotLabel(time) : "Choose a time"}</Text>
+                <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.stepButton, slotIndex >= timeSlots.length - 1 && styles.stepDisabled]}
+                disabled={slotIndex >= timeSlots.length - 1}
+                onPress={() => chooseTime(timeSlots[slotIndex + 1])}
+                accessibilityLabel="Later period"
+              >
+                <Ionicons name="chevron-forward" size={20} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
           </>
         )}
+
+        <Modal visible={timePickerOpen} transparent animationType="fade" onRequestClose={() => setTimePickerOpen(false)}>
+          <Pressable style={styles.sheetBackdrop} onPress={() => setTimePickerOpen(false)}>
+            <Pressable style={styles.sheet} onPress={() => undefined}>
+              <Text style={styles.sheetTitle}>Pick a time on {day}</Text>
+              <ScrollView style={{ maxHeight: 420 }}>
+                {timeSlots.map((t) => {
+                  const selected = time === t;
+                  const isNow = today === day && nowSlot === t;
+                  return (
+                    <TouchableOpacity
+                      key={t}
+                      style={[styles.sheetRow, selected && styles.sheetRowActive]}
+                      onPress={() => {
+                        chooseTime(t);
+                        setTimePickerOpen(false);
+                      }}
+                    >
+                      <Text style={[styles.sheetRowText, selected && styles.sheetRowTextActive]}>{formatSlotLabel(t)}</Text>
+                      {isNow && <Text style={styles.nowBadge}>Now</Text>}
+                      {selected && <Ionicons name="checkmark" size={18} color={colors.primary} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </Modal>
 
         {!timetables ? (
           <LoadingSpinner style={{ marginTop: spacing.xl }} />
@@ -190,17 +230,70 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 
-  pillRow: { flexGrow: 0, height: 46, marginBottom: spacing.md },
-  pillRowContent: { gap: spacing.xs, alignItems: "center", paddingRight: spacing.md },
-  pill: {
-    paddingHorizontal: spacing.md,
+  dayRow: { flexDirection: "row", gap: spacing.xs, marginBottom: spacing.md },
+  dayPill: {
+    flex: 1,
     paddingVertical: spacing.sm,
     borderRadius: radius.full,
     backgroundColor: colors.surface,
     borderWidth: 1.5,
     borderColor: colors.border,
-    justifyContent: "center",
     alignItems: "center",
+  },
+  timeRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
+  stepButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepDisabled: { opacity: 0.35 },
+  timeField: {
+    flex: 1,
+    height: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+  },
+  timeFieldText: { flex: 1, fontSize: 15, fontWeight: "700", color: colors.textPrimary },
+  sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  sheetTitle: { ...typography.h3, color: colors.textPrimary, marginBottom: spacing.sm },
+  sheetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+  },
+  sheetRowActive: { backgroundColor: colors.background },
+  sheetRowText: { flex: 1, fontSize: 16, color: colors.textPrimary },
+  sheetRowTextActive: { fontWeight: "700", color: colors.primary },
+  nowBadge: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: colors.successFg,
+    backgroundColor: colors.successBg,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+    overflow: "hidden",
   },
   pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   pillText: { fontSize: 13, lineHeight: 18, fontWeight: "700", color: colors.textPrimary },

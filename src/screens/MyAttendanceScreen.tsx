@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { colors, spacing } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
@@ -10,6 +10,10 @@ import { readCached, writeCached } from "../firebase/liveCache";
 import { getMyAttendance, SubjectAttendance, ATTENDANCE_TARGET } from "../firebase/attendanceService";
 import { getCurrentSemester } from "../utils/academicInfo";
 import LoadingSpinner from "../components/LoadingSpinner";
+import DesktopAttendance from "../components/web/DesktopAttendance";
+import { useWebLayout } from "../utils/useWebLayout";
+import { useNavigation } from "@react-navigation/native";
+import { usePlus, usePlusAccess } from "../hooks/usePlus";
 
 function prettyDate(iso: string) {
   const [y, m, d] = iso.split("-").map(Number);
@@ -20,11 +24,15 @@ const tone = (p: number) =>
   p >= ATTENDANCE_TARGET + 5
     ? { fg: colors.success, bg: colors.successBg }
     : p >= ATTENDANCE_TARGET
-      ? { fg: "#B45309", bg: "#FEF3C7" }
+      ? { fg: colors.warning, bg: colors.warningBg }
       : { fg: colors.danger, bg: colors.dangerBg };
 
 export default function MyAttendanceScreen() {
   const { profile } = useAuth();
+  const { isDesktop } = useWebLayout();
+  const navigation = useNavigation<any>();
+  const plusOpen = usePlusAccess();
+  const { plus } = usePlus();
   const semester = profile?.admissionYear ? getCurrentSemester(profile.admissionYear, undefined, profile.program) : null;
 
   const [subjects, setSubjects] = useState<CurriculumSubject[] | null>(null);
@@ -32,6 +40,8 @@ export default function MyAttendanceScreen() {
   const [rows, setRows] = useState<SubjectAttendance[] | null>(null);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [planning, setPlanning] = useState(false);
+  const [plan, setPlan] = useState<Record<string, number>>({});
 
   const ready = !!(profile?.enrollmentNumber && profile.branch && profile.admissionYear && semester);
 
@@ -59,7 +69,7 @@ export default function MyAttendanceScreen() {
     readCached<SubjectAttendance[]>(cacheKey).then((v) => v && setRows((r) => r ?? v));
   }, [cacheKey]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     if (!ready || subjects === null) return;
     try {
       setError("");
@@ -72,6 +82,7 @@ export default function MyAttendanceScreen() {
           semester: semester!,
           subjects,
           medicalExcusedSessions: excused,
+          force,
         });
       writeCached(cacheKey, fresh);
       setRows(fresh);
@@ -87,7 +98,7 @@ export default function MyAttendanceScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await load(true);
     setRefreshing(false);
   };
 
@@ -112,6 +123,9 @@ export default function MyAttendanceScreen() {
     (s) => !rows.some((r) => r.subjectCode.replace(/\s+/g, "").toUpperCase() === s.code.replace(/\s+/g, "").toUpperCase()),
   );
 
+  if (isDesktop)
+    return <DesktopAttendance rows={rows} semester={semester!} pending={pending.map((p) => p.code)} error={error} onRetry={() => load(true)} />;
+
   return (
     <ScrollView
       style={styles.page}
@@ -133,10 +147,32 @@ export default function MyAttendanceScreen() {
               <Text style={styles.heroBig}>{overall}%</Text>
               <Text style={styles.heroUnit}>overall</Text>
             </View>
+            <Pressable
+              onPress={() => {
+                setPlanning((v) => !v);
+                setPlan({});
+              }}
+              style={({ pressed }) => [styles.planBtn, pressed && { opacity: 0.8 }]}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: planning }}
+            >
+              <Ionicons name={planning ? "close" : "calculator-outline"} size={16} color={colors.heroText} />
+              <Text style={styles.planBtnText}>{planning ? "Done planning" : "Plan skips"}</Text>
+            </Pressable>
             <Text style={styles.heroSub}>
               {present} of {held} classes attended
               {low.length ? ` · below ${ATTENDANCE_TARGET}% in ${low.length} subject${low.length > 1 ? "s" : ""}` : ` · all subjects at ${ATTENDANCE_TARGET}% or above`}
             </Text>
+            {(plusOpen || plus) && (
+              <Pressable
+                onPress={() => navigation.navigate("LeavePlanner")}
+                style={({ pressed }) => [styles.leaveBtn, pressed && { opacity: 0.8 }]}
+                accessibilityRole="button"
+              >
+                <Ionicons name="airplane-outline" size={16} color={colors.heroText} />
+                <Text style={styles.planBtnText}>Leave planner</Text>
+              </Pressable>
+            )}
           </>
         )}
       </Animated.View>
@@ -148,8 +184,18 @@ export default function MyAttendanceScreen() {
         </View>
       )}
 
+      {planning && (
+        <Text style={styles.planHint}>Press + for each class you're thinking of skipping. The numbers update to show where you'd land.</Text>
+      )}
+
       {rows.map((r, i) => {
-        const t = tone(r.percentage);
+        const planned = planning ? plan[r.subjectCode] ?? 0 : 0;
+        const h = r.totalSessions + planned;
+        const p = h ? Math.round((r.presentCount / h) * 1000) / 10 : 0;
+        const T = ATTENDANCE_TARGET / 100;
+        const canMiss = Math.max(0, Math.floor(r.presentCount / T - h + 1e-9));
+        const need = p >= ATTENDANCE_TARGET ? 0 : Math.ceil((T * h - r.presentCount) / (1 - T) - 1e-9);
+        const t = tone(p);
         return (
           <Animated.View key={r.subjectCode} entering={FadeInDown.delay(60 + i * 40).duration(350)} style={styles.card}>
             <View style={styles.cardTop}>
@@ -157,27 +203,53 @@ export default function MyAttendanceScreen() {
                 <Text style={styles.code}>{r.subjectCode}</Text>
                 <Text style={styles.name} numberOfLines={2}>{r.subjectName}</Text>
               </View>
-              <View style={[styles.pctPill, { backgroundColor: t.bg }]}>
-                <Text style={[styles.pct, { color: t.fg }]}>{r.percentage}%</Text>
+              <View style={{ alignItems: "flex-end" }}>
+                <View style={[styles.pctPill, { backgroundColor: t.bg }]}>
+                  <Text style={[styles.pct, { color: t.fg }]}>{p}%</Text>
+                </View>
+                {planned > 0 ? <Text style={styles.nowPct}>now {r.percentage}%</Text> : null}
               </View>
             </View>
             <View style={styles.track}>
-              <View style={[styles.fill, { width: `${Math.min(100, r.percentage)}%`, backgroundColor: t.fg }]} />
+              <View style={[styles.fill, { width: `${Math.min(100, p)}%`, backgroundColor: t.fg }]} />
               <View style={[styles.mark, { left: `${ATTENDANCE_TARGET}%` }]} />
             </View>
             <View style={styles.metaRow}>
               <Text style={styles.meta}>
-                {r.presentCount}/{r.totalSessions} attended
-                {r.lastClass ? ` · last ${prettyDate(r.lastClass)}` : ""}
+                {r.presentCount}/{h} attended
+                {r.lastClass && !planned ? ` · last ${prettyDate(r.lastClass)}` : ""}
               </Text>
               <Text style={[styles.advice, { color: t.fg }]}>
-                {r.percentage >= ATTENDANCE_TARGET
-                  ? r.canMiss > 0
-                    ? `Can miss ${r.canMiss}`
+                {p >= ATTENDANCE_TARGET
+                  ? canMiss > 0
+                    ? `Can miss ${canMiss}`
                     : "Don't miss the next one"
-                  : `Attend next ${r.needToAttend} to reach ${ATTENDANCE_TARGET}%`}
+                  : `Attend next ${need} → ${ATTENDANCE_TARGET}%`}
               </Text>
             </View>
+            {planning && (
+              <View style={styles.planRow}>
+                <Text style={styles.planLabel}>Skip next</Text>
+                <Pressable
+                  onPress={() => setPlan((x) => ({ ...x, [r.subjectCode]: Math.max(0, planned - 1) }))}
+                  disabled={planned === 0}
+                  style={[styles.stepBtn, planned === 0 && { opacity: 0.4 }]}
+                  accessibilityLabel={`Skip one less ${r.subjectName} class`}
+                  hitSlop={6}
+                >
+                  <Ionicons name="remove" size={18} color={colors.textPrimary} />
+                </Pressable>
+                <Text style={styles.planned}>{planned}</Text>
+                <Pressable
+                  onPress={() => setPlan((x) => ({ ...x, [r.subjectCode]: planned + 1 }))}
+                  style={styles.stepBtn}
+                  accessibilityLabel={`Skip one more ${r.subjectName} class`}
+                  hitSlop={6}
+                >
+                  <Ionicons name="add" size={18} color={colors.textPrimary} />
+                </Pressable>
+              </View>
+            )}
           </Animated.View>
         );
       })}
@@ -219,6 +291,36 @@ const styles = StyleSheet.create({
   advice: { fontSize: 12, fontWeight: "800", textAlign: "right" },
   pending: { fontSize: 12, fontWeight: "600", color: colors.textSecondary, marginTop: 4, paddingHorizontal: 4 },
   footnote: { fontSize: 12, color: colors.textSecondary, lineHeight: 18, marginTop: 8, paddingHorizontal: 4 },
+  planBtn: {
+    position: "absolute",
+    top: 16,
+    right: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  planBtnText: { color: colors.heroText, fontSize: 13, fontWeight: "800" },
+  leaveBtn: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 12,
+  },
+  planHint: { fontSize: 13, fontWeight: "600", color: colors.textSecondary, paddingHorizontal: 4, lineHeight: 19 },
+  nowPct: { fontSize: 11, fontWeight: "700", color: colors.textSecondary, marginTop: 4 },
+  planRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border },
+  planLabel: { flex: 1, fontSize: 13, fontWeight: "700", color: colors.textSecondary },
+  stepBtn: { width: 36, height: 36, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface },
+  planned: { minWidth: 22, textAlign: "center", fontSize: 16, fontWeight: "800", color: colors.textPrimary },
   errorBox: { flexDirection: "row", gap: 8, alignItems: "center", backgroundColor: colors.dangerBg, borderRadius: 14, padding: 12 },
   errorText: { flex: 1, color: colors.danger, fontSize: 13, fontWeight: "600" },
   emptyTitle: { fontSize: 17, fontWeight: "800", color: colors.textPrimary, marginTop: 6 },

@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import {
   colors,
   spacing,
@@ -34,7 +34,6 @@ export default function PlacementsScreen() {
     >
       <SafeAreaView style={styles.container} edges={["top"]}>
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.title}>Placements</Text>
           <Text style={styles.subtitle}>
             Updated as of {placementHighlights.date}
           </Text>
@@ -63,53 +62,30 @@ export default function PlacementsScreen() {
           </View>
 
           <Text style={styles.sectionTitle}>Branch-wise Breakdown</Text>
-          <View style={styles.table}>
-            <View style={[styles.tableRow, styles.tableHeaderRow]}>
-              <Text
-                style={[
-                  styles.tableCell,
-                  styles.tableHeaderText,
-                  styles.branchCol,
-                ]}
-              >
-                Branch
-              </Text>
-              <Text style={[styles.tableCell, styles.tableHeaderText]}>
-                Max
-              </Text>
-              <Text style={[styles.tableCell, styles.tableHeaderText]}>
-                Avg
-              </Text>
-              <Text style={[styles.tableCell, styles.tableHeaderText]}>
-                Median
-              </Text>
-              <Text style={[styles.tableCell, styles.tableHeaderText]}>%</Text>
-            </View>
-
-            {branchStats.map((row: BranchStat) => (
-              <View
-                key={row.branch}
-                style={[
-                  styles.tableRow,
-                  row.branch === "Total" && styles.totalRow,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.tableCell,
-                    styles.branchCol,
-                    styles.branchText,
-                  ]}
-                >
-                  {row.branch}
+          {branchStats.map((row: BranchStat) => (
+            <View key={row.branch} style={[styles.branchCard, row.branch === "Total" && styles.branchCardTotal]}>
+              <View style={styles.branchHead}>
+                <Text style={[styles.branchName, row.branch === "Total" && { color: colors.onPrimary }]}>
+                  {row.branch === "Total" ? "All branches" : row.branch}
                 </Text>
-                <Text style={styles.tableCell}>{row.maxPackage}</Text>
-                <Text style={styles.tableCell}>{row.avgPackage}</Text>
-                <Text style={styles.tableCell}>{row.median}</Text>
-                <Text style={styles.tableCell}>{row.placementPercent}</Text>
+                <View style={[styles.pctPill, row.branch === "Total" && { backgroundColor: "rgba(255,255,255,0.18)" }]}>
+                  <Text style={[styles.pctText, row.branch === "Total" && { color: colors.onPrimary }]}>{row.placementPercent} placed</Text>
+                </View>
               </View>
-            ))}
-          </View>
+              <View style={styles.statRow}>
+                {[
+                  ["Highest", row.maxPackage],
+                  ["Average", row.avgPackage],
+                  ["Median", row.median],
+                ].map(([k, v]) => (
+                  <View key={k} style={styles.stat}>
+                    <Text style={[styles.statVal, row.branch === "Total" && { color: colors.onPrimary }]}>{String(v).replace(/\s*LPA$/i, "")}</Text>
+                    <Text style={[styles.statLbl, row.branch === "Total" && { color: colors.heroMuted }]}>{k} · LPA</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ))}
           <TouchableOpacity style={styles.linkButton} onPress={openTnp}>
             <Text style={styles.linkButtonText}>View full placement data</Text>
             <Ionicons name="open-outline" size={16} color={colors.primary} />
@@ -139,6 +115,16 @@ function HighlightCard({ icon, label, value }: HighlightCardProps) {
 }
 
 const styles = StyleSheet.create({
+  branchCard: { backgroundColor: colors.surface, borderRadius: 20, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  branchCardTotal: { backgroundColor: colors.primary, borderColor: colors.primary },
+  branchHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  branchName: { fontSize: 17, fontWeight: "800", color: colors.textPrimary },
+  pctPill: { backgroundColor: colors.successBg, borderRadius: radius.full, paddingHorizontal: 10, paddingVertical: 4 },
+  pctText: { fontSize: 12, fontWeight: "800", color: colors.successFg },
+  statRow: { flexDirection: "row", marginTop: spacing.sm },
+  stat: { flex: 1 },
+  statVal: { fontSize: 20, fontWeight: "800", color: colors.textPrimary },
+  statLbl: { fontSize: 11, fontWeight: "600", color: colors.textSecondary, marginTop: 1 },
   container: { flex: 1 },
   content: { padding: spacing.md, paddingBottom: spacing.xl },
   title: { ...typography.h1, color: colors.textPrimary },

@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Pressable, BackHandler } from 'react-native';
+import HomeMeetings from '../components/HomeMeetings';
 import { Portal } from '../components/Portal';
 import Animated, { SlideInDown, SlideOutDown, FadeIn, FadeOut } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, radius, typography } from '../theme/theme';
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { colors, spacing, radius, typography, isDark } from '../theme/theme';
+import { isInCabin, cabinSince } from '../utils/cabin';
 import TapCard from '../components/TapCard';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
@@ -24,6 +26,7 @@ import { subscribeToHolidayOverrides } from '../firebase/holidayOverridesService
 import { getDayStatus } from '../utils/dayStatus';
 import { subscribeToNotices, Notice } from '../firebase/noticesService';
 import { useWebLayout } from '../utils/useWebLayout';
+import DesktopHome from '../components/web/DesktopHome';
 import { expandFaculty } from '../data/facultyLegend';
 import { subscribeToActiveSos, SosAlert } from '../firebase/sosService';
 import { useAttendanceSummary } from '../hooks/useAttendanceSummary';
@@ -40,12 +43,13 @@ const studentSections: Section[] = [
     title: 'Academics',
     tiles: [
       { label: 'My Attendance', icon: 'calendar-outline', route: 'MyAttendance', badge: 'blue' },
+      { label: 'My Marks', icon: 'stats-chart-outline', route: 'Marks', badge: 'purple' },
       { label: 'Transcript', icon: 'school-outline', route: 'Transcript', badge: 'green' },
       { label: 'Exam Status', icon: 'ribbon-outline', route: 'ExamStatus', badge: 'pink' },
       { label: 'Exam Schedule', icon: 'reader-outline', route: 'ExamSchedule', badge: 'peach' },
       { label: 'Resources', icon: 'book-outline', route: 'Resources', badge: 'blue' },
       { label: 'Academic Calendar', icon: 'calendar-outline', route: 'AcademicCalendar', badge: 'peach' },
-      { label: 'Empty Classes', icon: 'business-outline', route: 'RoomAvailability', badge: 'green' },
+      { label: 'Curriculum', icon: 'library-outline', route: 'Curriculum', badge: 'purple' },
     ],
   },
   {
@@ -65,6 +69,7 @@ const studentSections: Section[] = [
   {
     title: 'Campus',
     tiles: [
+      { label: 'Empty Classrooms', icon: 'business-outline', route: 'RoomAvailability', badge: 'green' },
       { label: 'Announcements', icon: 'notifications-outline', route: 'Announcements', badge: 'purple' },
       { label: 'Lost & Found', icon: 'search-outline', route: 'LostFound', badge: 'blue' },
       { label: 'Faculty Directory', icon: 'people-outline', route: 'Faculty', badge: 'peach' },
@@ -106,12 +111,13 @@ const facultySections: Section[] = [
       { label: 'Mark Attendance', icon: 'checkmark-done-outline', route: 'MarkAttendance', badge: 'green' },
       { label: 'Resources', icon: 'book-outline', route: 'Resources', badge: 'blue' },
       { label: 'Academic Calendar', icon: 'calendar-outline', route: 'AcademicCalendar', badge: 'peach' },
-      { label: 'Empty Classes', icon: 'business-outline', route: 'RoomAvailability', badge: 'green' },
+      { label: 'Curriculum', icon: 'library-outline', route: 'Curriculum', badge: 'purple' },
     ],
   },
   {
     title: 'Campus',
     tiles: [
+      { label: 'Empty Classrooms', icon: 'business-outline', route: 'RoomAvailability', badge: 'green' },
       { label: 'Faculty Directory', icon: 'people-outline', route: 'Faculty', badge: 'peach' },
       { label: 'Lost & Found', icon: 'search-outline', route: 'LostFound', badge: 'blue' },
       { label: 'Scan Event Poster', icon: 'scan-outline', route: 'ScanPoster', badge: 'peach' },
@@ -139,7 +145,7 @@ const studentBento: Bento = {
   big: { label: 'Attendance', sub: 'Your % in every subject', icon: 'checkmark-done-outline', route: 'MyAttendance', tone: 'mint' },
   small: [
     { label: 'Resources', sub: 'Notes & papers', icon: 'book-outline', route: 'Resources', tone: 'blue' },
-    { label: 'Empty classes', sub: 'Find an empty class', icon: 'business-outline', route: 'RoomAvailability', tone: 'lilac' },
+    { label: 'Empty classrooms', sub: 'Find a free classroom', icon: 'business-outline', route: 'RoomAvailability', tone: 'lilac' },
   ],
 
   chips: [
@@ -152,7 +158,7 @@ const studentBento: Bento = {
 const facultyBento: Bento = {
   big: { label: 'Leave requests', sub: 'Medical & casual', icon: 'mail-open-outline', route: 'LeaveRequests', tone: 'mint' },
   small: [
-    { label: 'Empty classes', sub: 'Find an empty class', icon: 'business-outline', route: 'RoomAvailability', tone: 'lilac' },
+    { label: 'Empty classrooms', sub: 'Find a free classroom', icon: 'business-outline', route: 'RoomAvailability', tone: 'lilac' },
     { label: 'Scan pass', sub: 'Mess counter', icon: 'scan-circle-outline', route: 'ScanThaliPass', tone: 'peach' },
   ],
   chips: [
@@ -195,6 +201,11 @@ function useNow(intervalMs = 30000): Date {
 }
 
 export default function HomeScreen() {
+  const { isDesktop } = useWebLayout();
+  return isDesktop ? <DesktopHome /> : <MobileHome />;
+}
+
+function MobileHome() {
   const { isDesktop } = useWebLayout();
   const navigation = useNavigation<NavProp>();
   const { profile, previewRole, setInCabin } = useAuth();
@@ -242,10 +253,11 @@ export default function HomeScreen() {
   const dayStatus = getDayStatus(now, isFaculty ? [] : examSchedules, holidayOverrides);
 
   const [cabinBusy, setCabinBusy] = useState(false);
+  const inCabinNow = isInCabin(profile?.inCabin, profile?.inCabinAt);
   const handleToggleCabin = async () => {
     setCabinBusy(true);
     try {
-      await setInCabin(!profile?.inCabin);
+      await setInCabin(!isInCabin(profile?.inCabin, profile?.inCabinAt));
     } catch (err: any) {
       Alert.alert("Couldn't update", err.message ?? 'Please try again.');
     } finally {
@@ -386,17 +398,22 @@ export default function HomeScreen() {
             </TapCard>
           )}
 
+          <HomeMeetings onOpenAll={() => go('Meetings' as any)} />
+
           {isFaculty && (
             <TouchableOpacity
-              style={[styles.cabinToggle, profile?.inCabin && { backgroundColor: colors.tile.mint.bg }]}
+              style={[styles.cabinToggle, inCabinNow && { backgroundColor: colors.tile.mint.bg }]}
               onPress={handleToggleCabin}
               disabled={cabinBusy}
               activeOpacity={0.8}
             >
-              <View style={[styles.cabinDot, { backgroundColor: profile?.inCabin ? colors.success : colors.textSecondary }]} />
-              <Text style={[styles.cabinText, profile?.inCabin && { color: colors.tile.mint.fg }]}>
-                {profile?.inCabin ? 'In cabin — students can see this in the directory' : 'Mark yourself as in cabin'}
+              <View style={[styles.cabinDot, { backgroundColor: inCabinNow ? colors.success : colors.textSecondary }]} />
+              <Text style={[styles.cabinText, inCabinNow && { color: colors.tile.mint.fg }]}>
+                {inCabinNow
+                  ? `In cabin since ${cabinSince(profile?.inCabinAt) ?? 'now'}. Students see this in the directory`
+                  : 'Mark yourself as in cabin'}
               </Text>
+              <Text style={[styles.cabinAction, inCabinNow && { color: colors.tile.mint.fg }]}>{inCabinNow ? 'Leave' : 'Mark'}</Text>
             </TouchableOpacity>
           )}
 
@@ -670,7 +687,7 @@ function CategorySheet({
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#FFFFFF' },
+  page: { flex: 1, backgroundColor: colors.page },
   container: { flex: 1 },
   scrollContent: { paddingHorizontal: 18, paddingTop: spacing.md, paddingBottom: 110, gap: 12 },
   scrollDesktop: { maxWidth: 960, width: '100%', alignSelf: 'center' },
@@ -713,7 +730,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: colors.background,
+    backgroundColor: isDark ? colors.surface : colors.background,
     borderRadius: 16,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -728,20 +745,21 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingVertical: 14,
     paddingHorizontal: spacing.md,
-    backgroundColor: colors.background,
+    backgroundColor: isDark ? colors.surface : colors.background,
   },
   cabinDot: { width: 10, height: 10, borderRadius: 5 },
   cabinText: { ...typography.caption, fontWeight: '700', color: colors.textPrimary, flex: 1 },
+  cabinAction: { fontSize: 13, fontWeight: '800', color: colors.primary },
 
   next: { backgroundColor: colors.tile.blue.bg, borderRadius: 26, padding: 18, gap: 6 },
   nextTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   nextKicker: { fontSize: 13, fontWeight: '800', color: colors.tile.blue.fg },
-  nextPill: { backgroundColor: '#FFFFFF', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  nextPill: { backgroundColor: isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
   nextPillText: { fontSize: 13, fontWeight: '800', color: colors.tile.blue.fg },
   nextTitle: { fontSize: 26, fontWeight: '800', letterSpacing: -0.6, lineHeight: 31, color: colors.textPrimary, marginTop: 14 },
   nextSub: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
   nextProgressRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 },
-  nextTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: 'rgba(29,63,168,0.15)', overflow: 'hidden' },
+  nextTrack: { flex: 1, height: 6, borderRadius: 3, backgroundColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(29,63,168,0.15)', overflow: 'hidden' },
   nextFill: { height: 6, borderRadius: 3, backgroundColor: colors.tile.blue.fg },
   nextMeta: { fontSize: 12, fontWeight: '800', color: colors.tile.blue.fg },
 
@@ -751,7 +769,7 @@ const styles = StyleSheet.create({
     width: 54,
     height: 54,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.6)',
+    backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.6)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -762,7 +780,7 @@ const styles = StyleSheet.create({
   bentoSmallTitle: { fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
   bentoSub: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginTop: 2 },
 
-  card: { backgroundColor: colors.background, borderRadius: 24, paddingVertical: 16, paddingHorizontal: 18, gap: 12 },
+  card: { backgroundColor: isDark ? colors.surface : colors.background, borderRadius: 24, paddingVertical: 16, paddingHorizontal: 18, gap: 12 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardTitle: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
   link: { fontSize: 13, fontWeight: '700', color: colors.primary },
@@ -781,7 +799,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 11,
-    backgroundColor: 'rgba(255,255,255,0.65)',
+    backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -795,18 +813,18 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 14,
     borderRadius: 22,
-    backgroundColor: colors.background,
+    backgroundColor: isDark ? colors.surface : colors.background,
   },
   quickIcon: { width: 46, height: 46, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   quickLabel: { fontSize: 12, fontWeight: '700', color: colors.textPrimary },
 
-  sheetBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(14,26,51,0.4)' },
+  sheetBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: colors.overlay },
   sheet: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     paddingHorizontal: 18,
@@ -821,7 +839,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.background,
+    backgroundColor: isDark ? colors.surface : colors.background,
     alignItems: 'center',
     justifyContent: 'center',
   },

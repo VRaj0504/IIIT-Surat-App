@@ -12,6 +12,8 @@ import {
 } from "firebase/firestore";
 import { db } from "./firestore";
 import { persisted } from './liveCache';
+import { isForViewer } from '../utils/audience';
+import { rosterForYear, rosterYears } from './rosterCache';
 
 export type Announcement = {
   id: string;
@@ -37,13 +39,10 @@ export type ClassOption = {
 };
 
 export async function getClassOptionsForYear(admissionYear: number): Promise<ClassOption[]> {
-  const { getDocs, query: q2, where } = await import("firebase/firestore");
-  const snap = await getDocs(
-    q2(collection(db, "roster"), where("admissionYear", "==", admissionYear)),
-  );
+  const rows = await rosterForYear(admissionYear);
   const seen = new Map<string, ClassOption>();
-  snap.docs.forEach((d) => {
-    const data = d.data() as { branch?: string; section?: string; specialization?: string; program?: string };
+  rows.forEach((d) => {
+    const data = d;
     if (!data.branch) return;
     const section = data.section ?? null;
     const key = `${data.branch}||${section ?? ""}`;
@@ -94,14 +93,7 @@ export function getCurrentSemesterNumber(admissionYear: number): number {
 }
 
 export async function getAdmissionYears(): Promise<number[]> {
-  const { getDocs } = await import("firebase/firestore");
-  const snap = await getDocs(collection(db, "roster"));
-  const years = new Set<number>();
-  snap.docs.forEach((d) => {
-    const y = (d.data() as { admissionYear?: number }).admissionYear;
-    if (typeof y === "number") years.add(y);
-  });
-  return Array.from(years).sort((a, b) => b - a);
+  return rosterYears();
 }
 
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -145,11 +137,7 @@ export function subscribeToAnnouncements(
         .map((d) => ({ id: d.id, ...(d.data() as Omit<Announcement, "id">) }))
         .filter((a) => {
           if (viewer === null) return true;
-          if (a.targetBranch && a.targetBranch !== viewer.branch) return false;
-          if (a.targetSection && a.targetSection !== viewer.section) return false;
-          if (a.targetAdmissionYear && a.targetAdmissionYear !== viewer.admissionYear) return false;
-          if (a.targetSpecialization && a.targetSpecialization !== viewer.specialization) return false;
-          return true;
+          return isForViewer(a, viewer);
         });
       onUpdate(items);
     },

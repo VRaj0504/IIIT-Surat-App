@@ -17,7 +17,7 @@ import { useNavigation } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import * as Calendar from "expo-calendar";
 import { downloadIcs } from "../utils/icsDownload";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { scanPoster } from "../firebase/posterScanService";
@@ -144,7 +144,6 @@ const writable = calendars.find(
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
         <KeyboardAwareScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.header}>Scan Event Poster</Text>
           <Text style={styles.helper}>
             Scan or upload a poster — we'll try to pull out the title, date, and time. Always
             double-check before adding to your calendar.

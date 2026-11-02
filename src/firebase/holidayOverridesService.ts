@@ -5,7 +5,7 @@ import { persisted } from './liveCache';
 export function subscribeToHolidayOverrides(
   onUpdate: (overrides: Record<string, string>) => void,
 ): () => void {
-  return persisted("holidays", (onUpdate) => onSnapshot(
+  return persisted("holidays", (onUpdate, fail) => onSnapshot(
     collection(db, "holidayOverrides"),
     (snapshot) => {
       const overrides: Record<string, string> = {};
@@ -18,7 +18,7 @@ export function subscribeToHolidayOverrides(
     (err) => {
       // eslint-disable-next-line no-console
       console.error("[holidayOverridesService] subscribeToHolidayOverrides error:", err);
-      onUpdate({});
+      fail({});
     },
   ), onUpdate);
 }

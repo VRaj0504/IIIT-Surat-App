@@ -2,17 +2,41 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function me() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isMember() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function isAdmin() {
-      return request.auth != null &&
-        (request.auth.token.role == 'admin' ||
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true);
+      return isMember() && (me().role == 'admin' || me().get('isAdmin', false) == true);
+    }
+
+    function myEmail() {
+      return me().email.lower();
+    }
+
+    function onFacultyList() {
+      return get(/databases/$(database)/documents/allowlist/$(myEmail())).data.get('role', '') == 'faculty';
     }
 
     function isFaculty() {
-      return request.auth != null &&
-        (request.auth.token.role == 'faculty' ||
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
+      return isMember() && me().role == 'faculty' && onFacultyList();
+    }
+
+    function isTeachingFaculty() {
+      return isFaculty() &&
+        get(/databases/$(database)/documents/allowlist/$(myEmail())).data.get('nonTeaching', false) != true;
+    }
+
+    function isStaff() {
+      return isAdmin() || isFaculty();
     }
 
     function verifiedInstituteEmail() {
@@ -21,18 +45,29 @@ service cloud.firestore {
         request.auth.token.email.lower().matches('.*@iiitsurat[.]ac[.]in');
     }
 
-    function isMember() {
-      return request.auth != null &&
-        (request.auth.token.get('role', '') in ['student', 'faculty', 'admin'] ||
-         exists(/databases/$(database)/documents/users/$(request.auth.uid)));
-    }
-
     function canReadDirectory() {
       return isMember() || verifiedInstituteEmail();
     }
 
-    function myEmail() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email.lower();
+    function emailMatchesEnrollment(regNo) {
+      return request.auth.token.email.lower() == regNo.lower() + '@iiitsurat.ac.in' ||
+        get(/databases/$(database)/documents/roster/$(regNo)).data.get('email', '').lower() ==
+          request.auth.token.email.lower();
+    }
+
+    function examConfig() {
+      return get(/databases/$(database)/documents/config/exams).data;
+    }
+
+    function isExamCell() {
+      return isMember() &&
+        exists(/databases/$(database)/documents/config/exams) &&
+        myEmail() in examConfig().get('examCellEmails', []);
+    }
+
+    function gradePublishMode() {
+      return exists(/databases/$(database)/documents/config/exams) ?
+        examConfig().get('publishMode', 'instant') : 'instant';
     }
 
     function validGradeShape() {
@@ -41,25 +76,40 @@ service cloud.firestore {
         request.resource.data.credits is number &&
         request.resource.data.credits >= 0 &&
         request.resource.data.studentEnrollmentNumber is string &&
-        request.resource.data.subjectCode is string;
+        request.resource.data.subjectCode is string &&
+        request.resource.data.get('published', false) is bool;
     }
 
-    function validGradeWrite() {
-      return request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty' &&
-        validGradeShape();
-    }
-
-    function isExamCell() {
-      return request.auth != null &&
-        exists(/databases/$(database)/documents/config/exams) &&
-        myEmail() in get(/databases/$(database)/documents/config/exams).data.get('examCellEmails', []);
+    function facultyMayPublish() {
+      return request.resource.data.get('published', false) == false || gradePublishMode() != 'examCell';
     }
 
     function isHodFor(branch) {
-      return request.auth != null &&
+      return isMember() &&
         exists(/databases/$(database)/documents/config/medicalLeave) &&
         get(/databases/$(database)/documents/config/medicalLeave).data.get('hodByBranch', {}).get(branch, {}).get('email', '') == myEmail();
+    }
+
+    function isComplaintCommittee() {
+      return isMember() &&
+        exists(/databases/$(database)/documents/config/complaints) &&
+        myEmail() in get(/databases/$(database)/documents/config/complaints).data.get('committeeEmails', []);
+    }
+
+    function isLeader() {
+      return isMember() &&
+        exists(/databases/$(database)/documents/config/leadership) &&
+        myEmail() in get(/databases/$(database)/documents/config/leadership).data.get('emails', []);
+    }
+
+    function validMeeting(d) {
+      return d.title is string && d.title.size() > 0 && d.title.size() <= 120 &&
+        d.get('agenda', '') is string && d.get('agenda', '').size() <= 2000 &&
+        d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+        d.startTime is string && d.startTime.matches('^[0-9]{2}:[0-9]{2}$') &&
+        (d.get('endTime', null) == null || (d.endTime is string && d.endTime.matches('^[0-9]{2}:[0-9]{2}$'))) &&
+        d.venue is string && d.venue.size() > 0 && d.venue.size() <= 120 &&
+        d.status in ['scheduled', 'cancelled'];
     }
 
     match /enrollmentClaims/{enrollmentNumber} {
@@ -68,13 +118,16 @@ service cloud.firestore {
       allow create: if verifiedInstituteEmail() &&
         request.resource.data.uid == request.auth.uid &&
         request.resource.data.keys().hasOnly(['uid', 'claimedAt']) &&
-        exists(/databases/$(database)/documents/roster/$(enrollmentNumber));
+        exists(/databases/$(database)/documents/roster/$(enrollmentNumber)) &&
+        emailMatchesEnrollment(enrollmentNumber);
       allow update: if false;
       allow delete: if false;
     }
 
     match /users/{userId} {
-      allow read: if (request.auth != null && request.auth.uid == userId) || canReadDirectory();
+      allow read: if (signedIn() && request.auth.uid == userId) ||
+        isStaff() ||
+        (isMember() && resource.data.role == 'faculty');
 
       allow create: if verifiedInstituteEmail() &&
         request.auth.uid == userId &&
@@ -90,6 +143,7 @@ service cloud.firestore {
            get(/databases/$(database)/documents/allowlist/$(request.resource.data.email)).data.role == 'faculty') ||
           (request.resource.data.role == 'student' &&
            exists(/databases/$(database)/documents/roster/$(request.resource.data.enrollmentNumber)) &&
+           emailMatchesEnrollment(request.resource.data.enrollmentNumber) &&
            request.resource.data.branch ==
              get(/databases/$(database)/documents/roster/$(request.resource.data.enrollmentNumber)).data.get('branch', null) &&
            request.resource.data.get('section', null) ==
@@ -102,13 +156,17 @@ service cloud.firestore {
       allow update: if isAdmin() || (
         request.auth != null && request.auth.uid == userId &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'name', 'phone', 'photoUrl', 'inCabin', 'expoPushToken',
+          'name', 'phone', 'photoUrl', 'inCabin', 'inCabinAt', 'expoPushToken', 'expoPushTokens',
           'notificationPreferences', 'officeLocation', 'officeHours',
           'researchAreas', 'publicationsCount', 'aboutMe', 'department',
           'designation', 'emergencyContacts'
         ])
       );
       allow delete: if isAdmin();
+
+      match /private/{docId} {
+        allow read, write: if signedIn() && request.auth.uid == userId;
+      }
     }
 
     match /allowlist/{email} {
@@ -128,7 +186,7 @@ service cloud.firestore {
 
     match /holidayOverrides/{dateId} {
       allow read: if isMember();
-      allow write: if isAdmin() || isFaculty();
+      allow write: if isAdmin() || isExamCell();
     }
 
     match /counsellors/{email} {
@@ -169,11 +227,24 @@ service cloud.firestore {
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrollmentNumber in resource.data.studentEnrollmentNumbers);
       allow create: if isMember() &&
         request.resource.data.submittedBy == request.auth.uid &&
-        request.resource.data.status == 'pending';
+        request.resource.data.status == 'pending' &&
+        request.resource.data.facultyCoordinatorUid is string &&
+        request.resource.data.facultyCoordinatorUid != request.auth.uid &&
+        get(/databases/$(database)/documents/users/$(request.resource.data.facultyCoordinatorUid)).data.role == 'faculty' &&
+        request.resource.data.studentEnrollmentNumbers is list &&
+        request.resource.data.studentEnrollmentNumbers.size() > 0 &&
+        request.resource.data.studentEnrollmentNumbers.size() <= 150 &&
+        request.resource.data.fromDate is string &&
+        request.resource.data.toDate is string &&
+        request.resource.data.toDate >= request.resource.data.fromDate;
 
       allow update: if isAdmin() ||
-        (request.auth != null &&
+        (isFaculty() &&
           resource.data.facultyCoordinatorUid == request.auth.uid &&
+          resource.data.submittedBy != request.auth.uid &&
+          request.resource.data.status in ['pending', 'approved', 'rejected'] &&
+          request.resource.data.submittedBy == resource.data.submittedBy &&
+          request.resource.data.facultyCoordinatorUid == resource.data.facultyCoordinatorUid &&
           request.resource.data.eventName == resource.data.eventName &&
           request.resource.data.fromDate == resource.data.fromDate &&
           request.resource.data.toDate == resource.data.toDate &&
@@ -183,16 +254,14 @@ service cloud.firestore {
 
     match /roster/{regNo} {
       allow read: if canReadDirectory();
-      allow write: if isAdmin() || (request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
+      allow write: if isAdmin() || isTeachingFaculty();
     }
 
     match /sessions/{sessionId} {
 
   allow read: if isAdmin() || (request.auth != null && resource.data.facultyId == request.auth.uid);
-  allow create: if isAdmin() || (request.auth != null &&
-    request.resource.data.facultyId == request.auth.uid &&
-    get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
+  allow create: if isAdmin() || (isTeachingFaculty() &&
+    request.resource.data.facultyId == request.auth.uid);
   allow update: if isAdmin() || (request.auth != null &&
     resource.data.facultyId == request.auth.uid &&
     resource.data.finalized == false);
@@ -201,12 +270,10 @@ service cloud.firestore {
 
     match /clubs/{clubId} {
       allow read: if isMember();
-      allow create: if isAdmin() || (request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
-      allow update: if isAdmin() || (request.auth != null &&
+      allow create: if isStaff();
+      allow update: if isAdmin() || isFaculty() || (signedIn() &&
         (
           resource.data.leadUid == request.auth.uid ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty' ||
           (
 
             resource.data.leadUid == null &&
@@ -228,7 +295,7 @@ service cloud.firestore {
         request.resource.data.createdBy == request.auth.uid &&
         (
           get(/databases/$(database)/documents/clubs/$(request.resource.data.clubId)).data.leadUid == request.auth.uid ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty'
+          isFaculty()
         ));
       allow update: if isAdmin() || (request.auth != null &&
         resource.data.createdBy == request.auth.uid &&
@@ -240,9 +307,8 @@ service cloud.firestore {
 
     match /resources/{resourceId} {
       allow read: if isMember();
-      allow create: if isAdmin() || (request.auth != null &&
-        request.resource.data.uploadedBy == request.auth.uid &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
+      allow create: if isAdmin() || (isFaculty() &&
+        request.resource.data.uploadedBy == request.auth.uid);
       allow update: if isAdmin();
   allow delete: if isAdmin() || (request.auth != null && resource.data.uploadedBy == request.auth.uid);
     }
@@ -267,7 +333,7 @@ service cloud.firestore {
       allow create: if isAdmin() || (request.auth != null &&
         request.resource.data.createdBy == request.auth.uid &&
         (
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty' ||
+          isFaculty() ||
           (request.resource.data.category == 'Club' &&
            request.resource.data.clubId != null &&
            get(/databases/$(database)/documents/clubs/$(request.resource.data.clubId)).data.leadUid == request.auth.uid)
@@ -280,22 +346,17 @@ service cloud.firestore {
         request.resource.data.clubName == resource.data.clubName);
 
       allow delete: if isAdmin() || (request.auth != null &&
-        (resource.data.createdBy == request.auth.uid ||
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty'));
+        (resource.data.createdBy == request.auth.uid || isFaculty()));
     }
 
     match /curriculum/{docId} {
       allow read: if isMember();
-      allow write: if isAdmin() || (request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
-      allow delete: if isAdmin();
+      allow write: if isAdmin() || isTeachingFaculty();
     }
 
     match /timetable/{docId} {
       allow read: if isMember();
-      allow write: if isAdmin() || (request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
-      allow delete: if isAdmin();
+      allow write: if isAdmin() || isTeachingFaculty();
     }
 
     match /supportRequests/{docId} {
@@ -308,20 +369,19 @@ service cloud.firestore {
 
     match /roomAliases/{docId} {
       allow read: if isMember();
-      allow write: if isAdmin() || (request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty');
+      allow write: if isAdmin() || isTeachingFaculty();
     }
 
     match /examSchedules/{docId} {
       allow read: if isMember();
-      allow create, update: if (isAdmin() || isFaculty()) &&
+      allow create, update: if (isAdmin() || isExamCell()) &&
         request.resource.data.branch is string &&
         request.resource.data.semester is number &&
         request.resource.data.examType is string &&
         request.resource.data.entries is list &&
         request.resource.data.entries.size() > 0 &&
         request.resource.data.entries.size() <= 60;
-      allow delete: if isAdmin() || isFaculty();
+      allow delete: if isAdmin() || isExamCell();
     }
 
     match /announcements/{announcementId} {
@@ -337,20 +397,82 @@ service cloud.firestore {
         (request.auth != null && resource.data.createdBy == request.auth.uid);
     }
 
+    match /marks/{markId} {
+      allow read: if isAdmin() || isExamCell() || isTeachingFaculty() ||
+        (signedIn() && resource.data.enrollmentNumber == me().get('enrollmentNumber', ''));
+      allow create, update: if (isAdmin() || isExamCell() || isTeachingFaculty()) &&
+        request.resource.data.enrollmentNumber is string &&
+        request.resource.data.subjectCode is string &&
+        request.resource.data.components is map;
+      allow delete: if isAdmin() || isExamCell();
+    }
+
+    match /marksUploads/{uploadId} {
+      allow read: if isAdmin() || isExamCell() || isTeachingFaculty();
+      allow create: if (isAdmin() || isExamCell() || isTeachingFaculty()) &&
+        request.resource.data.regNos is list &&
+        request.resource.data.regNos.size() <= 600;
+    }
+
     match /grades/{gradeId} {
-      allow read: if isAdmin() || isExamCell() ||
-        (request.auth != null &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'faculty') ||
-        (request.auth != null &&
-          resource.data.studentEnrollmentNumber ==
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrollmentNumber);
-      allow create: if isAdmin() || validGradeWrite() || (isExamCell() && validGradeShape());
+      allow read: if isAdmin() || isExamCell() || isTeachingFaculty() ||
+        (signedIn() &&
+          resource.data.studentEnrollmentNumber == me().get('enrollmentNumber', '') &&
+          (gradePublishMode() != 'examCell' || resource.data.get('published', false) == true));
+
+      allow create: if isAdmin() ||
+        (isExamCell() && validGradeShape()) ||
+        (isTeachingFaculty() && validGradeShape() && facultyMayPublish());
 
       allow update: if isAdmin() ||
         (isExamCell() && validGradeShape()) ||
-        (validGradeWrite() && resource.data.enteredBy == request.auth.uid);
-      allow delete: if isAdmin() ||
-        (request.auth != null && resource.data.enteredBy == request.auth.uid);
+        (isExamCell() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['published', 'publishedAt', 'publishedBy']) &&
+          request.resource.data.published is bool) ||
+        (isTeachingFaculty() && validGradeShape() && facultyMayPublish() &&
+          resource.data.enteredBy == request.auth.uid);
+
+      allow delete: if isAdmin() || isExamCell() ||
+        (isTeachingFaculty() && resource.data.enteredBy == request.auth.uid);
+    }
+
+    function validQuiz() {
+      return request.resource.data.branch is string &&
+        request.resource.data.admissionYear is number &&
+        request.resource.data.subjectCode is string &&
+        request.resource.data.date is string &&
+        request.resource.data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+        request.resource.data.startTime is string &&
+        request.resource.data.endTime is string &&
+        request.resource.data.sections is list &&
+        request.resource.data.rooms is list &&
+        request.resource.data.rooms.size() <= 40 &&
+        request.resource.data.syllabus is string &&
+        request.resource.data.syllabus.size() <= 4000;
+    }
+
+    match /quizzes/{quizId} {
+      allow read: if isMember();
+      allow create: if (isAdmin() || isExamCell() || isTeachingFaculty()) &&
+        request.resource.data.createdBy == request.auth.uid &&
+        validQuiz();
+      allow update: if (isAdmin() || isExamCell() ||
+          (isTeachingFaculty() && resource.data.createdBy == request.auth.uid)) &&
+        request.resource.data.createdBy == resource.data.createdBy &&
+        validQuiz();
+      allow delete: if isAdmin() || isExamCell() ||
+        (isTeachingFaculty() && resource.data.createdBy == request.auth.uid);
+    }
+
+    match /messAlwaysAvailable/{itemId} {
+      allow read: if isMember();
+      allow write: if isStaff() &&
+        (request.resource == null ||
+          (request.resource.data.name is string &&
+           request.resource.data.name.size() > 0 &&
+           request.resource.data.name.size() <= 40 &&
+           (request.resource.data.get('price', null) == null || request.resource.data.price is number) &&
+           request.resource.data.order is number));
     }
 
     match /examEvents/{eventId} {
@@ -358,7 +480,7 @@ service cloud.firestore {
       allow create, update: if (isAdmin() || isExamCell()) &&
         request.resource.data.title is string &&
         request.resource.data.title.size() > 0 &&
-        request.resource.data.type in ['supplementary', 'makeup', 'endsem', 'midsem', 'other'] &&
+        request.resource.data.type in ['supplementary', 'makeup', 'endsem', 'midsem', 'roomchange', 'other'] &&
         request.resource.data.registration in ['none', 'backlogs', 'subjects'] &&
         request.resource.data.branches is list &&
         request.resource.data.admissionYears is list &&
@@ -415,23 +537,54 @@ service cloud.firestore {
           examRegistrationOpen(resource.data.eventId));
     }
 
-    function stageAfterDoctor(data) {
-      return data.get('drEmail', '') != '' ? 'dr' : (data.get('deanEmail', '') != '' ? 'dean' : 'hod');
+    function nextAfterJr(d) {
+      return d.get('administratorEmail', '') != '' ? 'administrator' : 'teachers';
     }
 
-    function stageAfterDr(data) {
-      return data.get('deanEmail', '') != '' ? 'dean' : 'hod';
+    function nextAfterDean(d) {
+      return d.get('jrEmail', '') != '' ? 'jr' : nextAfterJr(d);
+    }
+
+    function nextAfterHod(d) {
+      return d.get('deanEmail', '') != '' ? 'dean' : nextAfterDean(d);
+    }
+
+    function medicalCfg() {
+      return get(/databases/$(database)/documents/config/medicalLeave).data;
+    }
+
+    function medicalStepEmail(key) {
+      return medicalCfg().get(key, null) == null ? '' : medicalCfg().get(key, null).get('email', '');
+    }
+
+    function decidesMedical(stage, emailField, decisionField, next) {
+      return signedIn() &&
+        resource.data.type == 'medical' &&
+        resource.data.stage == stage &&
+        resource.data.get(emailField, '') == myEmail() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['stage', 'status', decisionField, 'facultyRemark', 'resolvedAt', 'resolvedBy']) &&
+        request.resource.data.get(decisionField, {}).get('by', '') == request.auth.uid &&
+        (
+          (request.resource.data.stage == next &&
+           request.resource.data.status == (next == 'teachers' ? 'approved' : 'pending') &&
+           request.resource.data.get(decisionField, {}).get('decision', '') == 'approved') ||
+          (request.resource.data.stage == 'rejected' && request.resource.data.status == 'rejected' &&
+           request.resource.data.get(decisionField, {}).get('decision', '') == 'rejected')
+        );
     }
 
     match /leaveApplications/{appId} {
 
       allow read: if isAdmin() ||
-        (request.auth != null && resource.data.studentUid == request.auth.uid) ||
-        (request.auth != null && resource.data.facultyEmail == myEmail()) ||
-        (request.auth != null && resource.data.doctorEmail == myEmail()) ||
-        (request.auth != null && resource.data.drEmail == myEmail()) ||
-        (request.auth != null && resource.data.deanEmail == myEmail()) ||
-        (request.auth != null && resource.data.hodEmail == myEmail());
+        (signedIn() && resource.data.studentUid == request.auth.uid) ||
+        (isMember() && myEmail() in resource.data.get('viewerEmails', [])) ||
+        (isMember() && resource.data.get('facultyEmail', '') == myEmail()) ||
+        (isMember() && resource.data.get('doctorEmail', '') == myEmail()) ||
+        (isMember() && resource.data.get('hodEmail', '') == myEmail()) ||
+        (isMember() && resource.data.get('deanEmail', '') == myEmail()) ||
+        (isMember() && resource.data.get('jrEmail', '') == myEmail()) ||
+        (isMember() && resource.data.get('administratorEmail', '') == myEmail());
 
       allow create: if isMember() &&
         request.resource.data.studentUid == request.auth.uid &&
@@ -442,32 +595,26 @@ service cloud.firestore {
         request.resource.data.facultyEmail.size() > 0 &&
         (
           (request.resource.data.type == 'casual' &&
-           !request.resource.data.keys().hasAny(['stage', 'doctorEmail', 'hodEmail'])) ||
+           !request.resource.data.keys().hasAny(['stage', 'doctorEmail', 'hodEmail', 'excusedSessions', 'excuseAllDates'])) ||
           (request.resource.data.type == 'medical' &&
            request.resource.data.stage == 'doctor' &&
-
            request.resource.data.medicalReportUrl is string &&
            request.resource.data.medicalReportUrl.matches('^https://firebasestorage[.]googleapis[.]com/.*') &&
-           request.resource.data.doctorEmail ==
-             get(/databases/$(database)/documents/config/medicalLeave).data.doctor.email &&
+           request.resource.data.doctorEmail == medicalStepEmail('doctor') &&
            request.resource.data.facultyEmail == request.resource.data.doctorEmail &&
-           request.resource.data.hodEmail ==
-             get(/databases/$(database)/documents/config/medicalLeave).data.hodByBranch[
-               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.branch
-             ].email &&
-           request.resource.data.get('drEmail', '') ==
-             get(/databases/$(database)/documents/config/medicalLeave).data.get('dr', {}).get('email', '') &&
-           request.resource.data.get('deanEmail', '') ==
-             get(/databases/$(database)/documents/config/medicalLeave).data.get('dean', {}).get('email', '') &&
-
+           request.resource.data.hodEmail in medicalCfg().get('hodEmails', []) &&
+           request.resource.data.get('deanEmail', '') == medicalStepEmail('dean') &&
+           request.resource.data.get('jrEmail', '') == medicalStepEmail('jr') &&
+           request.resource.data.get('administratorEmail', '') == medicalStepEmail('administrator') &&
            !request.resource.data.keys().hasAny([
-             'doctorDecision', 'drDecision', 'deanDecision', 'hodDecision', 'teacherEmails', 'teachersTotal',
-             'teachersConfirmed', 'excusedSessions', 'unmatchedFaculty'
+             'doctorDecision', 'hodDecision', 'deanDecision', 'jrDecision', 'administratorDecision',
+             'teacherEmails', 'teachersTotal', 'teachersConfirmed', 'excusedSessions', 'unmatchedFaculty',
+             'excuseAllDates', 'autoExcused', 'teacherNote'
            ]))
         );
 
       allow update: if isAdmin() || (
-        request.auth != null &&
+        isMember() &&
         resource.data.type == 'casual' &&
         resource.data.facultyEmail == myEmail() &&
         resource.data.status == 'pending' &&
@@ -477,63 +624,23 @@ service cloud.firestore {
         request.resource.data.resolvedBy == request.auth.uid
       );
 
-      allow update: if request.auth != null &&
-        resource.data.type == 'medical' &&
-        resource.data.stage == 'doctor' &&
-        resource.data.doctorEmail == myEmail() &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['stage', 'status', 'doctorDecision', 'facultyRemark', 'resolvedAt', 'resolvedBy']) &&
-        request.resource.data.doctorDecision.by == request.auth.uid &&
-        (
-          (request.resource.data.stage == stageAfterDoctor(resource.data) && request.resource.data.status == 'pending' &&
-           request.resource.data.doctorDecision.decision == 'approved') ||
-          (request.resource.data.stage == 'rejected' && request.resource.data.status == 'rejected' &&
-           request.resource.data.doctorDecision.decision == 'rejected')
-        );
-
-      allow update: if request.auth != null &&
-        resource.data.type == 'medical' &&
-        resource.data.stage == 'dr' &&
-        resource.data.get('drEmail', '') == myEmail() &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['stage', 'status', 'drDecision', 'facultyRemark', 'resolvedAt', 'resolvedBy']) &&
-        request.resource.data.drDecision.by == request.auth.uid &&
-        (
-          (request.resource.data.stage == stageAfterDr(resource.data) && request.resource.data.status == 'pending' &&
-           request.resource.data.drDecision.decision == 'approved') ||
-          (request.resource.data.stage == 'rejected' && request.resource.data.status == 'rejected' &&
-           request.resource.data.drDecision.decision == 'rejected')
-        );
-
-      allow update: if request.auth != null &&
-        resource.data.type == 'medical' &&
-        resource.data.stage == 'dean' &&
-        resource.data.get('deanEmail', '') == myEmail() &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['stage', 'status', 'deanDecision', 'facultyRemark', 'resolvedAt', 'resolvedBy']) &&
-        request.resource.data.deanDecision.by == request.auth.uid &&
-        (
-          (request.resource.data.stage == 'hod' && request.resource.data.status == 'pending' &&
-           request.resource.data.deanDecision.decision == 'approved') ||
-          (request.resource.data.stage == 'rejected' && request.resource.data.status == 'rejected' &&
-           request.resource.data.deanDecision.decision == 'rejected')
-        );
-
-      allow update: if request.auth != null &&
-        resource.data.type == 'medical' &&
-        resource.data.stage == 'hod' &&
-        resource.data.hodEmail == myEmail() &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['stage', 'status', 'hodDecision', 'facultyRemark', 'resolvedAt', 'resolvedBy']) &&
-        request.resource.data.hodDecision.by == request.auth.uid &&
-        (
-          (request.resource.data.stage == 'teachers' && request.resource.data.status == 'approved' &&
-           request.resource.data.hodDecision.decision == 'approved') ||
-          (request.resource.data.stage == 'rejected' && request.resource.data.status == 'rejected' &&
-           request.resource.data.hodDecision.decision == 'rejected')
-        );
+      allow update: if isMember() && (
+        decidesMedical('doctor', 'doctorEmail', 'doctorDecision', 'hod') ||
+        decidesMedical('hod', 'hodEmail', 'hodDecision', nextAfterHod(resource.data)) ||
+        decidesMedical('dean', 'deanEmail', 'deanDecision', nextAfterDean(resource.data)) ||
+        decidesMedical('jr', 'jrEmail', 'jrDecision', nextAfterJr(resource.data)) ||
+        decidesMedical('administrator', 'administratorEmail', 'administratorDecision', 'teachers')
+      );
 
       allow delete: if isAdmin();
+
+      match /events/{eventId} {
+        allow read: if isAdmin() || (isMember() && (
+          get(/databases/$(database)/documents/leaveApplications/$(appId)).data.studentUid == request.auth.uid ||
+          myEmail() in get(/databases/$(database)/documents/leaveApplications/$(appId)).data.get('viewerEmails', [])
+        ));
+        allow write: if false;
+      }
 
       match /teacherAcks/{teacherEmail} {
         allow read: if isAdmin() ||
@@ -550,6 +657,18 @@ service cloud.firestore {
       }
     }
 
+    match /signatures/{uid} {
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create, update: if isMember() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['w', 'h', 'paths', 'png', 'name', 'updatedAt']) &&
+        request.resource.data.paths is list &&
+        request.resource.data.paths.size() <= 200 &&
+        (request.resource.data.paths.size() > 0 ||
+          (request.resource.data.get('png', null) is string && request.resource.data.png.size() > 100 && request.resource.data.png.size() <= 130000)) &&
+        request.resource.data.w is number &&
+        request.resource.data.h is number;
+    }
+
     match /{path=**}/teacherAcks/{teacherEmail} {
       allow read: if isAdmin() ||
         (request.auth != null && resource.data.email == myEmail()) ||
@@ -562,13 +681,14 @@ service cloud.firestore {
         myEmail() in get(/databases/$(database)/documents/config/sos).data.get('responderEmails', []);
     }
     match /sosAlerts/{alertId} {
-      allow create: if request.auth != null &&
+      allow create: if isMember() &&
         request.resource.data.studentUid == request.auth.uid &&
         request.resource.data.status == 'open' &&
+        !request.resource.data.keys().hasAny(['smsSent', 'smsError', 'demo', 'throttled']) &&
         request.resource.data.type in ['medical', 'safety', 'other'] &&
         request.resource.data.ackBy == null &&
         request.resource.data.resolvedBy == null;
-      allow read: if isAdmin() || isSosResponder() ||
+      allow read: if isAdmin() || isSosResponder() || isLeader() ||
         (request.auth != null && resource.data.studentUid == request.auth.uid);
       allow update: if
         (request.auth != null && resource.data.studentUid == request.auth.uid &&
@@ -583,31 +703,49 @@ service cloud.firestore {
 
     match /config/{docId} {
       allow read: if isMember();
+      allow update: if docId == 'exams' &&
+        (isAdmin() || isExamCell()) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['publishMode']) &&
+        request.resource.data.publishMode in ['instant', 'examCell'];
+      allow create, delete: if false;
+    }
+
+    match /medicalExcusals/{leaveId} {
+      allow read: if isStaff() ||
+        (signedIn() && resource.data.studentUid == request.auth.uid);
       allow write: if false;
     }
 
     match /complaints/{complaintId} {
 
       allow read: if isAdmin() ||
-        (request.auth != null && resource.data.studentUid == request.auth.uid) ||
-        (isFaculty() && resource.data.get('facultyEmail', null) == null) ||
-        (request.auth != null && resource.data.get('facultyEmail', null) == myEmail());
+        (signedIn() && resource.data.studentUid == request.auth.uid) ||
+        isComplaintCommittee() ||
+        isLeader() ||
+        (isFaculty() &&
+          resource.data.get('facultyEmail', null) == null &&
+          resource.data.type == 'doubt') ||
+        (isMember() && resource.data.get('facultyEmail', null) == myEmail());
       allow create: if isMember() &&
         request.resource.data.studentUid == request.auth.uid &&
         request.resource.data.status == 'pending' &&
         request.resource.data.type in ['complaint', 'doubt'] &&
         request.resource.data.category in
           ['Facilities', 'Harassment', 'Academic', 'Other', 'Coursework', 'Exam'] &&
-        (request.resource.data.facultyEmail is string || request.resource.data.facultyEmail == null) &&
+        (request.resource.data.get('facultyEmail', null) == null || request.resource.data.facultyEmail is string) &&
+        (request.resource.data.category != 'Harassment' || request.resource.data.get('facultyEmail', null) == null) &&
         request.resource.data.subject is string &&
         request.resource.data.subject.size() > 0 &&
         request.resource.data.description is string &&
         request.resource.data.description.size() > 0;
       allow update: if isAdmin() || (
-        request.auth != null &&
+        signedIn() &&
         resource.data.status == 'pending' &&
         (
-          (isFaculty() && resource.data.get('facultyEmail', null) == null) ||
+          isComplaintCommittee() ||
+          (isFaculty() &&
+            resource.data.get('facultyEmail', null) == null &&
+            resource.data.type == 'doubt') ||
           resource.data.get('facultyEmail', null) == myEmail()
         ) &&
         request.resource.data.status in ['resolved', 'rejected'] &&
@@ -646,7 +784,7 @@ service cloud.firestore {
         request.resource.data.reporterUid == request.auth.uid &&
         request.resource.data.status == 'open' &&
         request.resource.data.reason is string;
-      allow read, update: if isAdmin() || isFaculty();
+      allow read, update: if isStaff();
       allow delete: if isAdmin();
     }
 
@@ -661,29 +799,62 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /plusConfig/{docId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /plusAccess/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    match /subscriptions/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow write: if false;
+    }
+
     match /messSubscriptions/{docId} {
 
-      allow read: if isAdmin() || isFaculty() ||
-        (request.auth != null &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrollmentNumber == docId.split('_')[0]);
-      allow write: if isAdmin() || isFaculty();
+      allow read: if isStaff() ||
+        (signedIn() && me().get('enrollmentNumber', '') == docId.split('_')[0]);
+      allow write: if isStaff();
+    }
+
+    match /meetings/{meetingId} {
+      allow read: if isAdmin() || isLeader() ||
+        (signedIn() && request.auth.uid in resource.data.recipientUids);
+      allow create: if (isAdmin() || isLeader()) &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.status == 'scheduled' &&
+        validMeeting(request.resource.data) &&
+        (request.resource.data.audience.get('students', null) != null || request.resource.data.audience.get('faculty', null) != null) &&
+        !request.resource.data.keys().hasAny(['recipientUids', 'recipientCount', 'notifiedAt']);
+      allow update: if (isAdmin() || (isLeader() && resource.data.createdBy == request.auth.uid)) &&
+        validMeeting(request.resource.data) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['recipientUids', 'recipientCount', 'notifiedAt', 'createdBy', 'audience']);
+      allow delete: if isAdmin() || (isLeader() && resource.data.createdBy == request.auth.uid);
+
+      match /acks/{uid} {
+        allow read: if isAdmin() || isLeader() || (signedIn() && request.auth.uid == uid);
+        allow create: if signedIn() && request.auth.uid == uid &&
+          request.auth.uid in get(/databases/$(database)/documents/meetings/$(meetingId)).data.get('recipientUids', []) &&
+          request.resource.data.keys().hasOnly(['name', 'role', 'at']) &&
+          request.resource.data.name is string && request.resource.data.name.size() <= 120;
+        allow update, delete: if false;
+      }
     }
 
     match /attendanceSessions/{docId} {
-      allow read: if isAdmin() || isFaculty() ||
-        (request.auth != null &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.branch == resource.data.branch &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.admissionYear == resource.data.admissionYear &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.section == resource.data.section);
-      allow write: if isAdmin() || isFaculty();
+      allow read: if isStaff();
+      allow write: if isAdmin() || isTeachingFaculty();
     }
 
     match /messMealScans/{docId} {
 
-      allow read: if isAdmin() || isFaculty() ||
-        (request.auth != null &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrollmentNumber == docId.split('_')[0]);
-      allow create: if (isAdmin() || isFaculty()) && request.resource.data.scannedBy == request.auth.uid;
+      allow read: if isStaff() ||
+        (signedIn() && me().get('enrollmentNumber', '') == docId.split('_')[0]);
+      allow create: if isStaff() && request.resource.data.scannedBy == request.auth.uid;
       allow update, delete: if false;
     }
   }

@@ -82,7 +82,7 @@ export function subscribeToMySubmittedExcusals(
   const q = query(collection(db, EXCUSALS_COLLECTION), where("submittedBy", "==", submittedBy));
   return onSnapshot(q, (snap) => {
     onUpdate(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<EventExcusal, "id">) })));
-  });
+  }, () => onUpdate([]));
 }
 
 export function subscribeToAssignedExcusals(
@@ -92,7 +92,7 @@ export function subscribeToAssignedExcusals(
   const q = query(collection(db, EXCUSALS_COLLECTION), where("facultyCoordinatorUid", "==", facultyCoordinatorUid));
   return onSnapshot(q, (snap) => {
     onUpdate(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<EventExcusal, "id">) })));
-  });
+  }, () => onUpdate([]));
 }
 
 export async function respondToExcusal(
@@ -131,12 +131,16 @@ export function isDateWithinExcusal(
 
 export type RosterSearchResult = { regNo: string; name: string };
 
+let rosterCache: { at: number; rows: RosterSearchResult[] } | null = null;
+
 export async function searchWholeRoster(queryText: string): Promise<RosterSearchResult[]> {
   const q = queryText.trim().toLowerCase();
   if (!q) return [];
-  const snap = await getDocs(collection(db, "roster"));
-  return snap.docs
-    .map((d) => ({ regNo: d.id, name: (d.data() as { name: string }).name }))
+  if (!rosterCache || Date.now() - rosterCache.at > 10 * 60 * 1000) {
+    const snap = await getDocs(collection(db, "roster"));
+    rosterCache = { at: Date.now(), rows: snap.docs.map((d) => ({ regNo: d.id, name: (d.data() as { name: string }).name })) };
+  }
+  return rosterCache.rows
     .filter((r) => r.regNo.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))
     .slice(0, 20);
 }

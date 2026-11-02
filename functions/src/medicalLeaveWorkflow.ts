@@ -1,4 +1,5 @@
 import {onDocumentWritten, onDocumentUpdated} from "firebase-functions/v2/firestore";
+import {tokensOf, type UserDoc} from "./audience";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {sendExpoPush} from "./expoPush";
 import {isNoClassDay} from "./holidays";
@@ -18,7 +19,8 @@ type Decision = {decision: "approved" | "rejected"; remark?: string | null; by: 
 
 type MedicalLeave = {
   type: "medical" | "casual";
-  stage?: "doctor" | "dr" | "dean" | "hod" | "teachers" | "done" | "rejected";
+  flow?: number;
+  stage?: "doctor" | "hod" | "dean" | "jr" | "administrator" | "teachers" | "done" | "rejected";
   studentUid: string;
   studentName: string;
   studentEnrollmentNumber?: string;
@@ -26,16 +28,19 @@ type MedicalLeave = {
   doctorName?: string;
   hodEmail: string;
   hodName?: string;
-  drEmail?: string;
-  drName?: string;
   deanEmail?: string;
   deanName?: string;
+  jrEmail?: string;
+  jrName?: string;
+  administratorEmail?: string;
+  administratorName?: string;
   fromDate: string;
   toDate: string;
   doctorDecision?: Decision;
-  drDecision?: Decision;
-  deanDecision?: Decision;
   hodDecision?: Decision;
+  deanDecision?: Decision;
+  jrDecision?: Decision;
+  administratorDecision?: Decision;
   teachersTotal?: number;
   autoExcused?: boolean;
 };
@@ -51,8 +56,7 @@ type AckDoc = {
 
 async function tokensForUid(db: FirebaseFirestore.Firestore, uid: string): Promise<string[]> {
   const snap = await db.collection("users").doc(uid).get();
-  const t = (snap.data() as {expoPushToken?: string} | undefined)?.expoPushToken;
-  return t ? [t] : [];
+  return tokensOf(snap.data() as UserDoc | undefined);
 }
 
 async function tokensForEmails(db: FirebaseFirestore.Firestore, emails: string[]): Promise<string[]> {
@@ -61,12 +65,21 @@ async function tokensForEmails(db: FirebaseFirestore.Firestore, emails: string[]
   for (let i = 0; i < unique.length; i += 30) {
     const snap = await db.collection("users").where("email", "in", unique.slice(i, i + 30)).get();
     snap.forEach((d) => {
-      const t = (d.data() as {expoPushToken?: string}).expoPushToken;
-      if (t) tokens.push(t);
+      tokens.push(...tokensOf(d.data() as UserDoc));
     });
   }
   return tokens;
 }
+
+type ApproverStage = "doctor" | "hod" | "dean" | "jr" | "administrator";
+
+const STAGE_LABEL: Record<ApproverStage, string> = {
+  doctor: "Doctor",
+  hod: "HOD",
+  dean: "Dean",
+  jr: "Joint Registrar",
+  administrator: "Administrator",
+};
 
 function range(l: MedicalLeave): string {
   return l.fromDate === l.toDate ? l.fromDate : `${l.fromDate} → ${l.toDate}`;
@@ -157,7 +170,6 @@ async function createTeacherAcks(
       ...(tasks.length === 0 ? {teacherNote: "Approved. No classes fell within these dates."} : {}),
     });
   } else {
-
     batch.update(leaveRef, {
       teacherEmails: Array.from(new Set([...existing.docs.map((d) => d.id), ...teacherEmails])),
       teachersTotal: new Set([...existing.docs.map((d) => d.id), ...teacherEmails]).size,
@@ -177,6 +189,7 @@ export const medicalLeaveWorkflow = onDocumentWritten("leaveApplications/{leaveI
   if (!after?.exists) return;
   const leave = after.data() as MedicalLeave;
   if (leave.type !== "medical" || !leave.stage) return;
+  if (leave.flow === 2 && leave.stage !== "teachers") return;
   const before = event.data?.before;
   const prevStage = before?.exists ? (before.data() as MedicalLeave).stage : undefined;
   if (prevStage === leave.stage) return;
@@ -195,19 +208,17 @@ export const medicalLeaveWorkflow = onDocumentWritten("leaveApplications/{leaveI
     );
     return;
   }
-  case "dr":
+  case "hod":
   case "dean":
-  case "hod": {
-    const target = leave.stage === "dr" ?
-      {email: leave.drEmail ?? "", name: leave.drName || "the Deputy Registrar"} :
-      leave.stage === "dean" ?
-        {email: leave.deanEmail ?? "", name: leave.deanName || "the Dean"} :
-        {email: leave.hodEmail, name: leave.hodName ?? "your HOD"};
-    const last = prevStage === "dean" ?
-      {d: leave.deanDecision, label: "Dean"} :
-      prevStage === "dr" ?
-        {d: leave.drDecision, label: "Deputy Registrar"} :
-        {d: leave.doctorDecision, label: "Doctor"};
+  case "jr":
+  case "administrator": {
+    const role = leave.stage;
+    const target = {
+      email: (leave[`${role}Email` as const] as string | undefined) ?? "",
+      name: (leave[`${role}Name` as const] as string | undefined) || `the ${STAGE_LABEL[role]}`,
+    };
+    const prev = (prevStage ?? "doctor") as ApproverStage;
+    const last = {d: leave[`${prev}Decision` as const] as Decision | undefined, label: STAGE_LABEL[prev] ?? "Doctor"};
     await Promise.all([
       sendExpoPush(
         await tokensForEmails(db, [target.email]),
@@ -256,7 +267,7 @@ export const medicalLeaveWorkflow = onDocumentWritten("leaveApplications/{leaveI
     return;
   }
   case "rejected": {
-    const d = [leave.hodDecision, leave.deanDecision, leave.drDecision, leave.doctorDecision]
+    const d = [leave.administratorDecision, leave.jrDecision, leave.deanDecision, leave.hodDecision, leave.doctorDecision]
       .find((x) => x?.decision === "rejected");
     const by = d?.byName ?? "Your approver";
     await sendExpoPush(

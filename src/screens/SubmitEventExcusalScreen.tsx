@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, Alert, FlatList } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { subscribeToFacultyDirectory, FacultyMember } from "../firebase/facultyService";
@@ -110,6 +110,13 @@ export default function SubmitEventExcusalScreen() {
       Alert.alert("Pick a faculty coordinator", "Choose who should review and approve this.");
       return;
     }
+    if (!selectedFaculty.uid) {
+      Alert.alert(
+        "Coordinator not on CollegeGo yet",
+        `${selectedFaculty.name} hasn't signed in to CollegeGo, so they can't approve this. Pick another faculty member.`,
+      );
+      return;
+    }
     setSubmitting(true);
     try {
       await submitEventExcusal({
@@ -172,7 +179,6 @@ export default function SubmitEventExcusalScreen() {
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
             <View>
-              <Text style={styles.header}>Submit Event Excusal</Text>
               <Text style={styles.helper}>
                 Nothing is excused until the faculty coordinator you pick approves it — students
                 stay covered automatically across all their subjects once that happens.

@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef, memo } from "react";
+import React, { useState, useEffect, useCallback, useRef, memo, useLayoutEffect } from "react";
 import {
+  Platform,
   View,
   Text,
   StyleSheet,
@@ -13,7 +14,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
@@ -341,21 +342,25 @@ export default function LostFoundScreen() {
     ]);
   }, []);
 
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity
+          style={styles.postButton}
+          onPress={() => navigation.navigate("PostLostFound", { type })}
+          accessibilityLabel="Post an item"
+        >
+          <Ionicons name="add" size={18} color={colors.surface} />
+          <Text style={styles.postButtonText}>Post</Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, type]);
+
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <View style={styles.headerRow}>
-          <Text style={styles.headerTitle}>Lost & Found</Text>
-          <TouchableOpacity
-            style={styles.postButton}
-            onPress={() => navigation.navigate("PostLostFound", { type })}
-          >
-            <Ionicons name="add" size={18} color={colors.surface} />
-            <Text style={styles.postButtonText}>Post</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.toggleRow}>
+        <View style={[styles.toggleRow, { marginTop: spacing.sm }]}>
           <TouchableOpacity
             style={[styles.toggleButton, type === "lost" && styles.toggleButtonActive]}
             onPress={() => setType("lost")}
@@ -476,13 +481,14 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   headerRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     alignItems: "center",
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
   },
   headerTitle: { ...typography.h2, color: colors.textPrimary },
   postButton: {
+    marginRight: Platform.OS === "web" ? 12 : 0,
     flexDirection: "row",
     alignItems: "center",
     gap: 4,

@@ -1,10 +1,12 @@
 import {onSchedule} from "firebase-functions/v2/scheduler";
-import * as admin from "firebase-admin";
+import {sameSection, tokensOf, type UserDoc} from "./audience";
+import {getFirestore} from "firebase-admin/firestore";
 import {isNoClassDay} from "./holidays";
 import {loadHolidayOverrides} from "./holidayOverrides";
 
 import {loadExamDocs, isInExamPeriod} from "./examPeriod";
 import {expandFaculty, slotTaughtBy} from "./facultyLegend";
+import {expoAuthHeader} from "./expoPush";
 
 const REMINDER_OFFSETS = [3, 5, 7, 10, 15] as const;
 const DEFAULT_REMINDER_MINUTES = 3;
@@ -92,7 +94,6 @@ function normalize(s: string): string {
 }
 
 function mergeContiguousSessions(slots: TimetableSlot[]): TimetableSlot[] {
-
   const sorted = [...slots].sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
   const merged: TimetableSlot[] = [];
   const openByKey = new Map<string, TimetableSlot>();
@@ -130,6 +131,7 @@ async function pushToTokens(tokens: string[], title: string, body: string): Prom
           "Accept": "application/json",
           "Accept-Encoding": "gzip, deflate",
           "Content-Type": "application/json",
+          ...expoAuthHeader(),
         },
         body: JSON.stringify(
           chunk.map((token) => ({
@@ -138,7 +140,7 @@ async function pushToTokens(tokens: string[], title: string, body: string): Prom
             body,
             sound: "default",
             priority: "high",
-
+            data: {screen: "Timetable"},
             channelId: "class-reminders",
           })),
         ),
@@ -158,20 +160,22 @@ type NotifiableUser = {
 
 async function getStudentsForSection(
   db: FirebaseFirestore.Firestore,
-  cache: Map<string, Promise<FirebaseFirestore.QuerySnapshot>>,
+  cache: Map<string, Promise<UserDoc[]>>,
   branch: string,
   section: string,
-): Promise<FirebaseFirestore.QuerySnapshot> {
+): Promise<UserDoc[]> {
   const key = `${branch}|${section}`;
   let pending = cache.get(key);
   if (!pending) {
+    const branches = branch.toUpperCase() === "CSE" ? ["CSE", "MNC"] : [branch];
     pending = db
       .collection("users")
       .where("role", "==", "student")
-      .where("branch", "==", branch)
-      .where("section", "==", section)
-      .get();
+      .where("branch", "in", branches)
+      .get()
+      .then((snap) => snap.docs.map((d) => d.data() as UserDoc).filter((u) => sameSection(u.branch, u.section, section)));
     cache.set(key, pending);
+    pending.catch(() => cache.delete(key));
   }
   return pending;
 }
@@ -182,7 +186,7 @@ async function notifyForSlot(
   slot: TimetableSlot,
   offsetMinutes: number,
   facultyUsers: NotifiableUser[],
-  studentCache: Map<string, Promise<FirebaseFirestore.QuerySnapshot>>,
+  studentCache: Map<string, Promise<UserDoc[]>>,
   facultyQueue: Map<string, FacultyQueueEntry>,
 ): Promise<void> {
   const title = `Class in ${offsetMinutes} minutes`;
@@ -190,22 +194,17 @@ async function notifyForSlot(
   const groupLabel = slot.group ? ` (${slot.group})` : "";
   const body = `${slot.subjectName}${groupLabel} • Room ${slot.room} • ${to12Hour(slot.startTime)}–${to12Hour(slot.endTime)}`;
 
-  const studentsSnap = await getStudentsForSection(db, studentCache, timetable.branch, timetable.section);
+  const students = await getStudentsForSection(db, studentCache, timetable.branch, timetable.section);
 
   const today = new Date();
   const studentTokens: string[] = [];
-  studentsSnap.docs.forEach((doc) => {
-    const student = doc.data() as {
-      admissionYear?: number;
-      expoPushToken?: string;
-      notificationPreferences?: {classReminders?: boolean; classReminderMinutes?: number};
-    };
-    if (!student.expoPushToken || !student.admissionYear) return;
+  students.forEach((student) => {
+    if (!student.admissionYear) return;
     if (student.notificationPreferences?.classReminders === false) return;
     if (getCurrentSemester(student.admissionYear, today) !== timetable.semester) return;
     const wantsMinutes = student.notificationPreferences?.classReminderMinutes ?? DEFAULT_REMINDER_MINUTES;
     if (wantsMinutes !== offsetMinutes) return;
-    studentTokens.push(student.expoPushToken);
+    studentTokens.push(...tokensOf(student));
   });
 
   facultyUsers.forEach((faculty) => {
@@ -239,7 +238,6 @@ function classLabel(tt: Timetable): string {
 async function sendFacultyReminders(queue: Map<string, FacultyQueueEntry>): Promise<void> {
   const sends: Promise<void>[] = [];
   queue.forEach((entry) => {
-
     const groups = new Map<string, FacultyClass[]>();
     for (const c of entry.classes) {
       const key = [c.slot.subjectCode || c.slot.subjectName, c.slot.room, c.slot.group ?? ""]
@@ -266,6 +264,15 @@ async function sendFacultyReminders(queue: Map<string, FacultyQueueEntry>): Prom
   await Promise.all(sends);
 }
 
+const WARM_MS = 10 * 60 * 1000;
+let warm: {
+  at: number;
+  timetablesSnap: FirebaseFirestore.QuerySnapshot;
+  examDocs: Awaited<ReturnType<typeof loadExamDocs>>;
+  facultyUsers: NotifiableUser[];
+  studentCache: Map<string, Promise<UserDoc[]>>;
+} | null = null;
+
 export const sendClassReminderPush = onSchedule(
   {
 
@@ -275,14 +282,18 @@ export const sendClassReminderPush = onSchedule(
     region: "asia-south1",
   },
   async () => {
-    const db = admin.firestore();
-    const timetablesSnap = await db.collection("timetable").get();
-
-    const examDocs = await loadExamDocs(db);
+    const db = getFirestore();
+    const fresh = warm && Date.now() - warm.at < WARM_MS;
+    if (!fresh) {
+      const [tt, ex, fac] = await Promise.all([
+        db.collection("timetable").get(),
+        loadExamDocs(db),
+        db.collection("users").where("role", "==", "faculty").get(),
+      ]);
+      warm = {at: Date.now(), timetablesSnap: tt, examDocs: ex, facultyUsers: fac.docs.map((doc) => doc.data() as NotifiableUser), studentCache: new Map()};
+    }
+    const {timetablesSnap, examDocs, facultyUsers, studentCache} = warm!;
     const holidayOverrides = await loadHolidayOverrides(db);
-    const facultySnap = await db.collection("users").where("role", "==", "faculty").get();
-    const facultyUsers = facultySnap.docs.map((doc) => doc.data() as NotifiableUser);
-    const studentCache = new Map<string, Promise<FirebaseFirestore.QuerySnapshot>>();
     const facultyQueue = new Map<string, FacultyQueueEntry>();
     const tasks: Promise<void>[] = [];
 

@@ -41,7 +41,7 @@ export default function FileViewerScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
-        <ScreenHeader title={params.name} />
+        <ScreenHeader title={params.name} showTitle />
       </View>
       {loadFailed ? (
         <View style={styles.errorBox}>

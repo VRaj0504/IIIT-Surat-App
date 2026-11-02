@@ -1,5 +1,7 @@
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {getFirestore} from "firebase-admin/firestore";
+import {sendExpoPush} from "./expoPush";
+import {tokensOf} from "./audience";
 
 export const sendInboxImportPush = onDocumentCreated(
   "pendingImports/{importId}",
@@ -16,32 +18,10 @@ export const sendInboxImportPush = onDocumentCreated(
     const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
 
     const tokens: string[] = [];
-    adminsSnap.docs.forEach((doc) => {
-      const admin = doc.data() as {expoPushToken?: string};
-      if (admin.expoPushToken) tokens.push(admin.expoPushToken);
-    });
+    adminsSnap.docs.forEach((doc) => tokens.push(...tokensOf(doc.data())));
 
     if (tokens.length === 0) return;
 
-    await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Accept-Encoding": "gzip, deflate",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(
-        tokens.map((token) => ({
-          to: token,
-          title: "New email needs review",
-          body: `From ${pendingImport.fromName}: "${pendingImport.subject}" (${pendingImport.contentType})`,
-          sound: "default",
-          priority: "high",
-        })),
-      ),
-    }).catch((err) => {
-      // eslint-disable-next-line no-console
-      console.error("[sendInboxImportPush] Expo push API call failed:", err);
-    });
+    await sendExpoPush(tokens, "New email needs review", `From ${pendingImport.fromName}: "${pendingImport.subject}" (${pendingImport.contentType})`, "sendInboxImportPush");
   },
 );

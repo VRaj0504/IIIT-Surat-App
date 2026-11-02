@@ -17,6 +17,14 @@ import {
 } from "../theme/theme";
 import { academicCalendars } from "../data/academicCalendar";
 
+function shortTitle(t: string): string {
+  if (/odd semester/i.test(t)) return "3rd, 5th & 7th sem";
+  if (/1st semester/i.test(t)) return "1st sem";
+  if (/restricted/i.test(t)) return "Restricted holidays";
+  if (/public holidays/i.test(t)) return "Holidays";
+  return t;
+}
+
 export default function AcademicCalendarScreen() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const calendar = academicCalendars[selectedIndex];
@@ -27,10 +35,9 @@ export default function AcademicCalendarScreen() {
       style={{ flex: 1 }}
     >
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <Text style={styles.title}>Academic Calendar</Text>
         <Text style={styles.subtitle}>2026-27</Text>
 
-        <View style={styles.tabs}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0 }} contentContainerStyle={styles.tabs}>
           {academicCalendars.map((cal, index) => (
             <TouchableOpacity
               key={cal.title}
@@ -43,11 +50,12 @@ export default function AcademicCalendarScreen() {
                   selectedIndex === index && styles.tabTextActive,
                 ]}
               >
-                {cal.title}
+                {shortTitle(cal.title)}
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
+        <Text style={styles.calTitle}>{calendar.title}</Text>
 
         <ScrollView contentContainerStyle={styles.list}>
           {calendar.events.map((event, index) => (
@@ -75,20 +83,22 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.md,
   },
-  tabs: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
+  tabs: { flexDirection: "row", gap: spacing.sm, paddingRight: spacing.md },
   tab: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: radius.full,
     backgroundColor: colors.surface,
-    ...clayShadowSoft,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: "center",
   },
+  calTitle: { fontSize: 13, fontWeight: "700", color: colors.textSecondary, marginTop: spacing.md, marginBottom: spacing.sm },
   tabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   tabText: {
-    ...typography.caption,
+    fontSize: 14,
     color: colors.textPrimary,
-    fontWeight: "600",
+    fontWeight: "700",
     textAlign: "center",
   },
   tabTextActive: { color: colors.onPrimary },

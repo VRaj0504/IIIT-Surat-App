@@ -1,63 +1,41 @@
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
-import {getFirestore} from "firebase-admin/firestore";
+import {sendExpoPush} from "./expoPush";
+import {studentsFor, tokensFor} from "./audience";
+
+const IGNORE = new Set(["updatedAt", "updatedBy", "updatedByEmail", "createdAt"]);
+function stable(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stable).join(",")}]`;
+  if (v && typeof v === "object") {
+    if (typeof (v as {toMillis?: unknown}).toMillis === "function") return "";
+    return `{${Object.keys(v as object).filter((k) => !IGNORE.has(k)).sort().map((k) => `${k}:${stable((v as Record<string, unknown>)[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(v ?? null);
+}
+
+type TT = {branch?: string; semester?: number; section?: string; slots?: unknown; days?: unknown; schedule?: unknown};
 
 export const sendTimetableUpdatePush = onDocumentWritten(
   "timetable/{timetableId}",
   async (event) => {
     const after = event.data?.after;
     if (!after?.exists) return;
-    const timetable = after.data() as {branch: string; semester: number; section: string};
-    if (!timetable?.branch || !timetable?.semester || !timetable?.section) return;
+    const t = after.data() as TT;
+    if (!t?.branch || !t?.semester) return;
+    const before = event.data?.before?.exists ? (event.data.before.data() as TT) : null;
+    if (before && stable(before) === stable(t)) return;
 
-    const db = getFirestore();
-    const snapshot = await db
-      .collection("users")
-      .where("role", "==", "student")
-      .where("branch", "==", timetable.branch)
-      .where("section", "==", timetable.section)
-      .get();
-
-    const tokens: string[] = [];
-    snapshot.docs.forEach((doc) => {
-      const student = doc.data() as {
-        admissionYear?: number;
-        expoPushToken?: string;
-        notificationPreferences?: {timetableUpdates?: boolean};
-      };
-      if (!student.expoPushToken) return;
-      if (student.notificationPreferences?.timetableUpdates === false) return;
-      tokens.push(student.expoPushToken);
+    const {matched} = await studentsFor({
+      branches: t.branch.toUpperCase() === "CSE" ? ["CSE", "MNC"] : [t.branch],
+      sections: t.section ? [t.section] : [],
+      semester: Number(t.semester),
     });
-
-    if (tokens.length === 0) return;
-
-    const CHUNK_SIZE = 100;
-    const chunks: string[][] = [];
-    for (let i = 0; i < tokens.length; i += CHUNK_SIZE) chunks.push(tokens.slice(i, i + CHUNK_SIZE));
-
-    await Promise.all(
-      chunks.map((chunk) =>
-        fetch("https://exp.host/--/api/v2/push/send", {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            "Accept-Encoding": "gzip, deflate",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(
-            chunk.map((token) => ({
-              to: token,
-              title: "Timetable Updated",
-              body: `${timetable.branch} Sem ${timetable.semester} Section ${timetable.section} — check what's changed.`,
-              sound: "default",
-              priority: "high",
-            })),
-          ),
-        }).catch((err) => {
-          // eslint-disable-next-line no-console
-          console.error("[sendTimetableUpdatePush] Expo push API call failed:", err);
-        }),
-      ),
+    const tokens = tokensFor(matched, "timetableUpdates");
+    await sendExpoPush(
+      tokens,
+      before ? "Timetable updated" : "Timetable published",
+      `${t.branch} Sem ${t.semester}${t.section ? ` ${t.section}` : ""} — check what's changed.`,
+      "sendTimetableUpdatePush",
+      {screen: "Timetable"},
     );
   },
 );

@@ -15,7 +15,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { searchPublications, PublicationCandidate } from "../utils/publicationLookup";
 import { useNavigation } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";

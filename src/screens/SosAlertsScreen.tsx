@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Linking, Alert } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors, spacing } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { subscribeToActiveSos, setSosStatus, mapsUrl, SosAlert } from "../firebase/sosService";
@@ -77,7 +77,7 @@ export default function SosAlertsScreen() {
                   <Ionicons name={t.icon} size={18} color="#FFFFFF" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.kicker, { color: open ? RED : "#B45309" }]}>
+                  <Text style={[styles.kicker, { color: open ? RED : colors.warning }]}>
                     {t.label} · {open ? "needs a responder" : `${a.ackBy?.name ?? "Someone"} is on the way`}
                   </Text>
                   <Text style={styles.when}>{a.createdAt ? ago(a.createdAt.toMillis()) : "just now"}</Text>

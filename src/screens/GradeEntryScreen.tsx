@@ -187,7 +187,6 @@ export default function GradeEntryScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <Text style={styles.header}>Enter Grades</Text>
 
         <View style={styles.pickersArea}>
           <Text style={styles.label}>Year (batch)</Text>

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, SectionList, ScrollView, TouchableOpacity, TextInput, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
@@ -12,11 +12,14 @@ import { getClubIcon } from "../data/clubIcons";
 import GlassCard from "../components/GlassCard";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
+import { SelectField, SheetPicker } from "../components/ui";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
 function formatEventTime(timestamp: ClubEvent["dateTime"]): string {
-  return timestamp.toDate().toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+  const d = timestamp.toDate();
+  const day = d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
+  return `${day} · ${d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}`;
 }
 
 function bucketFor(date: Date, now: Date): string {
@@ -37,6 +40,7 @@ export default function EventsScreen() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedClub, setSelectedClub] = useState<string | null>(null);
+  const [clubPickerOpen, setClubPickerOpen] = useState(false);
 
   useEffect(() => {
     const unsubscribe = subscribeToAllUpcomingEvents((data) => {
@@ -91,25 +95,24 @@ export default function EventsScreen() {
         </View>
 
         {clubNames.length > 0 && (
-          <KeyboardAwareScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ flexGrow: 0 }}
-            contentContainerStyle={styles.chipRow}
-          >
-            {[null, ...clubNames].map((club) => (
-              <TouchableOpacity
-                key={club ?? "all"}
-                style={[styles.chip, selectedClub === club && styles.chipActive]}
-                onPress={() => setSelectedClub(club)}
-              >
-                <Text style={[styles.chipText, selectedClub === club && styles.chipTextActive]}>
-                  {club ?? "All"}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </KeyboardAwareScrollView>
+          <SelectField
+            value={selectedClub ?? "All clubs"}
+            placeholder="All clubs"
+            icon="people-outline"
+            onPress={() => setClubPickerOpen(true)}
+          />
         )}
+        <SheetPicker
+          visible={clubPickerOpen}
+          title="Show events from"
+          items={["__all", ...clubNames]}
+          keyOf={(c) => c}
+          labelOf={(c) => (c === "__all" ? "All clubs" : c)}
+          selectedKey={selectedClub ?? "__all"}
+          onPick={(c) => setSelectedClub(c === "__all" ? null : c)}
+          onClose={() => setClubPickerOpen(false)}
+          searchable={clubNames.length > 8}
+        />
 
         {loading ? (
           <LoadingSpinner style={{ marginTop: spacing.xl }} />
@@ -134,10 +137,11 @@ export default function EventsScreen() {
                       <Ionicons name={icon} size={20} color={color} />
                     </View>
                     <View style={styles.eventInfo}>
-                      <Text style={styles.eventTitle} numberOfLines={1}>{event.title}</Text>
-                      <Text style={[styles.eventClub, { color }]}>{event.clubName}</Text>
+                      <Text style={styles.eventTitle} numberOfLines={2}>{event.title}</Text>
+                      <Text style={[styles.eventClub, { color }]} numberOfLines={1}>{event.clubName}</Text>
+                      <Text style={styles.eventWhen}>{formatEventTime(event.dateTime)}</Text>
                     </View>
-                    <Text style={styles.eventTime}>{formatEventTime(event.dateTime)}</Text>
+                    <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
                   </TouchableOpacity>
                 </GlassCard>
               );
@@ -184,6 +188,7 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", marginRight: spacing.md,
   },
   eventInfo: { flex: 1 },
+  eventWhen: { fontSize: 12, fontWeight: "600", color: colors.textSecondary, marginTop: 2 },
   eventTitle: { ...typography.body, color: colors.textPrimary, fontWeight: "600" },
   eventClub: { ...typography.caption, fontWeight: "600", marginTop: 2 },
   eventTime: { ...typography.caption, color: colors.textSecondary, marginLeft: spacing.sm },

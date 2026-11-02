@@ -21,6 +21,7 @@ export type ExamSchedule = {
 
   sourcePdfUrl?: string | null;
   sourcePdfName?: string | null;
+  guidelines?: string[] | null;
   updatedAt: Timestamp | null;
 };
 

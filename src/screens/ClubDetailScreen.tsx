@@ -1,29 +1,11 @@
 import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  Linking,
-  TextInput,
-  Alert,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, Alert } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
-import {
-  colors,
-  spacing,
-  radius,
-  typography,
-  clayShadowSoft,
-} from "../theme/theme";
+import { colors, spacing, radius } from "../theme/theme";
+import { Card, EmptyState, FieldLabel, PrimaryButton, Section, Segmented, StatusPill, ui } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import {
   subscribeToClubs,
@@ -43,6 +25,7 @@ import {
 } from "../firebase/noticesService";
 import { openSafeUrl } from "../utils/safeLink";
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
+import ClubCoreTeam from "../components/ClubCoreTeam";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 type DetailRoute = RouteProp<RootStackParamList, "ClubDetail">;
@@ -191,123 +174,191 @@ function ClubDetailScreenInner() {
     }
   };
 
+  const [tab, setTab] = useState<"events" | "notices">("events");
+  const { icon, color } = getClubIcon(clubName);
+  const canPost = isLead || isFaculty;
+
   return (
-    <LinearGradient
-      colors={[colors.gradientStart, colors.gradientEnd]}
-      style={{ flex: 1 }}
-    >
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <KeyboardAwareScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
+    <View style={styles.screen}>
+      <KeyboardAwareScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.hero}>
+          <View style={[styles.heroIcon, { backgroundColor: color + "22" }]}>
+            <Ionicons name={icon} size={30} color={color} />
+          </View>
           <Text style={styles.title}>{clubName}</Text>
-          {club && (
+          {club ? (
             <>
-              <Text style={styles.category}>
-                {club.category} · {formatClubLeads(club)}
-              </Text>
-              <Text style={styles.description}>{club.description}</Text>
+              <View style={styles.heroMetaRow}>
+                {club.category ? <StatusPill status="info" label={club.category} /> : null}
+              </View>
+              <Text style={styles.leads}>{formatClubLeads(club)}</Text>
+              {club.description ? <Text style={styles.description}>{club.description}</Text> : null}
             </>
+          ) : null}
+          {canPost && (
+            <View style={styles.postRow}>
+              <PrimaryButton
+                label="Post event"
+                icon="add-circle-outline"
+                style={{ flex: 1, minHeight: 46 }}
+                onPress={() => navigation.navigate("PostEvent", { clubId, clubName })}
+              />
+              <PrimaryButton
+                tone="secondary"
+                label="Post notice"
+                icon="megaphone-outline"
+                style={{ flex: 1, minHeight: 46 }}
+                onPress={() => navigation.navigate("PostNotice", { clubId, clubName })}
+              />
+            </View>
           )}
         </View>
 
+        {club && <ClubCoreTeam club={club} canEdit={canPost} />}
+
         {subClubs.length > 0 && (
-          <View style={styles.subClubsSection}>
-            <Text style={styles.sectionTitle}>Clubs under {clubName}</Text>
+          <Section title={`Clubs under ${clubName}`}>
             {subClubs.map((sc) => {
-              const { icon, color } = getClubIcon(sc.name);
+              const sub = getClubIcon(sc.name);
               return (
-                <TouchableOpacity
-                  key={sc.id}
-                  style={styles.subClubCard}
-                  onPress={() => openSubClub(sc)}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.iconWrap, { backgroundColor: color + "22" }]}>
-                    <Ionicons name={icon} size={20} color={color} />
+                <Card key={sc.id} style={styles.subClub} onPress={() => openSubClub(sc)}>
+                  <View style={[styles.subIcon, { backgroundColor: sub.color + "22" }]}>
+                    <Ionicons name={sub.icon} size={18} color={sub.color} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.subClubName}>{sc.name}</Text>
-                    <Text style={styles.subClubLead}>{formatClubLeads(sc)}</Text>
+                    <Text style={styles.subName}>{sc.name}</Text>
+                    <Text style={styles.subLead} numberOfLines={1}>
+                      {formatClubLeads(sc)}
+                    </Text>
                   </View>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={18}
-                    color={colors.textSecondary}
-                  />
-                </TouchableOpacity>
+                  <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                </Card>
               );
             })}
-          </View>
+          </Section>
         )}
 
-        {(isLead || isFaculty) && (
-          <View style={styles.postBtnRow}>
-            <TouchableOpacity
-              style={[styles.postBtn, styles.postBtnHalf]}
-              onPress={() =>
-                navigation.navigate("PostEvent", { clubId, clubName })
-              }
-            >
-              <Ionicons name="add-circle" size={20} color={colors.onPrimary} />
-              <Text style={styles.postBtnText}>Post an Event</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.postBtn,
-                styles.postBtnHalf,
-                styles.postBtnSecondary,
-              ]}
-              onPress={() =>
-                navigation.navigate("PostNotice", { clubId, clubName })
-              }
-            >
-              <Ionicons name="megaphone" size={20} color={colors.primary} />
-              <Text style={[styles.postBtnText, styles.postBtnTextSecondary]}>
-                Post a Notice
-              </Text>
-            </TouchableOpacity>
-          </View>
+        <Segmented
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: "events", label: "Events", badge: events.length || undefined },
+            { value: "notices", label: "Notices", badge: clubNotices.length || undefined },
+          ]}
+        />
+
+        {tab === "events" ? (
+          loadingEvents ? (
+            <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
+          ) : events.length === 0 ? (
+            <EmptyState icon="calendar-clear-outline" title="No events yet" hint={canPost ? "Tap Post event to add one." : undefined} />
+          ) : (
+            events.map((item) => {
+              const d = item.dateTime.toDate();
+              return (
+                <Card key={item.id} style={styles.item}>
+                  <View style={styles.itemHead}>
+                    <View style={[styles.dateBox, { backgroundColor: color + "1F" }]}>
+                      <Text style={[styles.dateDay, { color }]}>{d.getDate()}</Text>
+                      <Text style={[styles.dateMonth, { color }]}>
+                        {d.toLocaleDateString("en-IN", { month: "short" }).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.itemTitle}>{item.title}</Text>
+                      <Text style={styles.itemMeta}>{formatEventDate(item.dateTime)}</Text>
+                    </View>
+                  </View>
+                  {item.description ? <Text style={styles.itemBody}>{item.description}</Text> : null}
+                  <View style={styles.itemActions}>
+                    {item.link ? (
+                      <TouchableOpacity style={styles.linkBtn} onPress={() => openLink(item.link!)}>
+                        <Ionicons name="open-outline" size={15} color={colors.primary} />
+                        <Text style={styles.linkText}>Open link</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    {user?.uid === item.createdBy && (
+                      <>
+                        <TouchableOpacity
+                          style={styles.ownerBtn}
+                          onPress={() => navigation.navigate("PostEvent", { clubId, clubName, editingEvent: item })}
+                        >
+                          <Ionicons name="pencil-outline" size={14} color={colors.textSecondary} />
+                          <Text style={styles.ownerBtnText}>Edit</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.ownerBtn} onPress={() => handleDeleteEvent(item)}>
+                          <Ionicons name="trash-outline" size={14} color={colors.danger} />
+                          <Text style={[styles.ownerBtnText, { color: colors.danger }]}>Delete</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+                </Card>
+              );
+            })
+          )
+        ) : loadingNotices ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
+        ) : clubNotices.length === 0 ? (
+          <EmptyState icon="megaphone-outline" title="No notices yet" hint={canPost ? "Tap Post notice to add one." : undefined} />
+        ) : (
+          clubNotices.map((notice) => (
+            <Card key={notice.id} style={styles.item}>
+              <Text style={styles.itemTitle}>{notice.title}</Text>
+              <Text style={styles.itemBody}>{notice.description}</Text>
+              <View style={styles.itemActions}>
+                {notice.link ? (
+                  <TouchableOpacity style={styles.linkBtn} onPress={() => openLink(notice.link!)}>
+                    <Ionicons name="document-attach-outline" size={15} color={colors.primary} />
+                    <Text style={styles.linkText}>Open attachment</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {user?.uid === notice.createdBy && (
+                  <TouchableOpacity
+                    style={styles.ownerBtn}
+                    onPress={() => navigation.navigate("PostNotice", { clubId, clubName, editingNotice: notice })}
+                  >
+                    <Ionicons name="pencil-outline" size={14} color={colors.textSecondary} />
+                    <Text style={styles.ownerBtnText}>Edit</Text>
+                  </TouchableOpacity>
+                )}
+                {(user?.uid === notice.createdBy || isFaculty) && (
+                  <TouchableOpacity style={styles.ownerBtn} onPress={() => handleDeleteNotice(notice)}>
+                    <Ionicons name="trash-outline" size={14} color={colors.danger} />
+                    <Text style={[styles.ownerBtnText, { color: colors.danger }]}>Delete</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </Card>
+          ))
         )}
 
         {isFaculty && club && (
-          <View style={styles.manageCard}>
-            <TouchableOpacity
-              style={styles.manageHeader}
-              onPress={() => setManageOpen((v) => !v)}
-            >
+          <Card style={styles.manageCard}>
+            <TouchableOpacity style={styles.manageHeader} onPress={() => setManageOpen((v) => !v)}>
+              <Ionicons name="settings-outline" size={18} color={colors.textSecondary} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.manageTitle}>Manage Lead</Text>
-                <Text style={styles.manageStatus}>
-                  {club.leadUid
-                    ? `${club.leadName} · account linked`
-                    : `${club.leadName} · no account linked yet`}
+                <Text style={styles.manageTitle}>Manage club lead</Text>
+                <Text style={styles.itemMeta}>
+                  {club.leadName} · {club.leadUid ? "account linked" : "no account linked yet"}
                 </Text>
               </View>
-              <Ionicons
-                name={manageOpen ? "chevron-up" : "chevron-down"}
-                size={20}
-                color={colors.textSecondary}
-              />
+              <Ionicons name={manageOpen ? "chevron-up" : "chevron-down"} size={20} color={colors.textSecondary} />
             </TouchableOpacity>
-
             {manageOpen && (
-              <View style={styles.managePanel}>
-                {manageError && <Text style={styles.error}>{manageError}</Text>}
-
-                <Text style={styles.manageLabel}>Lead Name</Text>
+              <View style={{ marginTop: spacing.md }}>
+                {manageError ? <Text style={styles.error}>{manageError}</Text> : null}
+                <FieldLabel>Lead name</FieldLabel>
                 <TextInput
-                  style={styles.linkInput}
+                  style={[ui.input, { marginBottom: spacing.md }]}
                   placeholder="Full name"
                   placeholderTextColor={colors.textSecondary}
                   value={leadNameInput}
                   onChangeText={setLeadNameInput}
                 />
-
-                <Text style={styles.manageLabel}>
-                  Lead's Account Email (optional)
-                </Text>
+                <FieldLabel>Lead's institute email (optional)</FieldLabel>
                 <TextInput
-                  style={styles.linkInput}
+                  style={ui.input}
                   placeholder="lead@iiitsurat.ac.in"
                   placeholderTextColor={colors.textSecondary}
                   autoCapitalize="none"
@@ -315,400 +366,76 @@ function ClubDetailScreenInner() {
                   value={leadEmailInput}
                   onChangeText={setLeadEmailInput}
                 />
-                <Text style={styles.manageHint}>
-                  Change this to reassign the club to a new lead for the year —
-                  enter the new lead's name, and their email if they've already
-                  signed up. Leave email blank to save name-only.
+                <Text style={styles.hint}>
+                  To hand the club to next year's lead, enter their name and email. They can post once they sign in.
                 </Text>
-
-                <TouchableOpacity
-                  style={styles.linkSubmitBtn}
-                  onPress={handleSaveLead}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <ActivityIndicator color={colors.onPrimary} />
-                  ) : (
-                    <Text style={styles.linkSubmitText}>Save Changes</Text>
-                  )}
-                </TouchableOpacity>
-
+                <PrimaryButton label="Save" onPress={handleSaveLead} loading={saving} style={{ marginTop: spacing.md }} />
                 {!!club.leadUid && (
-                  <TouchableOpacity
-                    style={styles.revokeBtn}
+                  <PrimaryButton
+                    tone="danger"
+                    label="Remove posting access"
                     onPress={handleRevoke}
-                    disabled={revoking}
-                  >
-                    {revoking ? (
-                      <ActivityIndicator color={colors.danger} />
-                    ) : (
-                      <Text style={styles.revokeBtnText}>
-                        Revoke Posting Access
-                      </Text>
-                    )}
-                  </TouchableOpacity>
+                    loading={revoking}
+                    style={{ marginTop: spacing.sm }}
+                  />
                 )}
               </View>
             )}
-          </View>
+          </Card>
         )}
-
-        <FlatList
-          scrollEnabled={false}
-          data={events}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          ListHeaderComponent={
-            <View style={{ marginBottom: spacing.md }}>
-              <Text style={styles.sectionTitle}>Notices</Text>
-              {loadingNotices ? (
-                <ActivityIndicator
-                  color={colors.primary}
-                  style={{ marginBottom: spacing.md }}
-                />
-              ) : clubNotices.length === 0 ? (
-                <Text style={[styles.emptyText, { marginBottom: spacing.md }]}>
-                  No notices posted yet.
-                </Text>
-              ) : (
-                clubNotices.map((notice) => (
-                  <View key={notice.id} style={styles.eventCard}>
-                    <Text style={styles.eventTitle}>{notice.title}</Text>
-                    <Text style={styles.eventDescription}>
-                      {notice.description}
-                    </Text>
-                    {notice.link && (
-                      <TouchableOpacity
-                        style={styles.linkBtn}
-                        onPress={() => openLink(notice.link!)}
-                      >
-                        <Ionicons
-                          name="document-attach-outline"
-                          size={16}
-                          color={colors.primary}
-                        />
-                        <Text style={styles.linkText}>Open attachment</Text>
-                      </TouchableOpacity>
-                    )}
-                    {(user?.uid === notice.createdBy || isFaculty) && (
-                      <View style={styles.ownerRow}>
-                        {user?.uid === notice.createdBy && (
-                          <TouchableOpacity
-                            style={styles.ownerBtn}
-                            onPress={() =>
-                              navigation.navigate("PostNotice", {
-                                clubId,
-                                clubName,
-                                editingNotice: notice,
-                              })
-                            }
-                          >
-                            <Ionicons
-                              name="pencil-outline"
-                              size={14}
-                              color={colors.textSecondary}
-                            />
-                            <Text style={styles.ownerBtnText}>Edit</Text>
-                          </TouchableOpacity>
-                        )}
-                        <TouchableOpacity
-                          style={styles.ownerBtn}
-                          onPress={() => handleDeleteNotice(notice)}
-                        >
-                          <Ionicons
-                            name="trash-outline"
-                            size={14}
-                            color={colors.danger}
-                          />
-                          <Text
-                            style={[
-                              styles.ownerBtnText,
-                              { color: colors.danger },
-                            ]}
-                          >
-                            Delete
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-                ))
-              )}
-              <Text style={styles.sectionTitle}>Events</Text>
-            </View>
-          }
-          ListEmptyComponent={
-            loadingEvents ? (
-              <ActivityIndicator
-                color={colors.primary}
-                style={{ marginTop: spacing.lg }}
-              />
-            ) : (
-              <Text style={styles.emptyText}>No events posted yet.</Text>
-            )
-          }
-          renderItem={({ item }) => (
-            <View style={styles.eventCard}>
-              <Text style={styles.eventTitle}>{item.title}</Text>
-              <Text style={styles.eventDate}>
-                {formatEventDate(item.dateTime)}
-              </Text>
-              <Text style={styles.eventDescription}>{item.description}</Text>
-              {item.link && (
-                <TouchableOpacity
-                  style={styles.linkBtn}
-                  onPress={() => openLink(item.link!)}
-                >
-                  <Ionicons
-                    name="open-outline"
-                    size={16}
-                    color={colors.primary}
-                  />
-                  <Text style={styles.linkText}>Open link</Text>
-                </TouchableOpacity>
-              )}
-              {user?.uid === item.createdBy && (
-                <View style={styles.ownerRow}>
-                  <TouchableOpacity
-                    style={styles.ownerBtn}
-                    onPress={() =>
-                      navigation.navigate("PostEvent", {
-                        clubId,
-                        clubName,
-                        editingEvent: item,
-                      })
-                    }
-                  >
-                    <Ionicons
-                      name="pencil-outline"
-                      size={14}
-                      color={colors.textSecondary}
-                    />
-                    <Text style={styles.ownerBtnText}>Edit</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.ownerBtn}
-                    onPress={() => handleDeleteEvent(item)}
-                  >
-                    <Ionicons
-                      name="trash-outline"
-                      size={14}
-                      color={colors.danger}
-                    />
-                    <Text
-                      style={[styles.ownerBtnText, { color: colors.danger }]}
-                    >
-                      Delete
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          )}
-        />
-        </KeyboardAwareScrollView>
-      </SafeAreaView>
-    </LinearGradient>
+      </KeyboardAwareScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: spacing.md },
-  header: { paddingTop: spacing.sm, marginBottom: spacing.md },
-  title: { ...typography.h1, color: colors.textPrimary },
-  category: {
-    ...typography.caption,
-    color: colors.primary,
-    fontWeight: "600",
-    marginTop: spacing.xs,
-  },
-  description: {
-    ...typography.body,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-  },
-  subClubsSection: { marginBottom: spacing.md },
-  subClubCard: {
-    flexDirection: "row",
-    alignItems: "center",
+  screen: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.md, paddingBottom: spacing.xl * 2 },
+  hero: {
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    ...clayShadowSoft,
-  },
-  iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.full,
-    backgroundColor: colors.badge.blue.bg,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: spacing.md,
-  },
-  subClubName: {
-    ...typography.body,
-    color: colors.textPrimary,
-    fontWeight: "600",
-  },
-  subClubLead: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  postBtnRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  postBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-  },
-  postBtnHalf: {},
-  postBtnSecondary: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  postBtnText: {
-    ...typography.body,
-    color: colors.onPrimary,
-    fontWeight: "700" as const,
-  },
-  postBtnTextSecondary: { color: colors.primary },
-  manageCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    marginBottom: spacing.md,
-    ...clayShadowSoft,
-    overflow: "hidden",
-  },
-  manageHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: spacing.md,
-  },
-  manageTitle: {
-    ...typography.body,
-    color: colors.textPrimary,
-    fontWeight: "700",
-  },
-  manageStatus: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  managePanel: {
-    padding: spacing.md,
-    paddingTop: 0,
-  },
-  manageLabel: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-    marginTop: spacing.sm,
-  },
-  manageHint: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-    marginBottom: spacing.sm,
-  },
-  linkInput: {
-    backgroundColor: colors.background,
-    ...clayShadowSoft,
+    borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    color: colors.textPrimary,
-    ...typography.body,
-  },
-  linkSubmitBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.sm,
+    padding: spacing.lg,
     alignItems: "center",
-    marginTop: spacing.sm,
+    marginBottom: spacing.md,
   },
-  linkSubmitText: {
-    ...typography.caption,
-    color: colors.onPrimary,
-    fontWeight: "700" as const,
-  },
-  revokeBtn: {
-    borderRadius: radius.sm,
-    paddingVertical: spacing.sm,
-    alignItems: "center",
-    marginTop: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.danger,
-  },
-  revokeBtnText: {
-    ...typography.caption,
-    color: colors.danger,
-    fontWeight: "700" as const,
-  },
-  error: {
-    color: colors.danger,
-    backgroundColor: colors.dangerBg,
-    padding: spacing.sm,
-    borderRadius: radius.sm,
-    marginBottom: spacing.sm,
-    ...typography.caption,
-  },
-  sectionTitle: {
-    ...typography.h3,
-    color: colors.textPrimary,
-    marginBottom: spacing.sm,
-  },
-  list: { paddingBottom: spacing.xl },
-  emptyText: { ...typography.body, color: colors.textSecondary },
-  eventCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    ...clayShadowSoft,
-  },
-  eventTitle: { ...typography.h3, color: colors.textPrimary },
-  eventDate: {
-    ...typography.caption,
-    color: colors.accent,
-    fontWeight: "700",
-    marginTop: 2,
-    marginBottom: spacing.xs,
-  },
-  eventDescription: { ...typography.body, color: colors.textSecondary },
+  heroIcon: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center", marginBottom: spacing.sm },
+  title: { fontSize: 22, fontWeight: "800", color: colors.textPrimary, textAlign: "center" },
+  heroMetaRow: { flexDirection: "row", marginTop: spacing.sm },
+  leads: { fontSize: 13, color: colors.textSecondary, marginTop: spacing.sm, textAlign: "center" },
+  description: { fontSize: 14, color: colors.textPrimary, lineHeight: 20, marginTop: spacing.sm, textAlign: "center" },
+  postRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md, alignSelf: "stretch" },
+  subClub: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.sm },
+  subIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  subName: { fontSize: 15, fontWeight: "700", color: colors.textPrimary },
+  subLead: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
+  item: { marginBottom: spacing.sm },
+  itemHead: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  dateBox: { width: 50, paddingVertical: 6, borderRadius: radius.md, alignItems: "center" },
+  dateDay: { fontSize: 20, fontWeight: "800" },
+  dateMonth: { fontSize: 10, fontWeight: "800" },
+  itemTitle: { fontSize: 15, fontWeight: "800", color: colors.textPrimary },
+  itemMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  itemBody: { fontSize: 14, color: colors.textPrimary, lineHeight: 20, marginTop: spacing.sm },
+  itemActions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.sm },
   linkBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    marginTop: spacing.sm,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.full,
+    backgroundColor: colors.badge.blue.bg,
   },
-  linkText: { ...typography.caption, color: colors.primary, fontWeight: "700" },
-  ownerRow: {
-    flexDirection: "row",
-    gap: spacing.md,
-    marginTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.sm,
-  },
-  ownerBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
-  ownerBtnText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontWeight: "600",
-  },
+  linkText: { fontSize: 13, fontWeight: "700", color: colors.primary },
+  ownerBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 8 },
+  ownerBtnText: { fontSize: 13, fontWeight: "600", color: colors.textSecondary },
+  manageCard: { marginTop: spacing.lg },
+  manageHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  manageTitle: { fontSize: 15, fontWeight: "800", color: colors.textPrimary },
+  hint: { fontSize: 12, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 17 },
+  error: { fontSize: 13, color: colors.danger, marginBottom: spacing.sm, fontWeight: "600" },
 });
 
 export default function ClubDetailScreen() {

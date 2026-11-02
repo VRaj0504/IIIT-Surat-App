@@ -1,12 +1,12 @@
 import React, { useRef, useState } from "react";
 import { View, Text, TouchableOpacity, KeyboardAvoidingView, ScrollView } from "react-native";
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth, ALLOWED_EMAIL_DOMAIN } from "../../context/AuthContext";
 import { WrongAccountSheet, ErrorBox, wrongAccountEmail } from "./authUi";
 import { toInstituteEmail } from "./LoginScreen";
-import { GlassScreen, Glass, Reveal, Heading, HintRow, OptionCard, GlassInput, PrimaryButton, RoundBack, Footer, g, ACCENT, MUTED, TEXT, EASE } from "./glassUi";
+import { GlassScreen, Glass, Reveal, Heading, HintRow, OptionCard, GlassInput, PrimaryButton, RoundBack, Footer, g, ACCENT, MUTED, TEXT, EASE, AuthSpacer, useAuthScroll } from "./glassUi";
 
 type Props = { onNavigateToLogin: () => void };
 
@@ -22,12 +22,20 @@ function friendlyError(e: any): string {
       return "No internet connection right now — check your connection and try again.";
     case "auth/operation-not-allowed":
       return "Email sign-up isn't switched on yet. Use Google for now.";
+    case "auth/too-many-requests":
+    case "auth/quota-exceeded":
+      return "Too many sign-ups from this network right now. Use \"Continue with Google\", or try again on mobile data.";
+    case "functions/failed-precondition":
+    case "functions/invalid-argument":
+    case "functions/unavailable":
+      return e.message;
     default:
       return e?.message?.replace(/^Firebase: /, "") || "Something went wrong. Please try again.";
   }
 }
 
 export default function SignUpScreen({ onNavigateToLogin }: Props) {
+  const authScroll = useAuthScroll();
   const { signInWithGoogle, signUpWithEmail, authError, clearAuthError } = useAuth();
   const [emailOpen, setEmailOpen] = useState(false);
   const [name, setName] = useState("");
@@ -91,8 +99,8 @@ export default function SignUpScreen({ onNavigateToLogin }: Props) {
     <GlassScreen>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1 }}>
-          <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={g.scroll} showsVerticalScrollIndicator={false}>
-            <View style={{ flex: 1, minHeight: 36 }} />
+          <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={authScroll} showsVerticalScrollIndicator={false}>
+            <AuthSpacer min={36} />
 
             <Reveal delay={80} style={{ gap: 18 }}>
               <Heading icon="person-add-outline" title="Create account" subtitle="For IIIT Surat students and faculty. Takes under a minute." />

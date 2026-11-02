@@ -6,13 +6,16 @@ import { subscribeToCurriculum, CurriculumSubject } from "../firebase/curriculum
 import { subscribeToMyLeaveApplications, excusedSessionSet, LeaveApplication } from "../firebase/leaveService";
 import { getMyAttendance, ATTENDANCE_TARGET } from "../firebase/attendanceService";
 import { getCurrentSemester } from "../utils/academicInfo";
+import { setLowAttendance } from "../utils/webBadges";
+
+export type AttendanceSummary = { overall: number | null; low: number; lowSubjects?: { code: string; name: string; pct: number }[] };
 
 export function useAttendanceSummary(profile: UserProfile | null, enabled: boolean) {
   const semester = profile?.admissionYear ? getCurrentSemester(profile.admissionYear, undefined, profile.program) : null;
   const ready = enabled && !!(profile?.enrollmentNumber && profile.branch && profile.admissionYear && semester);
   const [subjects, setSubjects] = useState<CurriculumSubject[] | null>(null);
   const [leaves, setLeaves] = useState<LeaveApplication[]>([]);
-  const [summary, setSummary] = useState<{ overall: number | null; low: number } | null>(null);
+  const [summary, setSummary] = useState<AttendanceSummary | null>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -34,7 +37,11 @@ export function useAttendanceSummary(profile: UserProfile | null, enabled: boole
   const cacheKey = ready ? `attsum:${profile!.enrollmentNumber}:${semester}` : "";
   useEffect(() => {
     if (!cacheKey) return;
-    readCached<{ overall: number | null; low: number }>(cacheKey).then((v) => v && setSummary((s) => s ?? v));
+    readCached<AttendanceSummary>(cacheKey).then((v) => {
+      if (!v) return;
+      setSummary((s) => s ?? v);
+      setLowAttendance(v.low);
+    });
   }, [cacheKey]);
 
   const load = useCallback(() => {
@@ -55,9 +62,14 @@ export function useAttendanceSummary(profile: UserProfile | null, enabled: boole
         const next = {
           overall: held ? Math.round((present / held) * 1000) / 10 : null,
           low: rows.filter((r) => r.percentage < ATTENDANCE_TARGET).length,
+          lowSubjects: rows
+            .filter((r) => r.percentage < ATTENDANCE_TARGET)
+            .sort((a, b) => a.percentage - b.percentage)
+            .map((r) => ({ code: r.subjectCode, name: r.subjectName, pct: r.percentage })),
         };
         writeCached(cacheKey, next);
         setSummary(next);
+        setLowAttendance(next.low);
       })
       .catch(() => {});
   }, [ready, subjects, excused, profile, semester, cacheKey]);

@@ -1,8 +1,10 @@
 import {
   addDoc,
   collection,
+  deleteField,
   doc,
   getDoc,
+  setDoc,
   onSnapshot,
   query,
   serverTimestamp,
@@ -135,10 +137,22 @@ export function subscribeToActiveSos(
   );
 }
 
-export function saveEmergencyContacts(uid: string, contacts: EmergencyContact[]) {
-  return updateDoc(doc(db, "users", uid), {
+export async function saveEmergencyContacts(uid: string, contacts: EmergencyContact[]) {
+  await setDoc(doc(db, "users", uid, "private", "sos"), {
     emergencyContacts: contacts.slice(0, 3).map((c) => ({ name: c.name.trim(), phone: c.phone.trim() })),
   });
+  await updateDoc(doc(db, "users", uid), { emergencyContacts: deleteField() }).catch(() => undefined);
+}
+
+export async function loadEmergencyContacts(uid: string, legacy?: EmergencyContact[]): Promise<EmergencyContact[]> {
+  const snap = await getDoc(doc(db, "users", uid, "private", "sos"));
+  const saved = (snap.data() as { emergencyContacts?: EmergencyContact[] } | undefined)?.emergencyContacts;
+  if (saved) return saved;
+  if (legacy?.length) {
+    await saveEmergencyContacts(uid, legacy).catch(() => undefined);
+    return legacy;
+  }
+  return [];
 }
 
 export const mapsUrl = (l: SosLocation) => `https://maps.google.com/?q=${l.lat},${l.lng}`;

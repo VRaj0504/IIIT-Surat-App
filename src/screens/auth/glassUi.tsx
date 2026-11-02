@@ -23,13 +23,19 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { useWebLayout } from "../../utils/useWebLayout";
+import { colors, isDark } from "../../theme/theme";
 
-export const BG = "#F3F5F9";
-export const TEXT = "#0E1A33";
-export const MUTED = "#5B6478";
-export const FAINT = "#8A93A6";
-export const ACCENT = "#0B3D91";
+export const BG = colors.background;
+export const TEXT = colors.textPrimary;
+export const MUTED = colors.textSecondary;
+export const FAINT = isDark ? "#7E8AA3" : "#8A93A6";
+export const ACCENT = isDark ? "#8AA8F0" : "#0B3D91";
+const BUTTON = isDark ? colors.primary : colors.textPrimary;
+const GLASS = isDark ? "rgba(20,28,46,0.62)" : "rgba(255,255,255,0.62)";
+const GLASS_EDGE = isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.95)";
+const BLUR_TINT = isDark ? "dark" : "light";
 export const MINT = "#2BB8A3";
 export const EASE = Easing.out(Easing.cubic);
 
@@ -59,14 +65,14 @@ export function GlassScreen({ children }: { children: React.ReactNode }) {
   return (
     <BgRef.Provider value={bg}>
       <View style={{ flex: 1, backgroundColor: BG }}>
-        <StatusBar style="dark" />
+        <StatusBar style={isDark ? "light" : "dark"} />
         <BlurTargetView ref={bg} style={StyleSheet.absoluteFill}>
           <View style={[StyleSheet.absoluteFill, { backgroundColor: BG }]} />
           <Blob size={width * 0.95} color="rgba(59,130,246,0.28)" x={-width * 0.35} y={-height * 0.1} dx={40} dy={30} duration={12000} />
           <Blob size={width * 0.8} color="rgba(167,139,250,0.26)" x={width * 0.45} y={height * 0.16} dx={-36} dy={34} duration={14000} />
           <Blob size={width * 0.75} color="rgba(94,234,212,0.26)" x={-width * 0.15} y={height * 0.6} dx={30} dy={-26} duration={13000} />
         </BlurTargetView>
-        <BlurView intensity={90} tint="light" blurTarget={bg} blurMethod={BLUR_METHOD} style={StyleSheet.absoluteFill} pointerEvents="none" />
+        <BlurView intensity={90} tint={BLUR_TINT} blurTarget={bg} blurMethod={BLUR_METHOD} style={StyleSheet.absoluteFill} pointerEvents="none" />
         {children}
       </View>
     </BgRef.Provider>
@@ -87,20 +93,38 @@ export function Glass({ style, children, radius = 24 }: { style?: any; children:
   return (
     <View style={[st.glassShadow, { borderRadius: radius }, style]}>
       <View style={[StyleSheet.absoluteFill, { borderRadius: radius, overflow: "hidden" }]}>
-        <BlurView intensity={40} tint="light" blurTarget={bg ?? undefined} blurMethod={BLUR_METHOD} style={StyleSheet.absoluteFill} />
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(255,255,255,0.62)" }]} />
+        <BlurView intensity={40} tint={BLUR_TINT} blurTarget={bg ?? undefined} blurMethod={BLUR_METHOD} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: GLASS }]} />
       </View>
-      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, borderWidth: 1, borderColor: "rgba(255,255,255,0.95)" }]} />
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, borderWidth: 1, borderColor: GLASS_EDGE }]} />
       {children}
     </View>
   );
 }
 
+export function useAuthScroll() {
+  const { isDesktop } = useWebLayout();
+  return isDesktop ? [g.scroll, { justifyContent: "center" as const, paddingVertical: 40, paddingHorizontal: 36, width: "100%" as const, maxWidth: 540, alignSelf: "center" as const }] : g.scroll;
+}
+
+export function AuthSpacer({ min = 36 }: { min?: number }) {
+  const { isDesktop } = useWebLayout();
+  return <View style={isDesktop ? { height: 8 } : { flex: 1, minHeight: min }} />;
+}
+
 export function BrandRow() {
+  const { isDesktop } = useWebLayout();
+  if (isDesktop) return null;
   return (
     <View style={g.brandRow}>
       <Image source={require("../../../assets/icon.png")} style={g.brandIcon} />
-      <Image source={require("../../../assets/wordmark.png")} style={g.brandWord} resizeMode="contain" accessibilityLabel="CollegeGo" />
+      {isDark ? (
+        <Text style={g.wordText} accessibilityLabel="CollegeGo">
+          college<Text style={{ color: "#6E9BFF" }}>go</Text>
+        </Text>
+      ) : (
+        <Image source={require("../../../assets/wordmark.png")} style={g.brandWord} resizeMode="contain" accessibilityLabel="CollegeGo" />
+      )}
     </View>
   );
 }
@@ -211,8 +235,8 @@ export function GlassInput({
 }: TextInputProps & { icon: keyof typeof Ionicons.glyphMap; suffix?: string; right?: React.ReactNode; ref?: React.Ref<TextInput> }) {
   const f = useSharedValue(0);
   const a = useAnimatedStyle(() => ({
-    borderColor: interpolateColor(f.value, [0, 1], ["rgba(14,26,51,0.08)", "rgba(11,61,145,0.75)"]),
-    backgroundColor: interpolateColor(f.value, [0, 1], ["rgba(255,255,255,0.75)", "rgba(255,255,255,0.98)"]),
+    borderColor: interpolateColor(f.value, [0, 1], [isDark ? "rgba(255,255,255,0.10)" : "rgba(14,26,51,0.08)", isDark ? "rgba(138,168,240,0.8)" : "rgba(11,61,145,0.75)"]),
+    backgroundColor: interpolateColor(f.value, [0, 1], [isDark ? "rgba(20,28,46,0.75)" : "rgba(255,255,255,0.75)", isDark ? "rgba(20,28,46,0.98)" : "rgba(255,255,255,0.98)"]),
   }));
   return (
     <Animated.View style={[g.inputWrap, a]}>
@@ -286,11 +310,12 @@ export const g = StyleSheet.create({
   brandIcon: { width: 34, height: 34, borderRadius: 10 },
   brandText: { fontSize: 16, fontWeight: "700", color: TEXT, letterSpacing: -0.2 },
   brandWord: { width: 99, height: 22 },
+  wordText: { fontSize: 21, fontWeight: "700", color: TEXT, letterSpacing: -0.6 },
   headIcon: {
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: "rgba(11,61,145,0.10)",
+    backgroundColor: isDark ? "rgba(138,168,240,0.14)" : "rgba(11,61,145,0.10)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -305,7 +330,7 @@ export const g = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 15,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -326,14 +351,14 @@ export const g = StyleSheet.create({
   primaryBtn: {
     height: 54,
     borderRadius: 16,
-    backgroundColor: TEXT,
+    backgroundColor: BUTTON,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
   },
   primaryText: { color: "#fff", fontSize: 15.5, fontWeight: "700" },
-  back: { width: 52, height: 52, borderRadius: 26, backgroundColor: TEXT, alignItems: "center", justifyContent: "center" },
+  back: { width: 52, height: 52, borderRadius: 26, backgroundColor: BUTTON, alignItems: "center", justifyContent: "center" },
   link: { fontSize: 13.5, fontWeight: "600", color: ACCENT },
   note: { fontSize: 12.5, color: MUTED, textAlign: "center", lineHeight: 18 },
   footer: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },

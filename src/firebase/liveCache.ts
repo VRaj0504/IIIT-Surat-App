@@ -50,7 +50,7 @@ export function writeCached<T>(key: string, value: T) {
 
 export function persisted<T>(
   key: string,
-  subscribe: (onUpdate: (value: T) => void) => () => void,
+  subscribe: (onUpdate: (value: T) => void, fail: (fallback: T) => void) => () => void,
   onUpdate: (value: T) => void,
 ): () => void {
   let live = false;
@@ -68,6 +68,11 @@ export function persisted<T>(
       onUpdate(v);
     });
 
+  const fail = (fallback: T) => {
+    if (closed || live || shownJson !== null || memory.has(key)) return;
+    onUpdate(fallback);
+  };
+
   const unsubscribe = subscribe((value) => {
     live = true;
     if (closed) return;
@@ -77,7 +82,7 @@ export function persisted<T>(
     shownJson = j || null;
     writeCached(key, value);
     onUpdate(value);
-  });
+  }, fail);
 
   return () => {
     closed = true;

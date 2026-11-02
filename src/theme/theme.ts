@@ -1,5 +1,8 @@
 
 
+import { Appearance, Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 type Badge = { bg: string; fg: string };
 
 export type Palette = {
@@ -20,6 +23,12 @@ export type Palette = {
   successFg: string;
   successBorder: string;
   dangerBg: string;
+  dangerText: string;
+  dangerBorder: string;
+  warningBg: string;
+  warningText: string;
+  borderStrong: string;
+  page: string;
   overlay: string;
   ink: string;
   onInk: string;
@@ -57,6 +66,12 @@ const light: Palette = {
   successFg: '#14532D',
   successBorder: '#86EFAC',
   dangerBg: '#FDECEA',
+  dangerText: '#A3301C',
+  dangerBorder: '#F5C2B8',
+  warningBg: '#FFF4DB',
+  warningText: '#5C3D00',
+  borderStrong: '#C8D2E3',
+  page: '#FFFFFF',
   overlay: 'rgba(14,26,51,0.5)',
   ink: '#0E1A33',
   onInk: '#FFFFFF',
@@ -88,9 +103,91 @@ const light: Palette = {
   },
 };
 
-export const isDark = false;
+const dark: Palette = {
+  primary: '#4D7CE6',
+  primaryDark: '#3A64C4',
+  onPrimary: '#FFFFFF',
+  accent: '#E8702A',
+  background: '#0B1220',
+  surface: '#141C2E',
+  surfaceAlt: '#1B2540',
+  textPrimary: '#E8EDF7',
+  textSecondary: '#A3AEC4',
+  border: '#26324D',
+  success: '#1F9D55',
+  danger: '#E5484D',
+  warning: '#E0A320',
+  successBg: '#11301F',
+  successFg: '#86EFAC',
+  successBorder: '#1F5C38',
+  dangerBg: '#3A1719',
+  dangerText: '#FCA5A5',
+  dangerBorder: '#5B2526',
+  warningBg: '#33270C',
+  warningText: '#FDE68A',
+  borderStrong: '#34446A',
+  page: '#0B1220',
+  overlay: 'rgba(0,0,0,0.6)',
+  ink: '#1C2A4A',
+  onInk: '#FFFFFF',
+  inkMuted: '#A9B6D3',
+  heroBg: '#17357A',
+  heroText: '#FFFFFF',
+  heroMuted: '#B9C9EE',
+  heroChip: 'rgba(255,255,255,0.14)',
+  gradientStart: '#0B1220',
+  gradientEnd: '#0E1628',
+  glassTint: 'rgba(20,28,46,0.85)',
+  glassBorder: '#26324D',
+  clayHighlight: '#141C2E',
+  claySurface: '#0B1220',
+  badge: {
+    peach: { bg: '#3A2414', fg: '#FDBA8C' },
+    pink: { bg: '#3A1A2A', fg: '#F9A8C9' },
+    green: { bg: '#12301F', fg: '#86EFAC' },
+    blue: { bg: '#1A2A4D', fg: '#A8C1FF' },
+    purple: { bg: '#2A2150', fg: '#C4B5FD' },
+  },
+  tile: {
+    blue: { bg: '#1A2A4D', fg: '#A8C1FF' },
+    mint: { bg: '#12301F', fg: '#86EFAC' },
+    peach: { bg: '#3A2414', fg: '#FDBA8C' },
+    lilac: { bg: '#2A2150', fg: '#C4B5FD' },
+    yellow: { bg: '#33270C', fg: '#FCD34D' },
+    pink: { bg: '#3A1A2A', fg: '#F9A8C9' },
+  },
+};
 
-export const colors: Palette = light;
+export type ThemePreference = 'system' | 'light' | 'dark';
+const THEME_KEY = 'cg-theme';
+
+export let isDark = false;
+export let themePreference: ThemePreference = 'system';
+export const colors: Palette = JSON.parse(JSON.stringify(light));
+
+function applyTheme(pref: ThemePreference) {
+  themePreference = pref;
+  isDark = pref === 'dark' || (pref === 'system' && Appearance.getColorScheme() === 'dark');
+  Object.assign(colors, JSON.parse(JSON.stringify(isDark ? dark : light)));
+}
+
+applyTheme('system');
+
+const isPref = (v: unknown): v is ThemePreference => v === 'system' || v === 'light' || v === 'dark';
+
+export async function loadThemePreference() {
+  try {
+    const v = Platform.OS === 'web' ? globalThis.localStorage?.getItem(THEME_KEY) : await AsyncStorage.getItem(THEME_KEY);
+    if (isPref(v)) applyTheme(v);
+  } catch {}
+}
+
+export async function saveThemePreference(pref: ThemePreference) {
+  try {
+    if (Platform.OS === 'web') globalThis.localStorage?.setItem(THEME_KEY, pref);
+    else await AsyncStorage.setItem(THEME_KEY, pref);
+  } catch {}
+}
 
 export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 };
 export const radius = { sm: 10, md: 16, lg: 22, xl: 28, full: 999 };

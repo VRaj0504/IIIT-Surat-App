@@ -41,7 +41,6 @@ export default function EventExcusalRequestsScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <Text style={styles.header}>Event Excusal Requests</Text>
         <Text style={styles.helper}>
           Approving covers every listed student's attendance across all their subjects for the
           given dates — individual subject faculty don't need to separately approve anything.

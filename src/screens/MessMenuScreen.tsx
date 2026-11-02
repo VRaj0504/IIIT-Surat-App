@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import {
   colors,
   spacing,
@@ -17,6 +17,7 @@ import {
   clayShadowSoft,
 } from "../theme/theme";
 import { messMenu, getTodayIndex, MealType } from "../data/messMenu";
+import { subscribeToMessExtras, DEFAULT_MESS_EXTRAS, MessExtra } from "../firebase/messExtrasService";
 
 const mealIcons: Record<MealType, keyof typeof Ionicons.glyphMap> = {
 
@@ -29,6 +30,8 @@ export default function MessMenuScreen() {
   const todayIndex = getTodayIndex();
   const [selectedIndex, setSelectedIndex] = useState(todayIndex === -1 ? 0 : todayIndex);
   const dayMenu = messMenu[selectedIndex];
+  const [extras, setExtras] = useState<MessExtra[]>(DEFAULT_MESS_EXTRAS);
+  useEffect(() => subscribeToMessExtras(setExtras), []);
 
   return (
     <LinearGradient
@@ -36,14 +39,8 @@ export default function MessMenuScreen() {
       style={{ flex: 1 }}
     >
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <Text style={styles.title}>Mess Menu</Text>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.dayTabs}
-          contentContainerStyle={{ gap: spacing.sm }}
-        >
+        <View style={styles.dayTabs}>
           {messMenu.map((d, index) => (
             <TouchableOpacity
               key={d.day}
@@ -64,16 +61,14 @@ export default function MessMenuScreen() {
               {index === todayIndex && <View style={styles.todayDot} />}
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
 
-        {!dayMenu ? (
-
-          <View style={styles.mealsList}>
-            <Text style={styles.title}>No menu set for this day yet.</Text>
-          </View>
-        ) : (
         <ScrollView contentContainerStyle={styles.mealsList}>
-          {(Object.keys(dayMenu.meals) as MealType[]).map((meal) => (
+          {!dayMenu ? (
+            <View style={styles.mealCard}>
+              <Text style={styles.itemText}>No menu set for this day yet.</Text>
+            </View>
+          ) : (Object.keys(dayMenu.meals) as MealType[]).map((meal) => (
             <View key={meal} style={styles.mealCard}>
               <View style={styles.mealHeader}>
                 <Ionicons
@@ -92,8 +87,23 @@ export default function MessMenuScreen() {
               </View>
             </View>
           ))}
+
+          <View style={styles.mealCard}>
+            <View style={styles.mealHeader}>
+              <Ionicons name="cafe-outline" size={20} color={colors.primary} />
+              <Text style={styles.mealTitle}>Always available</Text>
+            </View>
+            <Text style={styles.extrasHint}>Any day, any time the mess counter is open.</Text>
+            {extras.map((x, i) => (
+              <View key={x.id} style={[styles.extraRow, i > 0 && styles.extraRowBorder]}>
+                <Text style={styles.extraName}>{x.name}</Text>
+                <Text style={[styles.extraPrice, x.price == null && styles.extraPriceUnknown]}>
+                  {x.price == null ? "Ask at counter" : `₹${x.price}`}
+                </Text>
+              </View>
+            ))}
+          </View>
         </ScrollView>
-        )}
       </SafeAreaView>
     </LinearGradient>
   );
@@ -107,8 +117,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     marginBottom: spacing.md,
   },
-  dayTabs: { marginBottom: spacing.md, flexGrow: 0 },
+  dayTabs: { flexDirection: "row", gap: spacing.xs, marginBottom: spacing.md },
   dayTab: {
+    flex: 1,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: radius.full,
@@ -159,4 +170,10 @@ const styles = StyleSheet.create({
     ...clayShadowSoft,
   },
   itemText: { ...typography.caption, color: colors.textPrimary },
+  extrasHint: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.xs },
+  extraRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: spacing.sm },
+  extraRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  extraName: { ...typography.body, color: colors.textPrimary, fontWeight: "600" },
+  extraPrice: { ...typography.body, color: colors.primary, fontWeight: "800" },
+  extraPriceUnknown: { ...typography.caption, color: colors.textSecondary, fontWeight: "600" },
 });

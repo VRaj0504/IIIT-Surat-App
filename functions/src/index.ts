@@ -1,5 +1,6 @@
-import * as admin from "firebase-admin";
-admin.initializeApp();
+import "./globalOptions";
+import {initializeApp} from "firebase-admin/app";
+initializeApp();
 
 
 export {sendAnnouncementPush} from "./sendAnnouncementPush";
@@ -17,17 +18,24 @@ export {sendTimetableUpdatePush} from "./sendTimetableUpdatePush";
 export {sendClubEventPush} from "./sendClubEventPush";
 export {sendLeaveResolutionPush} from "./sendLeaveResolutionPush";
 export {medicalLeaveWorkflow, medicalLeaveTeacherConfirmed} from "./medicalLeaveWorkflow";
+export {syncMedicalExcusal} from "./syncMedicalExcusal";
+export {medicalSubmit, medicalAct} from "./medicalRequest";
 export {sendExcusalResolutionPush} from "./sendExcusalResolutionPush";
 export {sendComplaintResolutionPush} from "./sendComplaintResolutionPush";
+export {normalizeComplaint} from "./normalizeComplaint";
 
 export {sendExamSchedulePush} from "./sendExamSchedulePush";
 export {sendGradePush} from "./sendGradePush";
-export {sendExamEventPush} from "./sendExamEventPush";
+export {sendMarksPush} from "./sendMarksPush";
+export {sendExamEventPush, sendExamEventUpdatePush} from "./sendExamEventPush";
+export {sendHolidayPush} from "./sendHolidayPush";
+export {sendQuizPush} from "./sendQuizPush";
 export {extractExamSchedule} from "./extractExamSchedule";
 
 export {sendDayStatusPush} from "./sendDayStatusPush";
 
 export {syncRoleClaim} from "./syncRoleClaim";
+export {syncRosterToUser} from "./syncRosterToUser";
 export {backfillRoleClaims} from "./backfillRoleClaims";
 
 export {sendCounsellingRequestPush} from "./sendCounsellingRequestPush";
@@ -35,4 +43,9 @@ export {sendCounsellingRequestPush} from "./sendCounsellingRequestPush";
 export {cleanupResolvedDoubts} from "./cleanupResolvedDoubts";
 export {sendSosPush} from "./sendSosPush";
 export {deleteMyAccount} from "./deleteMyAccount";
+export {getMyAttendanceSessions} from "./getMyAttendanceSessions";
 export {requestPasswordResetOtp, confirmPasswordResetOtp} from "./passwordResetOtp";
+export {createAccount} from "./createAccount";
+export {createPlusSubscription, cancelPlusSubscription, razorpayWebhook} from "./plus";
+export {sendMeetingPush} from "./sendMeetingPush";
+export {getDirectorOverview} from "./getDirectorOverview";

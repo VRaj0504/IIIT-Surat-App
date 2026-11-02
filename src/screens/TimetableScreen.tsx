@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useNavigation } from "@react-navigation/native";
 import { colors, spacing, typography } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
@@ -16,6 +16,8 @@ import {
 import { expandFaculty } from "../data/facultyLegend";
 import { mergeContiguousSlots, toMinutes } from "../utils/timetable";
 import LoadingSpinner from "../components/LoadingSpinner";
+import DesktopWeek from "../components/web/DesktopWeek";
+import { useWebLayout } from "../utils/useWebLayout";
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
@@ -81,6 +83,7 @@ function buildRows(slots: Slot[], isToday: boolean, nowMin: number): Row[] {
 
 export default function TimetableScreen() {
   const { profile, previewRole } = useAuth();
+  const { isDesktop } = useWebLayout();
   const navigation = useNavigation<any>();
   const isFaculty = (previewRole ?? profile?.role) === "faculty";
 
@@ -160,6 +163,23 @@ export default function TimetableScreen() {
               ? "Your profile doesn't have a name set, so we can't match you against any timetable. Contact an admin if this looks wrong."
               : "Your branch, section, and admission year aren't set on your profile yet, so we can't show your timetable. This comes from the official student roster — contact an admin if it looks missing."}
           </Text>
+        ) : isDesktop ? (
+          loading ? (
+            <LoadingSpinner style={{ marginTop: spacing.xl }} />
+          ) : hasNoTimetableYet ? (
+            <Text style={styles.emptyText}>No timetable has been uploaded for your section yet.</Text>
+          ) : (
+            <DesktopWeek
+              isFaculty={isFaculty}
+              todayName={todayName}
+              nowMin={nowMin}
+              days={WEEKDAYS.map((d, i) => ({
+                day: d,
+                date: dates[i],
+                slots: isFaculty ? facultyEntries.filter((e) => e.day === d) : timetable?.days.find((x) => x.day === d)?.slots ?? [],
+              }))}
+            />
+          )
         ) : (
           <>
             <View style={styles.dayRow}>

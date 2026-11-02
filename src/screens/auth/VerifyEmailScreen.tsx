@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, ScrollView, AppState } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../../context/AuthContext";
 import { ErrorBox } from "./authUi";
-import { GlassScreen, Glass, Reveal, Heading, PrimaryButton, g, TEXT, MUTED, ACCENT } from "./glassUi";
+import { GlassScreen, Glass, Reveal, Heading, PrimaryButton, g, TEXT, MUTED, ACCENT, AuthSpacer, useAuthScroll } from "./glassUi";
 
 const RESEND_SECONDS = 60;
 
 export default function VerifyEmailScreen() {
+  const authScroll = useAuthScroll();
   const { user, checkEmailVerified, resendVerificationEmail, logOut } = useAuth();
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,8 +58,8 @@ export default function VerifyEmailScreen() {
   return (
     <GlassScreen>
       <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={g.scroll} showsVerticalScrollIndicator={false}>
-          <View style={{ flex: 1, minHeight: 36 }} />
+        <ScrollView contentContainerStyle={authScroll} showsVerticalScrollIndicator={false}>
+          <AuthSpacer min={36} />
 
           <Reveal delay={100}>
             <Heading icon="mail-unread-outline" title={"Verify your\nemail"} subtitle="One last step to confirm it's really you." />

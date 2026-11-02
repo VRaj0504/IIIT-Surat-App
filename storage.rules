@@ -11,8 +11,33 @@ service firebase.storage {
         firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
     }
 
+    function userDoc() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
     function userRole() {
-      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role;
+      return userDoc().role;
+    }
+
+    function isAdmin() {
+      return isMember() && (userRole() == 'admin' || userDoc().get('isAdmin', false) == true);
+    }
+
+    function myEmail() {
+      return userDoc().email.lower();
+    }
+
+    function medicalCfg() {
+      return firestore.get(/databases/(default)/documents/config/medicalLeave).data;
+    }
+
+    function stepEmail(key) {
+      return medicalCfg().get(key, null) == null ? '-' : medicalCfg().get(key, null).get('email', '-');
+    }
+
+    function isMedicalApprover() {
+      return myEmail() in medicalCfg().get('hodEmails', []) ||
+        myEmail() in [stepEmail('doctor'), stepEmail('dean'), stepEmail('jr'), stepEmail('administrator')];
     }
 
     function isFaculty() {
@@ -69,9 +94,49 @@ service firebase.storage {
     }
 
     match /medicalReports/{uid}/{allPaths=**} {
-      allow read: if isMember() && (request.auth.uid == uid || isStaff());
-      allow create, update: if isMember() && request.auth.uid == uid && underMb(10);
+      allow read: if isMember() && (request.auth.uid == uid || isAdmin() || isMedicalApprover());
+      allow create, update: if isMember() && request.auth.uid == uid && underMb(10) &&
+        (request.resource.contentType.matches('image/.*') || request.resource.contentType == 'application/pdf');
       allow delete: if isMember() && request.auth.uid == uid;
+    }
+
+    function leaveDoc(leaveId) {
+      return firestore.get(/databases/(default)/documents/leaveApplications/$(leaveId)).data;
+    }
+
+    function leaveExists(leaveId) {
+      return firestore.exists(/databases/(default)/documents/leaveApplications/$(leaveId));
+    }
+
+    function medicalFile() {
+      return underMb(10) &&
+        (request.resource.contentType.matches('image/(jpeg|png|webp|heic|heif)') || request.resource.contentType == 'application/pdf');
+    }
+
+    match /medicalLeaves/{uid}/{leaveId}/{allPaths=**} {
+      allow read: if isMember() && (
+        request.auth.uid == uid ||
+        isAdmin() ||
+        (leaveExists(leaveId) && myEmail() in leaveDoc(leaveId).get('viewerEmails', []))
+      );
+    }
+
+    match /medicalLeaves/{uid}/{leaveId}/student/{file} {
+      allow create: if isMember() && request.auth.uid == uid && medicalFile() &&
+        (!leaveExists(leaveId) || leaveDoc(leaveId).stage == 'returned');
+      allow delete: if isMember() && request.auth.uid == uid &&
+        (!leaveExists(leaveId) || leaveDoc(leaveId).stage == 'returned');
+    }
+
+    match /medicalLeaves/{uid}/{leaveId}/medical/{file} {
+      allow create: if isMember() && leaveExists(leaveId) &&
+        leaveDoc(leaveId).studentUid == uid &&
+        leaveDoc(leaveId).stage == 'medical' &&
+        myEmail() == leaveDoc(leaveId).medicalEmail &&
+        medicalFile();
+      allow delete: if isMember() && leaveExists(leaveId) &&
+        leaveDoc(leaveId).stage == 'medical' &&
+        myEmail() == leaveDoc(leaveId).medicalEmail;
     }
 
     match /examSheets/{uid}/{allPaths=**} {

@@ -1,5 +1,7 @@
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import {getFirestore} from "firebase-admin/firestore";
+import {sendExpoPush} from "./expoPush";
+import {tokensOf} from "./audience";
 
 export const sendExcusalResolutionPush = onDocumentWritten(
   "eventExcusals/{excusalId}",
@@ -8,9 +10,9 @@ export const sendExcusalResolutionPush = onDocumentWritten(
     const after = event.data?.after;
     if (!after?.exists) return;
 
-    const beforeData = before?.exists
-      ? (before.data() as {status?: string})
-      : undefined;
+    const beforeData = before?.exists ?
+      (before.data() as {status?: string}) :
+      undefined;
     const afterData = after.data() as {
       submittedBy: string;
       status: "pending" | "approved" | "rejected";
@@ -26,33 +28,14 @@ export const sendExcusalResolutionPush = onDocumentWritten(
 
     const db = getFirestore();
     const coordinatorSnap = await db.collection("users").doc(afterData.submittedBy).get();
-    const coordinator = coordinatorSnap.data() as {expoPushToken?: string} | undefined;
-    if (!coordinator?.expoPushToken) return;
+    const tokens = tokensOf(coordinatorSnap.data());
+    if (!tokens.length) return;
 
     const verb = afterData.status === "approved" ? "approved" : "rejected";
-    const body = afterData.facultyRemark
-      ? `${afterData.facultyCoordinatorName} ${verb} the excusal for "${afterData.eventName}": "${afterData.facultyRemark}"`
-      : `${afterData.facultyCoordinatorName} ${verb} the excusal request for "${afterData.eventName}".`;
+    const body = afterData.facultyRemark ?
+      `${afterData.facultyCoordinatorName} ${verb} the excusal for "${afterData.eventName}": "${afterData.facultyRemark}"` :
+      `${afterData.facultyCoordinatorName} ${verb} the excusal request for "${afterData.eventName}".`;
 
-    await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Accept-Encoding": "gzip, deflate",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify([
-        {
-          to: coordinator.expoPushToken,
-          title: afterData.status === "approved" ? "Excusal Approved" : "Excusal Rejected",
-          body,
-          sound: "default",
-          priority: "high",
-        },
-      ]),
-    }).catch((err) => {
-      // eslint-disable-next-line no-console
-      console.error("[sendExcusalResolutionPush] Expo push API call failed:", err);
-    });
+    await sendExpoPush(tokens, afterData.status === "approved" ? "Excusal Approved" : "Excusal Rejected", body, "sendExcusalResolutionPush", {screen: "SubmitEventExcusal"});
   },
 );

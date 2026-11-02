@@ -113,7 +113,6 @@ export default function CounsellingQueueScreen() {
     return (
       <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
         <SafeAreaView style={styles.container} edges={["top"]}>
-          <Text style={styles.header}>Counselling Requests</Text>
           <Text style={styles.emptyText}>
             You're not on the counselling team's list, so there's nothing to show here. If that's wrong, ask an
             admin to add your email to the `counsellors` collection.
@@ -126,7 +125,6 @@ export default function CounsellingQueueScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <Text style={styles.header}>Counselling Requests</Text>
         {loading ? (
           <LoadingSpinner style={{ marginTop: spacing.xl }} />
         ) : requests.length === 0 ? (

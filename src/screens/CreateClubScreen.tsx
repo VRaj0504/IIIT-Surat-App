@@ -90,7 +90,6 @@ export default function CreateClubScreen() {
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={styles.title}>New Club</Text>
             <Text style={styles.subtitle}>
               Set up a club and assign its lead
             </Text>

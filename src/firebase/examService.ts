@@ -13,7 +13,7 @@ import {
 import { db } from "./firestore";
 import { persisted } from "./liveCache";
 
-export type ExamEventType = "supplementary" | "makeup" | "endsem" | "midsem" | "other";
+export type ExamEventType = "supplementary" | "makeup" | "endsem" | "midsem" | "roomchange" | "other";
 export type RegistrationMode = "none" | "backlogs" | "subjects";
 
 export const EXAM_EVENT_LABELS: Record<ExamEventType, string> = {
@@ -21,6 +21,7 @@ export const EXAM_EVENT_LABELS: Record<ExamEventType, string> = {
   makeup: "Make-up exam",
   endsem: "End-semester exam",
   midsem: "Mid-semester exam",
+  roomchange: "Room / timing change",
   other: "Exam notice",
 };
 

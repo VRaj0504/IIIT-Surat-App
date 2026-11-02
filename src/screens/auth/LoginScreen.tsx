@@ -1,11 +1,11 @@
 import React, { useRef, useState } from "react";
 import { View, Text, TouchableOpacity, KeyboardAvoidingView, ScrollView } from "react-native";
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth, isAllowedEmailDomain, isReviewerEmail, ALLOWED_EMAIL_DOMAIN } from "../../context/AuthContext";
 import { WrongAccountSheet, ErrorBox, wrongAccountEmail } from "./authUi";
-import { GlassScreen, Glass, Reveal, BrandRow, Heading, HintRow, OptionCard, GlassInput, PrimaryButton, Footer, g, ACCENT, MUTED, TEXT, EASE } from "./glassUi";
+import { GlassScreen, Glass, Reveal, BrandRow, Heading, HintRow, OptionCard, GlassInput, PrimaryButton, Footer, g, ACCENT, MUTED, TEXT, EASE, AuthSpacer, useAuthScroll } from "./glassUi";
 
 type Props = {
   onNavigateToSignUp: () => void;
@@ -21,7 +21,11 @@ function friendlyError(code: string): string {
     case "auth/invalid-credential":
       return "Incorrect ID or password.";
     case "auth/too-many-requests":
-      return "Too many attempts. Try again in a bit.";
+      return "Too many attempts. Wait a few minutes, or reset your password.";
+    case "auth/user-disabled":
+      return "This account has been disabled. Contact the academic office.";
+    case "auth/internal-error":
+      return "The sign-in service is busy. Try again in a moment.";
     case "auth/network-request-failed":
       return "No internet connection right now — check your connection and try again.";
     default:
@@ -35,6 +39,7 @@ export function toInstituteEmail(id: string): string {
 }
 
 export default function LoginScreen({ onNavigateToSignUp, onNavigateToForgotPassword }: Props) {
+  const authScroll = useAuthScroll();
   const { logIn, signInWithGoogle, authError, clearAuthError } = useAuth();
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
@@ -89,12 +94,12 @@ export default function LoginScreen({ onNavigateToSignUp, onNavigateToForgotPass
     <GlassScreen>
       <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1 }}>
-          <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={g.scroll} showsVerticalScrollIndicator={false}>
+          <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={authScroll} showsVerticalScrollIndicator={false}>
             <Reveal>
               <BrandRow />
             </Reveal>
 
-            <View style={{ flex: 1, minHeight: 24 }} />
+            <AuthSpacer min={24} />
 
             <Reveal delay={120} style={{ gap: 18 }}>
               <Heading icon="log-in-outline" title="Sign in" subtitle="Classes, attendance, notices and the mess — everything for your day at IIIT Surat." />

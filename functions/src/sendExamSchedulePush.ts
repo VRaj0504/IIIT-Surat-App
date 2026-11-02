@@ -1,17 +1,7 @@
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
+import {studentsFor, tokensFor} from "./audience";
 import {getFirestore} from "firebase-admin/firestore";
 import {sendExpoPush} from "./expoPush";
-
-function currentSemester(admissionYear: number, now: Date = new Date(), program: 'UG' | 'PG' = 'UG'): number {
-  const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
-  const month = ist.getUTCMonth() + 1;
-  const year = ist.getUTCFullYear();
-  const isOdd = month >= 7;
-  const academicYearIndex = isOdd ? year - admissionYear : year - admissionYear - 1;
-  const semester = academicYearIndex * 2 + 1 + (isOdd ? 0 : 1);
-  const totalSemesters = program === 'PG' ? 4 : 8;
-  return Math.min(Math.max(semester, 1), totalSemesters);
-}
 
 export const sendExamSchedulePush = onDocumentWritten(
   "examSchedules/{docId}",
@@ -49,25 +39,8 @@ export const sendExamSchedulePush = onDocumentWritten(
       branches = own.exists ? ["CSE"] : ["CSE", "MNC"];
     }
 
-    const snapshot = await getFirestore()
-      .collection("users")
-      .where("role", "==", "student")
-      .where("branch", "in", branches)
-      .get();
-
-    const tokens: string[] = [];
-    snapshot.docs.forEach((doc) => {
-      const student = doc.data() as {
-        admissionYear?: number;
-        program?: 'UG' | 'PG';
-        expoPushToken?: string;
-        notificationPreferences?: {examsAndGrades?: boolean};
-      };
-      if (!student.expoPushToken || !student.admissionYear) return;
-      if (student.notificationPreferences?.examsAndGrades === false) return;
-      if (currentSemester(student.admissionYear, undefined, student.program) !== schedule.semester) return;
-      tokens.push(student.expoPushToken);
-    });
+    const {matched} = await studentsFor({branches, semester: Number(schedule.semester)});
+    const tokens = tokensFor(matched, "examsAndGrades");
 
     const label = schedule.examTypeLabel ?? "Exam";
     await sendExpoPush(
@@ -75,6 +48,7 @@ export const sendExamSchedulePush = onDocumentWritten(
       `${label} date sheet ${isUpdate ? "updated" : "published"}`,
       `${schedule.branch} Semester ${schedule.semester} — check your exam dates.`,
       "sendExamSchedulePush",
+      {screen: "ExamSchedule"},
     );
   },
 );

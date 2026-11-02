@@ -1,12 +1,13 @@
 import {onCall, HttpsError} from "firebase-functions/v2/https";
-import * as admin from "firebase-admin";
+import {getFirestore} from "firebase-admin/firestore";
+import {getAuth} from "firebase-admin/auth";
 
 export const backfillRoleClaims = onCall(
   {region: "asia-south1"},
   async (request) => {
     if (!request.auth) throw new HttpsError("unauthenticated", "You must be signed in.");
 
-    const db = admin.firestore();
+    const db = getFirestore();
     const callerSnap = await db.collection("users").doc(request.auth.uid).get();
     if (callerSnap.data()?.role !== "admin") {
       throw new HttpsError("permission-denied", "Admin only.");
@@ -22,7 +23,7 @@ export const backfillRoleClaims = onCall(
         skipped++;
         continue;
       }
-      await admin.auth().setCustomUserClaims(doc.id, {role});
+      await getAuth().setCustomUserClaims(doc.id, {role});
       updated++;
     }
 

@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firestore";
 import { persisted } from './liveCache';
+import { rosterForYear } from './rosterCache';
 import { LETTER_GRADES, summariseSemesters, computeCgpa, type AttemptType } from "../utils/examRules";
 
 export { GRADE_POINTS, SPECIAL_GRADES, GRADE_LABELS, ATTEMPT_TYPES, ATTEMPT_LABELS } from "../utils/examRules";
@@ -61,7 +62,11 @@ export async function setGrade(params: {
   enteredByName: string;
 }): Promise<void> {
   const id = gradeDocId(params.studentEnrollmentNumber, params.subjectCode);
-  const existing = await getDoc(doc(db, COLLECTION, id));
+  const [existing, examCfg] = await Promise.all([
+    getDoc(doc(db, COLLECTION, id)),
+    getDoc(doc(db, "config", "exams")).catch(() => null),
+  ]);
+  const published = (examCfg?.data() as { publishMode?: string } | undefined)?.publishMode !== "examCell";
   const attempt: AttemptType = params.attempt ?? "regular";
   const prev = existing.exists() ? (existing.data() as Partial<GradeEntry>) : null;
   const history = [...(prev?.history ?? [])];
@@ -92,6 +97,7 @@ export async function setGrade(params: {
       history,
       enteredBy: params.enteredBy,
       enteredByName: params.enteredByName,
+      published,
       createdAt: existing.exists() ? existing.data().createdAt : serverTimestamp(),
       updatedAt: serverTimestamp(),
     },
@@ -107,9 +113,9 @@ export async function getClassRoster(
   section: string | null,
   specialization?: string | null,
 ): Promise<RosterStudent[]> {
-  const snap = await getDocs(query(collection(db, "roster"), where("admissionYear", "==", admissionYear)));
-  return snap.docs
-    .map((d) => ({ regNo: d.id, ...(d.data() as { name: string; branch: string; section?: string; specialization?: string; reviewer?: boolean }) }))
+  const rows = await rosterForYear(admissionYear);
+  return rows
+    .map((d) => ({ ...d, regNo: d.id, name: d.name ?? d.id }))
     .filter((r) => !r.reviewer)
     .filter((r) => r.branch === branch && (section ? r.section === section : true))
     .filter((r) => (specialization ? r.specialization === specialization : true))
@@ -138,17 +144,36 @@ export function subscribeToMyGrades(
   enrollmentNumber: string,
   onUpdate: (grades: GradeEntry[]) => void,
 ): () => void {
-  const q = query(collection(db, COLLECTION), where("studentEnrollmentNumber", "==", enrollmentNumber));
-  return persisted(`grades:${enrollmentNumber}`, (onUpdate) => onSnapshot(
-    q,
-    (snapshot) => {
-      onUpdate(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<GradeEntry, "id">) })));
-    },
-    (err) => {
-      // eslint-disable-next-line no-console
-      console.error("[gradesService] subscribeToMyGrades error:", err);
-    },
-  ), onUpdate);
+  return persisted(`grades:${enrollmentNumber}`, (onUpdate) => {
+    let unsub: (() => void) | null = null;
+    let stopped = false;
+    getDoc(doc(db, "config", "exams"))
+      .then((cfg) => (cfg.data() as { publishMode?: string } | undefined)?.publishMode === "examCell")
+      .catch(() => false)
+      .then((gated) => {
+        if (stopped) return;
+        const constraints = [where("studentEnrollmentNumber", "==", enrollmentNumber)];
+        if (gated) constraints.push(where("published", "==", true));
+        unsub = onSnapshot(
+          query(collection(db, COLLECTION), ...constraints),
+          (snapshot) => {
+            onUpdate(
+              snapshot.docs
+                .map((d) => ({ id: d.id, ...(d.data() as Omit<GradeEntry, "id">) }))
+                .filter((g) => (g as { published?: boolean }).published !== false),
+            );
+          },
+          (err) => {
+            // eslint-disable-next-line no-console
+            console.error("[gradesService] subscribeToMyGrades error:", err);
+          },
+        );
+      });
+    return () => {
+      stopped = true;
+      unsub?.();
+    };
+  }, onUpdate);
 }
 
 export type SemesterResult = { semester: number; sgpa: number; credits: number };

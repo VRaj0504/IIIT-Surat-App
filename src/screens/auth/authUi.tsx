@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, Pressable, Alert, Image } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors, isDark } from "../../theme/theme";
 import { ALLOWED_EMAIL_DOMAIN } from "../../context/AuthContext";
 
@@ -18,7 +18,7 @@ export function FeatureStrip() {
   const items: { icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
     { icon: "time-outline", label: "Next class" },
     { icon: "qr-code-outline", label: "Thali Pass" },
-    { icon: "business-outline", label: "Empty classes" },
+    { icon: "business-outline", label: "Empty classrooms" },
     { icon: "book-outline", label: "Notes & PYQs" },
   ];
   return (

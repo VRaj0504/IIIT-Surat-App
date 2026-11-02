@@ -1,10 +1,11 @@
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
-import { doc, updateDoc, deleteField } from "firebase/firestore";
+import { doc, getDoc, updateDoc, deleteField, arrayUnion, arrayRemove } from "firebase/firestore";
 import { db } from "./firestore";
 
 const isExpoGo = Constants.executionEnvironment === "storeClient";
+let thisDeviceToken: string | null = null;
 
 if (!isExpoGo && Platform.OS !== "web") {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -38,6 +39,20 @@ export async function registerForPushNotificationsAsync(uid: string): Promise<vo
         importance: Notifications.AndroidImportance.DEFAULT,
       });
 
+      await Notifications.setNotificationChannelAsync("updates", {
+        name: "College updates",
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: "default",
+        vibrationPattern: [0, 250, 150, 250],
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      });
+
+      await Notifications.setNotificationChannelAsync("class-reminders", {
+        name: "Class reminders",
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: "default",
+      });
+
       await Notifications.setNotificationChannelAsync("sos", {
         name: "SOS alerts",
         importance: Notifications.AndroidImportance.MAX,
@@ -68,7 +83,8 @@ export async function registerForPushNotificationsAsync(uid: string): Promise<vo
     }
 
     const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
-    await updateDoc(doc(db, "users", uid), { expoPushToken: tokenResponse.data });
+    thisDeviceToken = tokenResponse.data;
+    await updateDoc(doc(db, "users", uid), { expoPushToken: tokenResponse.data, expoPushTokens: arrayUnion(tokenResponse.data) });
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn("[pushService] registration failed (non-fatal):", err);
@@ -76,8 +92,12 @@ export async function registerForPushNotificationsAsync(uid: string): Promise<vo
 }
 
 export async function clearPushToken(uid: string): Promise<void> {
+  if (isExpoGo || Platform.OS === "web" || !thisDeviceToken) return;
   try {
-    await updateDoc(doc(db, "users", uid), { expoPushToken: deleteField() });
+    const snap = await getDoc(doc(db, "users", uid));
+    const patch: Record<string, unknown> = { expoPushTokens: arrayRemove(thisDeviceToken) };
+    if (snap.data()?.expoPushToken === thisDeviceToken) patch.expoPushToken = deleteField();
+    await updateDoc(doc(db, "users", uid), patch);
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn("[pushService] clearing token failed (non-fatal):", err);

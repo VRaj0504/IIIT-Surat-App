@@ -1,20 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  Linking,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
+import { View, Text, StyleSheet, TouchableOpacity, Alert, TextInput, Linking } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { colors, spacing, radius } from "../theme/theme";
+import { Card, EmptyState, PrimaryButton, Segmented, StatusPill, Timeline, TimelineStep, dateRange, ui } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import LoadingSpinner from "../components/LoadingSpinner";
 import {
@@ -29,18 +17,22 @@ import {
   approverName,
   sessionKey,
   APPROVER_LABEL,
+  APPROVER_ROLES,
   ApproverRole,
   LeaveApplication,
   TeacherAck,
 } from "../firebase/leaveService";
+import { MedicalRequest, subscribeMedicalQueue, subscribeMedicalRecords } from "../firebase/medicalService";
+import { MedicalReviewCard } from "../components/medical/MedicalCards";
 
-const ROLES: ApproverRole[] = ["doctor", "dr", "dean", "hod"];
+const ROLES: ApproverRole[] = APPROVER_ROLES;
 
 const ROLE_SECTION: Record<ApproverRole, { icon: keyof typeof Ionicons.glyphMap; title: string }> = {
   doctor: { icon: "medkit-outline", title: "Medical leaves to check" },
-  dr: { icon: "document-text-outline", title: "Approve as Deputy Registrar" },
-  dean: { icon: "ribbon-outline", title: "Approve as Dean" },
   hod: { icon: "shield-checkmark-outline", title: "Approve as HOD" },
+  dean: { icon: "ribbon-outline", title: "Approve as Dean" },
+  jr: { icon: "document-text-outline", title: "Approve as Joint Registrar" },
+  administrator: { icon: "briefcase-outline", title: "Approve as Administrator" },
 };
 
 function isoDaysAgo(days: number): string {
@@ -49,22 +41,10 @@ function isoDaysAgo(days: number): string {
 }
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 
-const statusColors: Record<LeaveApplication["status"], string> = {
-  pending: colors.warning,
-  approved: colors.success,
-  rejected: colors.danger,
-};
-
 function prettyDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   if (!y || !m || !d) return iso;
   return new Date(y, m - 1, d).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
-}
-
-function dayCount(from: string, to: string): number {
-  const a = new Date(`${from}T00:00:00`).getTime();
-  const b = new Date(`${to}T00:00:00`).getTime();
-  return Number.isFinite(a) && Number.isFinite(b) && b >= a ? Math.round((b - a) / 86400000) + 1 : 0;
 }
 
 function openReport(url?: string | null) {
@@ -75,7 +55,9 @@ function openReport(url?: string | null) {
 function SectionTitle({ icon, title, count }: { icon: keyof typeof Ionicons.glyphMap; title: string; count: number }) {
   return (
     <View style={styles.sectionTitleRow}>
-      <Ionicons name={icon} size={18} color={colors.primary} />
+      <View style={styles.sectionIcon}>
+        <Ionicons name={icon} size={15} color={colors.primary} />
+      </View>
       <Text style={styles.sectionTitle}>{title}</Text>
       {count > 0 && (
         <View style={styles.countBadge}>
@@ -86,21 +68,50 @@ function SectionTitle({ icon, title, count }: { icon: keyof typeof Ionicons.glyp
   );
 }
 
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function StudentHead({ name, reg, right }: { name: string; reg?: string | null; right?: React.ReactNode }) {
+  return (
+    <View style={styles.headRow}>
+      <View style={styles.avatar}>
+        <Text style={styles.avatarText}>{initials(name)}</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.studentName} numberOfLines={1}>
+          {name}
+        </Text>
+        {reg ? <Text style={styles.meta}>{reg}</Text> : null}
+      </View>
+      {right}
+    </View>
+  );
+}
+
 export default function LeaveRequestsScreen() {
   const { profile } = useAuth();
   const email = profile?.email?.toLowerCase() ?? "";
   const [casual, setCasual] = useState<LeaveApplication[] | null>(null);
   const [byRole, setByRole] = useState<Record<ApproverRole, LeaveApplication[] | null>>({
     doctor: null,
-    dr: null,
-    dean: null,
     hod: null,
+    dean: null,
+    jr: null,
+    administrator: null,
   });
   const [acks, setAcks] = useState<TeacherAck[] | null>(null);
   const [declinedDraft, setDeclinedDraft] = useState<Record<string, string[]>>({});
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
+  const [tab, setTab] = useState<"todo" | "done">("todo");
+  const [medQueue, setMedQueue] = useState<MedicalRequest[] | null>(null);
+  const [medRecords, setMedRecords] = useState<MedicalRequest[]>([]);
 
   useEffect(() => {
     if (!email) return;
@@ -111,11 +122,18 @@ export default function LeaveRequestsScreen() {
         subscribeToMedicalLeavesFor(role, email, (apps) => setByRole((prev) => ({ ...prev, [role]: apps }))),
       ),
       subscribeToMyTeacherAcks(email, setAcks),
+      subscribeMedicalQueue(email, setMedQueue, () => setMedQueue([])),
+      subscribeMedicalRecords(email, setMedRecords),
     ];
     return () => unsubs.forEach((u) => u());
   }, [email]);
 
-  const loading = casual === null || ROLES.some((r) => byRole[r] === null) || acks === null;
+  const loading = casual === null || ROLES.some((r) => byRole[r] === null) || acks === null || medQueue === null;
+  const me = profile ? { uid: profile.uid, email, name: profile.name } : null;
+  const medHandled = useMemo(() => {
+    const q = new Set((medQueue ?? []).map((r) => r.id));
+    return medRecords.filter((r) => !q.has(r.id));
+  }, [medQueue, medRecords]);
 
   const pendingByRole = useMemo(() => {
     const out = {} as Record<ApproverRole, LeaveApplication[]>;
@@ -225,67 +243,61 @@ export default function LeaveRequestsScreen() {
     const chain = approvalChain(app);
     const step = chain.indexOf(role) + 1;
     const nextStage = nextMedicalStage(role, app);
-    const prior = chain.slice(0, chain.indexOf(role));
+    const prior: TimelineStep[] = chain.slice(0, chain.indexOf(role)).flatMap((r) => {
+      const d = app[`${r}Decision` as const];
+      return d ? [{ title: `${APPROVER_LABEL[r]} approved`, detail: d.byName, note: d.remark, state: "done" as const }] : [];
+    });
     return (
-    <View key={`${role}-${app.id}`} style={styles.card}>
-      <View style={styles.cardHeaderRow}>
-        <Text style={styles.studentName}>{app.studentName}</Text>
-        <View style={[styles.statusPill, { backgroundColor: colors.warning + "20" }]}>
-          <Text style={[styles.statusPillText, { color: colors.warning }]}>
-            Step {step} of {chain.length} · {APPROVER_LABEL[role]}
-          </Text>
+      <Card key={`${role}-${app.id}`} style={styles.card}>
+        <StudentHead
+          name={app.studentName}
+          reg={app.studentEnrollmentNumber}
+          right={<StatusPill status="info" label={`Step ${step}/${chain.length}`} />}
+        />
+        <View style={styles.dateChip}>
+          <Ionicons name="calendar-outline" size={14} color={colors.badge.pink.fg} />
+          <Text style={styles.dateChipText}>{dateRange(app.fromDate, app.toDate)}</Text>
         </View>
-      </View>
-      {app.studentEnrollmentNumber && <Text style={styles.meta}>{app.studentEnrollmentNumber}</Text>}
-      <Text style={styles.meta}>
-        {prettyDate(app.fromDate)} → {prettyDate(app.toDate)} · {dayCount(app.fromDate, app.toDate)} day(s)
-      </Text>
-      <Text style={styles.reason}>{app.reason}</Text>
-      {app.medicalReportUrl && (
-        <TouchableOpacity onPress={() => openReport(app.medicalReportUrl)} style={styles.reportButton}>
-          <Ionicons name="document-text-outline" size={16} color={colors.primary} />
-          <Text style={styles.reportButtonText}>Open medical report</Text>
-        </TouchableOpacity>
-      )}
-      {prior.map((r) => {
-        const d = app[`${r}Decision` as const];
-        if (!d) return null;
-        return (
-          <View key={r} style={styles.priorStep}>
-            <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-            <Text style={styles.priorStepText}>
-              {APPROVER_LABEL[r]}: approved by {d.byName}
-              {d.remark ? `: "${d.remark}"` : ""}
-            </Text>
-          </View>
-        );
-      })}
-      <TextInput
-        style={styles.remarkInput}
-        value={remarks[app.id] ?? ""}
-        onChangeText={(t) => setRemark(app.id, t)}
-        placeholder="Remark (required to reject)"
-        placeholderTextColor={colors.textSecondary}
-      />
-      <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.approveButton]}
-          disabled={busyId === app.id}
-          onPress={() => decideMedical(app, role, "approved")}
-        >
-          <Text style={styles.approveButtonText}>
-            {nextStage === "teachers" ? "Final approve" : `Approve → ${APPROVER_LABEL[nextStage as ApproverRole]}`}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.rejectButton]}
-          disabled={busyId === app.id}
-          onPress={() => decideMedical(app, role, "rejected")}
-        >
-          <Text style={styles.rejectButtonText}>Reject</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+        <Text style={styles.reason}>{app.reason}</Text>
+        {app.medicalReportUrl ? (
+          <TouchableOpacity onPress={() => openReport(app.medicalReportUrl)} style={styles.reportButton}>
+            <Ionicons name="document-text-outline" size={18} color={colors.primary} />
+            <Text style={styles.reportButtonText}>Open medical report</Text>
+            <Ionicons name="open-outline" size={14} color={colors.primary} />
+          </TouchableOpacity>
+        ) : null}
+        {prior.length > 0 && <Timeline steps={prior} />}
+        <TextInput
+          style={[ui.input, styles.remark]}
+          value={remarks[app.id] ?? ""}
+          onChangeText={(t) => setRemark(app.id, t)}
+          placeholder="Remark (needed if you reject)"
+          placeholderTextColor={colors.textSecondary}
+        />
+        <View style={styles.actionRow}>
+          <PrimaryButton
+            tone="danger"
+            label="Reject"
+            icon="close"
+            style={styles.actionBtn}
+            loading={busyId === app.id}
+            onPress={() => decideMedical(app, role, "rejected")}
+          />
+          <PrimaryButton
+            tone="success"
+            label={nextStage === "teachers" ? "Final approve" : "Approve"}
+            icon="checkmark"
+            style={[styles.actionBtn, { flex: 1.4 }]}
+            loading={busyId === app.id}
+            onPress={() => decideMedical(app, role, "approved")}
+          />
+        </View>
+        <Text style={styles.nextHint}>
+          {nextStage === "teachers"
+            ? "Approving makes the student's classes in these dates count as present."
+            : `Next: ${APPROVER_LABEL[nextStage as ApproverRole]} · ${approverName(nextStage as ApproverRole, app)}`}
+        </Text>
+      </Card>
     );
   };
 
@@ -297,26 +309,26 @@ export default function LeaveRequestsScreen() {
     const excusedCount = allDeclined ? 0 : total - declined.length;
     const dirty = declinedDraft[key] !== undefined;
     return (
-      <View key={key} style={styles.card}>
-        <View style={styles.cardHeaderRow}>
-          <Text style={styles.studentName}>{ack.studentName}</Text>
-          <View style={[styles.statusPill, { backgroundColor: (allDeclined ? colors.danger : colors.success) + "20" }]}>
-            <Text style={[styles.statusPillText, { color: allDeclined ? colors.danger : colors.success }]}>
-              {allDeclined ? "Not excused" : ack.status === "pending" ? "Waiting for you" : `${excusedCount}/${total} excused`}
-            </Text>
-          </View>
+      <Card key={key} style={styles.card}>
+        <StudentHead
+          name={ack.studentName}
+          reg={ack.studentEnrollmentNumber}
+          right={
+            <StatusPill
+              status={allDeclined ? "rejected" : ack.status === "pending" ? "pending" : "approved"}
+              label={allDeclined ? "Not excused" : ack.status === "pending" ? "Your call" : `${excusedCount}/${total} excused`}
+            />
+          }
+        />
+        <View style={styles.dateChip}>
+          <Ionicons name="medkit-outline" size={14} color={colors.badge.pink.fg} />
+          <Text style={styles.dateChipText}>Medical leave · {dateRange(ack.fromDate, ack.toDate)}</Text>
         </View>
-        {ack.studentEnrollmentNumber && <Text style={styles.meta}>{ack.studentEnrollmentNumber}</Text>}
-        <Text style={styles.meta}>
-          Approved medical leave {prettyDate(ack.fromDate)} → {prettyDate(ack.toDate)}
-        </Text>
-        <Text style={styles.ackLead}>
-          Your classes in these dates count as present automatically. Tap a class to not excuse it.
-        </Text>
+        <Text style={styles.ackLead}>These classes count as present. Tap a class to not excuse it.</Text>
         {ack.subjects.map((s) => (
           <View key={s.code} style={styles.subjectRow}>
             <Text style={styles.subjectName}>
-              {s.name} <Text style={styles.subjectCode}>({s.code})</Text>
+              {s.name} <Text style={styles.subjectCode}>{s.code}</Text>
             </Text>
             <View style={styles.sessionRow}>
               {s.dates.map((d) => {
@@ -328,6 +340,7 @@ export default function LeaveRequestsScreen() {
                     disabled={allDeclined}
                     onPress={() => toggleSession(ack, k)}
                     style={[styles.sessionChip, off ? styles.sessionChipOff : styles.sessionChipOn]}
+                    accessibilityLabel={`${s.name} ${prettyDate(d)} ${off ? "not excused" : "excused"}`}
                   >
                     <Ionicons name={off ? "close" : "checkmark"} size={14} color={off ? colors.danger : colors.success} />
                     <Text style={[styles.sessionChipText, { color: off ? colors.danger : colors.success }]}>{prettyDate(d)}</Text>
@@ -338,7 +351,7 @@ export default function LeaveRequestsScreen() {
           </View>
         ))}
         <TextInput
-          style={styles.remarkInput}
+          style={[ui.input, styles.remark]}
           value={remarks[key] ?? ack.remark ?? ""}
           onChangeText={(t) => setRemark(key, t)}
           placeholder="Optional note for the student"
@@ -346,84 +359,77 @@ export default function LeaveRequestsScreen() {
         />
         <View style={styles.actionRow}>
           {allDeclined ? (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.approveButton]}
-              disabled={busyId === key}
+            <PrimaryButton
+              tone="success"
+              label="Excuse classes again"
+              style={styles.actionBtn}
+              loading={busyId === key}
               onPress={() => saveAck(ack, "excused")}
-            >
-              <Text style={styles.approveButtonText}>Excuse classes again</Text>
-            </TouchableOpacity>
+            />
           ) : (
             <>
-              <TouchableOpacity
-                style={[styles.actionButton, styles.approveButton]}
-                disabled={busyId === key || (!dirty && ack.status !== "pending" && remarks[key] === undefined)}
-                onPress={() => saveAck(ack, "excused")}
-              >
-                <Text style={styles.approveButtonText}>{ack.status === "pending" ? "Excuse classes" : "Save changes"}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.actionButton, styles.rejectButton]}
-                disabled={busyId === key}
+              <PrimaryButton
+                tone="danger"
+                label="Excuse none"
+                style={styles.actionBtn}
+                loading={busyId === key}
                 onPress={() =>
                   Alert.alert("Don't excuse any?", `None of ${ack.studentName}'s classes with you in these dates will count as present.`, [
                     { text: "Cancel", style: "cancel" },
                     { text: "Don't excuse", style: "destructive", onPress: () => saveAck(ack, "declined") },
                   ])
                 }
-              >
-                <Text style={styles.rejectButtonText}>Don't excuse any</Text>
-              </TouchableOpacity>
+              />
+              <PrimaryButton
+                tone="success"
+                label={ack.status === "pending" ? "Confirm" : "Save changes"}
+                icon="checkmark"
+                style={[styles.actionBtn, { flex: 1.4 }]}
+                loading={busyId === key}
+                disabled={!dirty && ack.status !== "pending" && remarks[key] === undefined}
+                onPress={() => saveAck(ack, "excused")}
+              />
             </>
           )}
         </View>
-      </View>
+      </Card>
     );
   };
 
   const renderCasualCard = (item: LeaveApplication) => (
-    <View key={`casual-${item.id}`} style={styles.card}>
-      <View style={styles.cardHeaderRow}>
-        <Text style={styles.studentName}>{item.studentName}</Text>
-        <View style={[styles.statusPill, { backgroundColor: statusColors[item.status] + "20" }]}>
-          <Text style={[styles.statusPillText, { color: statusColors[item.status] }]}>{item.status}</Text>
-        </View>
+    <Card key={`casual-${item.id}`} style={styles.card}>
+      <StudentHead name={item.studentName} reg={item.studentEnrollmentNumber} right={<StatusPill status={item.status} />} />
+      <View style={[styles.dateChip, { backgroundColor: colors.badge.blue.bg }]}>
+        <Ionicons name="calendar-outline" size={14} color={colors.badge.blue.fg} />
+        <Text style={[styles.dateChipText, { color: colors.badge.blue.fg }]}>{dateRange(item.fromDate, item.toDate)}</Text>
       </View>
-      {item.studentEnrollmentNumber && <Text style={styles.meta}>{item.studentEnrollmentNumber}</Text>}
-      <Text style={styles.meta}>
-        {item.type === "medical" ? "Medical" : "Casual"} · {item.fromDate} to {item.toDate}
-      </Text>
       <Text style={styles.reason}>{item.reason}</Text>
-      {item.medicalReportUrl && (
-        <TouchableOpacity onPress={() => openReport(item.medicalReportUrl)} style={styles.reportButton}>
-          <Ionicons name="document-text-outline" size={16} color={colors.primary} />
-          <Text style={styles.reportButtonText}>Open medical report</Text>
-        </TouchableOpacity>
-      )}
       <TextInput
-        style={styles.remarkInput}
+        style={[ui.input, styles.remark]}
         value={remarks[item.id] ?? ""}
         onChangeText={(t) => setRemark(item.id, t)}
         placeholder="Optional remark"
         placeholderTextColor={colors.textSecondary}
       />
       <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.approveButton]}
-          disabled={busyId === item.id}
-          onPress={() => resolveCasual(item, "approved")}
-        >
-          <Text style={styles.approveButtonText}>Approve</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.rejectButton]}
-          disabled={busyId === item.id}
+        <PrimaryButton
+          tone="danger"
+          label="Reject"
+          icon="close"
+          style={styles.actionBtn}
+          loading={busyId === item.id}
           onPress={() => resolveCasual(item, "rejected")}
-        >
-          <Text style={styles.rejectButtonText}>Reject</Text>
-        </TouchableOpacity>
+        />
+        <PrimaryButton
+          tone="success"
+          label="Approve"
+          icon="checkmark"
+          style={[styles.actionBtn, { flex: 1.4 }]}
+          loading={busyId === item.id}
+          onPress={() => resolveCasual(item, "approved")}
+        />
       </View>
-    </View>
+    </Card>
   );
 
   const historyRows = useMemo(() => {
@@ -455,18 +461,32 @@ export default function LeaveRequestsScreen() {
     return rows;
   }, [byRole, acks, casual, recentCutoff]);
 
-  const nothingPending = pendingApprovals + pendingAcks.length + pendingCasual.length === 0;
+  const todoCount = pendingApprovals + pendingAcks.length + pendingCasual.length + (medQueue?.length ?? 0);
 
   return (
-    <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <KeyboardAvoidingView behavior={undefined} style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Leave Requests</Text>
-
-          {loading ? (
-            <LoadingSpinner style={{ marginTop: spacing.xl }} />
-          ) : (
-            <KeyboardAwareScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
+    <View style={styles.screen}>
+      {loading ? (
+        <LoadingSpinner style={{ marginTop: spacing.xl }} />
+      ) : (
+        <KeyboardAwareScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
+          <Segmented
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: "todo", label: "To do", badge: todoCount || undefined },
+              { value: "done", label: "Handled", badge: historyRows.length + recentAcks.length + medHandled.length || undefined },
+            ]}
+          />
+          {tab === "todo" ? (
+            <>
+              {me && (medQueue ?? []).length > 0 && (
+                <>
+                  <SectionTitle icon="medkit-outline" title="Medical leave (official form)" count={medQueue!.length} />
+                  {medQueue!.map((r) => (
+                    <MedicalReviewCard key={r.id} r={r} me={me} />
+                  ))}
+                </>
+              )}
               {ROLES.map((r) =>
                 pendingByRole[r].length > 0 ? (
                   <React.Fragment key={r}>
@@ -481,123 +501,145 @@ export default function LeaveRequestsScreen() {
                   {pendingAcks.map(renderAckCard)}
                 </>
               )}
-              {recentAcks.length > 0 && (
-                <>
-                  <SectionTitle icon="medkit-outline" title="Medical leave in your classes" count={0} />
-                  {recentAcks.map(renderAckCard)}
-                </>
-              )}
               {pendingCasual.length > 0 && (
                 <>
                   <SectionTitle icon="mail-open-outline" title="Casual leave" count={pendingCasual.length} />
                   {pendingCasual.map(renderCasualCard)}
                 </>
               )}
-
-              {nothingPending && <Text style={styles.emptyText}>Nothing waiting for you right now.</Text>}
-
-              {historyRows.length > 0 && (
-                <TouchableOpacity style={styles.historyToggle} onPress={() => setShowHistory((v) => !v)}>
-                  <Text style={styles.historyToggleText}>
-                    {showHistory ? "Hide" : "Show"} handled ({historyRows.length})
-                  </Text>
-                  <Ionicons name={showHistory ? "chevron-up" : "chevron-down"} size={16} color={colors.primary} />
-                </TouchableOpacity>
+              {todoCount === 0 && (
+                <EmptyState icon="checkmark-done-outline" title="All caught up" hint="New leave requests will show up here." />
               )}
-              {showHistory &&
-                historyRows.map((r) => (
-                  <View key={r.key} style={styles.historyRow}>
-                    <Ionicons
-                      name={r.ok ? "checkmark-circle" : "close-circle"}
-                      size={18}
-                      color={r.ok ? colors.success : colors.danger}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.historyTitle}>{r.title}</Text>
-                      <Text style={styles.meta}>{r.detail}</Text>
-                    </View>
+            </>
+          ) : (
+            <>
+              {me && medHandled.length > 0 && (
+                <>
+                  <SectionTitle icon="folder-open-outline" title="Medical leave records" count={0} />
+                  {medHandled.slice(0, 40).map((r) => (
+                    <MedicalReviewCard key={r.id} r={r} me={me} />
+                  ))}
+                </>
+              )}
+              {recentAcks.length > 0 && (
+                <>
+                  <SectionTitle icon="medkit-outline" title="Medical leave in your classes" count={0} />
+                  <Text style={styles.sectionHint}>You can still change which classes are excused.</Text>
+                  {recentAcks.map(renderAckCard)}
+                </>
+              )}
+              {historyRows.length > 0 && <SectionTitle icon="time-outline" title="Earlier" count={0} />}
+              {historyRows.map((r) => (
+                <View key={r.key} style={styles.historyRow}>
+                  <Ionicons name={r.ok ? "checkmark-circle" : "close-circle"} size={20} color={r.ok ? colors.success : colors.danger} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.historyTitle}>{r.title}</Text>
+                    <Text style={styles.meta}>{r.detail}</Text>
                   </View>
-                ))}
-            </KeyboardAwareScrollView>
+                </View>
+              ))}
+              {historyRows.length + recentAcks.length + medHandled.length === 0 && (
+                <EmptyState icon="time-outline" title="Nothing handled yet" hint="Leaves you approve or reject appear here." />
+              )}
+            </>
           )}
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </LinearGradient>
+        </KeyboardAwareScrollView>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  headerTitle: { ...typography.h2, color: colors.textPrimary, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  emptyText: { ...typography.body, color: colors.textSecondary, textAlign: "center", marginTop: spacing.xl },
-  listContent: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
-  sectionTitleRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, marginTop: spacing.md, marginBottom: spacing.sm },
-  sectionTitle: { ...typography.h3, color: colors.textPrimary },
+  screen: { flex: 1, backgroundColor: colors.background },
+  listContent: { padding: spacing.md, paddingBottom: spacing.xl * 2 },
+  sectionTitleRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm, marginBottom: spacing.sm },
+  sectionIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.badge.blue.bg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sectionTitle: { fontSize: 15, fontWeight: "800", color: colors.textPrimary, flex: 1 },
+  sectionHint: { fontSize: 12, color: colors.textSecondary, marginTop: -4, marginBottom: spacing.sm },
   countBadge: {
     backgroundColor: colors.danger,
     borderRadius: radius.full,
-    minWidth: 20,
+    minWidth: 22,
     paddingHorizontal: 6,
-    paddingVertical: 1,
+    paddingVertical: 2,
     alignItems: "center",
   },
-  countBadgeText: { color: colors.surface, fontSize: 11, fontWeight: "800" },
-  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md, ...clayShadowSoft },
-  cardHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.sm },
-  studentName: { ...typography.h3, color: colors.textPrimary, flex: 1 },
-  meta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  reason: { ...typography.body, color: colors.textPrimary, marginTop: spacing.xs },
-  reportButton: {
+  countBadgeText: { color: colors.onPrimary, fontSize: 12, fontWeight: "800" },
+  card: { marginBottom: spacing.md },
+  headRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.badge.purple.bg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { fontSize: 14, fontWeight: "800", color: colors.badge.purple.fg },
+  studentName: { fontSize: 16, fontWeight: "800", color: colors.textPrimary },
+  meta: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
+  dateChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
     alignSelf: "flex-start",
     marginTop: spacing.sm,
-    backgroundColor: colors.primary + "12",
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 8,
-    borderRadius: radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.full,
+    backgroundColor: colors.badge.pink.bg,
   },
-  reportButtonText: { color: colors.primary, fontWeight: "700", fontSize: 13 },
-  priorStep: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.sm },
-  priorStepText: { fontSize: 12, color: colors.textPrimary, flex: 1 },
-  ackLead: { fontSize: 12, color: colors.textSecondary, marginTop: spacing.sm, fontWeight: "700" },
-  subjectRow: { marginTop: 6, backgroundColor: colors.background, borderRadius: radius.sm, padding: spacing.sm },
-  subjectName: { ...typography.body, color: colors.textPrimary, fontWeight: "700" },
-  subjectCode: { fontWeight: "400", color: colors.textSecondary },
-  subjectDates: { fontSize: 12, color: colors.textPrimary, marginTop: 2 },
-  sessionRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 },
-  sessionChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 8, borderRadius: radius.full, minHeight: 36 },
-  sessionChipOn: { backgroundColor: colors.success + "18" },
-  sessionChipOff: { backgroundColor: colors.danger + "18" },
-  sessionChipText: { fontSize: 12, fontWeight: "700" },
-  remarkInput: {
-    backgroundColor: colors.background,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
+  dateChipText: { fontSize: 12, fontWeight: "700", color: colors.badge.pink.fg },
+  reason: { fontSize: 14, color: colors.textPrimary, marginTop: spacing.sm, lineHeight: 20 },
+  reportButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     marginTop: spacing.sm,
-    ...typography.caption,
-    color: colors.textPrimary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.badge.blue.bg,
   },
+  reportButtonText: { color: colors.primary, fontWeight: "800", fontSize: 14, flex: 1 },
+  remark: { marginTop: spacing.sm, minHeight: 44 },
   actionRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
-  actionButton: { flex: 1, paddingVertical: spacing.sm + 2, borderRadius: radius.md, alignItems: "center" },
-  approveButton: { backgroundColor: colors.success + "20" },
-  approveButtonText: { color: colors.success, fontWeight: "700" },
-  rejectButton: { backgroundColor: colors.danger + "20" },
-  rejectButtonText: { color: colors.danger, fontWeight: "700" },
-  statusPill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.full },
-  statusPillText: { fontSize: 11, fontWeight: "700", textTransform: "capitalize" },
-  historyToggle: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "center", marginTop: spacing.lg, padding: spacing.sm },
-  historyToggleText: { color: colors.primary, fontWeight: "700" },
+  actionBtn: { flex: 1, minHeight: 46 },
+  nextHint: { fontSize: 12, color: colors.textSecondary, marginTop: spacing.sm, textAlign: "center" },
+  ackLead: { fontSize: 12, color: colors.textSecondary, marginTop: spacing.sm, fontWeight: "600" },
+  subjectRow: { marginTop: spacing.sm, backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: spacing.sm },
+  subjectName: { fontSize: 14, color: colors.textPrimary, fontWeight: "700" },
+  subjectCode: { fontWeight: "500", color: colors.textSecondary, fontSize: 12 },
+  sessionRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 },
+  sessionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.full,
+    minHeight: 38,
+  },
+  sessionChipOn: { backgroundColor: colors.successBg },
+  sessionChipOff: { backgroundColor: colors.dangerBg },
+  sessionChipText: { fontSize: 12, fontWeight: "800" },
   historyRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
     backgroundColor: colors.surface,
     borderRadius: radius.md,
-    padding: spacing.sm,
-    marginTop: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.xs,
   },
-  historyTitle: { ...typography.body, color: colors.textPrimary, fontWeight: "600" },
+  historyTitle: { fontSize: 14, color: colors.textPrimary, fontWeight: "700" },
 });

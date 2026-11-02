@@ -1,6 +1,8 @@
 
 import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import {getFirestore} from "firebase-admin/firestore";
+import {sendExpoPush} from "./expoPush";
+import {tokensOf} from "./audience";
 
 export const sendComplaintResolutionPush = onDocumentWritten(
   "complaints/{complaintId}",
@@ -9,9 +11,9 @@ export const sendComplaintResolutionPush = onDocumentWritten(
     const after = event.data?.after;
     if (!after?.exists) return;
 
-    const beforeData = before?.exists
-      ? (before.data() as {status?: string})
-      : undefined;
+    const beforeData = before?.exists ?
+      (before.data() as {status?: string}) :
+      undefined;
     const afterData = after.data() as {
       studentUid: string;
       status: "pending" | "resolved" | "rejected";
@@ -29,39 +31,20 @@ export const sendComplaintResolutionPush = onDocumentWritten(
 
     const db = getFirestore();
     const studentSnap = await db.collection("users").doc(afterData.studentUid).get();
-    const student = studentSnap.data() as {expoPushToken?: string} | undefined;
-    if (!student?.expoPushToken) return;
+    const tokens = tokensOf(studentSnap.data());
+    if (!tokens.length) return;
 
     const isDoubt = afterData.type === "doubt";
     const noun = isDoubt ? "doubt" : "complaint";
     const verb = afterData.status === "resolved" ? (isDoubt ? "answered" : "marked resolved") : (isDoubt ? "dismissed" : "rejected");
     const byName = afterData.resolvedByName ?? "Admin/faculty";
-    const body = afterData.facultyRemark
-      ? `${byName} ${verb} your ${noun} "${afterData.subject}": "${afterData.facultyRemark}"`
-      : `${byName} ${verb} your ${noun} "${afterData.subject}".`;
-    const title = afterData.status === "resolved"
-      ? (isDoubt ? "Doubt Answered" : "Complaint Resolved")
-      : (isDoubt ? "Doubt Dismissed" : "Complaint Rejected");
+    const body = afterData.facultyRemark ?
+      `${byName} ${verb} your ${noun} "${afterData.subject}": "${afterData.facultyRemark}"` :
+      `${byName} ${verb} your ${noun} "${afterData.subject}".`;
+    const title = afterData.status === "resolved" ?
+      (isDoubt ? "Doubt Answered" : "Complaint Resolved") :
+      (isDoubt ? "Doubt Dismissed" : "Complaint Rejected");
 
-    await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Accept-Encoding": "gzip, deflate",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify([
-        {
-          to: student.expoPushToken,
-          title,
-          body,
-          sound: "default",
-          priority: "high",
-        },
-      ]),
-    }).catch((err) => {
-      // eslint-disable-next-line no-console
-      console.error("[sendComplaintResolutionPush] Expo push API call failed:", err);
-    });
+    await sendExpoPush(tokens, title, body, "sendComplaintResolutionPush", {screen: "Complaints"});
   },
 );

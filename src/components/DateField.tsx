@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Modal, Pressable, Text, TouchableOpacity, View, StyleSheet } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors } from "../theme/theme";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];

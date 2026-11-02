@@ -1,5 +1,7 @@
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
 import {getFirestore} from "firebase-admin/firestore";
+import {sendExpoPush} from "./expoPush";
+import {tokensOf} from "./audience";
 
 const METHOD_LABEL: Record<string, string> = {
   email: "emailed you",
@@ -21,30 +23,11 @@ export const sendLostFoundContactPush = onDocumentCreated(
 
     const db = getFirestore();
     const posterSnap = await db.collection("users").doc(contact.posterUid).get();
-    const posterToken = (posterSnap.data() as { expoPushToken?: string } | undefined)?.expoPushToken;
-    if (!posterToken) return;
+    const tokens = tokensOf(posterSnap.data());
+    if (!tokens.length) return;
 
     const actionLabel = METHOD_LABEL[contact.method] ?? "wants to talk to you";
 
-    await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Accept-Encoding": "gzip, deflate",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify([
-        {
-          to: posterToken,
-          title: "Lost & Found",
-          body: `${contact.contactedByName} ${actionLabel} about "${contact.itemTitle}"`,
-          sound: "default",
-          priority: "high",
-        },
-      ]),
-    }).catch((err) => {
-      // eslint-disable-next-line no-console
-      console.error("[sendLostFoundContactPush] Expo push API call failed:", err);
-    });
+    await sendExpoPush(tokens, "Lost & Found", `${contact.contactedByName} ${actionLabel} about "${contact.itemTitle}"`, "sendLostFoundContactPush", {screen: "LostFound"});
   },
 );

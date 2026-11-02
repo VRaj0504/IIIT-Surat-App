@@ -19,6 +19,7 @@ export type FacultyMember = {
   photoUrl?: string;
 
   inCabin?: boolean;
+  inCabinAt?: any;
 
   roleEmail?: string;
   shortForm?: string;
@@ -80,6 +81,7 @@ function liveFacultyDirectory(
           aboutMe: data.aboutMe,
           photoUrl: data.photoUrl,
           inCabin: data.inCabin,
+          inCabinAt: data.inCabinAt ?? null,
           roleEmail: data.roleEmail,
           shortForm: data.shortForm,
           additionalDepartments: data.additionalDepartments,

@@ -86,12 +86,16 @@ export default function ComplaintsScreen() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
 
   useEffect(() => {
-    const unsubscribe = subscribeToAllComplaints((data) => {
-      setComplaints(data);
-      setLoading(false);
-    });
+    if (!profile?.email) return;
+    const unsubscribe = subscribeToAllComplaints(
+      { email: profile.email, isAdmin: profile.isAdmin === true || (profile.role as string) === "admin" },
+      (data) => {
+        setComplaints(data);
+        setLoading(false);
+      },
+    );
     return () => unsubscribe();
-  }, []);
+  }, [profile?.email, profile?.isAdmin, profile?.role]);
 
   const handleResolve = useCallback(
     async (complaint: Complaint, status: "resolved" | "rejected", remark: string) => {
@@ -112,7 +116,6 @@ export default function ComplaintsScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <Text style={styles.headerTitle}>Complaints & Doubts</Text>
 
         <View style={styles.filterRow}>
           {(["all", "complaint", "doubt"] as TypeFilter[]).map((f) => (

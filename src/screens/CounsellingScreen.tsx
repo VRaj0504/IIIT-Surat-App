@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors, spacing, radius, typography } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { NATIONAL_HELPLINES, CAMPUS_CONTACT, EXTERNAL_SUPPORT, CrisisResource } from "../data/crisisResources";
@@ -98,7 +98,6 @@ export default function CounsellingScreen() {
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
         <KeyboardAwareScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <Text style={styles.header}>Counselling & Wellness</Text>
 
           <View style={styles.crisisCard}>
             <Text style={styles.crisisTitle}>If you're in immediate danger, call now</Text>

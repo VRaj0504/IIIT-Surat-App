@@ -1,6 +1,7 @@
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {defineSecret} from "firebase-functions/params";
-import * as admin from "firebase-admin";
+import {getFirestore, FieldValue} from "firebase-admin/firestore";
+import {getAuth} from "firebase-admin/auth";
 import * as crypto from "crypto";
 import * as nodemailer from "nodemailer";
 
@@ -11,6 +12,9 @@ const COLLECTION = "passwordResets";
 const TTL_MS = 10 * 60 * 1000;
 const COOLDOWN_MS = 60 * 1000;
 const MAX_TRIES = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_CODES_PER_DAY = 5;
+const ALLOWED = (email: string) => email.endsWith("@iiitsurat.ac.in") || email === "reviewer@collegego.app";
 
 const norm = (e: unknown) => String(e ?? "").trim().toLowerCase();
 const docIdFor = (email: string) => crypto.createHash("sha256").update(email).digest("hex");
@@ -44,15 +48,21 @@ export const requestPasswordResetOtp = onCall(
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       throw new HttpsError("invalid-argument", "Enter a valid email address.");
     }
+    if (!ALLOWED(email)) return {ok: true};
     try {
-      const user = await admin.auth().getUserByEmail(email);
+      const user = await getAuth().getUserByEmail(email);
 
       if (!user.providerData.some((p) => p.providerId === "password")) return {ok: true};
 
-      const ref = admin.firestore().collection(COLLECTION).doc(docIdFor(email));
+      const ref = getFirestore().collection(COLLECTION).doc(docIdFor(email));
       const snap = await ref.get();
-      const last = snap.exists ? (snap.data()?.sentAt as number | undefined) ?? 0 : 0;
+      const prev = snap.exists ? snap.data() : undefined;
+      const last = (prev?.sentAt as number | undefined) ?? 0;
       if (Date.now() - last < COOLDOWN_MS) return {ok: true};
+      const windowStart = (prev?.windowStart as number | undefined) ?? 0;
+      const inWindow = Date.now() - windowStart < DAY_MS;
+      const sentToday = inWindow ? ((prev?.sentToday as number | undefined) ?? 0) : 0;
+      if (sentToday >= MAX_CODES_PER_DAY) return {ok: true};
 
       const code = String(crypto.randomInt(100000, 1000000));
       const salt = crypto.randomBytes(8).toString("hex");
@@ -63,6 +73,8 @@ export const requestPasswordResetOtp = onCall(
         expiresAt: Date.now() + TTL_MS,
         sentAt: Date.now(),
         tries: 0,
+        windowStart: inWindow ? windowStart : Date.now(),
+        sentToday: sentToday + 1,
       });
       await sendMail(email, code);
     } catch (e: any) {
@@ -79,26 +91,36 @@ export const confirmPasswordResetOtp = onCall({region: "asia-south1"}, async (re
   if (!/^\d{6}$/.test(code)) throw new HttpsError("invalid-argument", "Enter the 6-digit code.");
   if (newPassword.length < 8) throw new HttpsError("invalid-argument", "Use at least 8 characters for the password.");
 
-  const ref = admin.firestore().collection(COLLECTION).doc(docIdFor(email));
-  const snap = await ref.get();
-  const d = snap.data() as {uid: string; salt: string; codeHash: string; expiresAt: number; tries: number} | undefined;
+  const ref = getFirestore().collection(COLLECTION).doc(docIdFor(email));
   const bad = () => new HttpsError("permission-denied", "That code is wrong or has expired. Request a new one.");
-  if (!d || Date.now() > d.expiresAt) {
-    if (d) await ref.delete();
+  type ResetDoc = {uid: string; salt: string; codeHash: string; expiresAt: number; tries: number};
+  const outcome = await getFirestore().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const doc = snap.data() as ResetDoc | undefined;
+    if (!doc || !doc.codeHash) return {error: "bad" as const};
+    if (Date.now() > doc.expiresAt) {
+      tx.update(ref, {codeHash: FieldValue.delete()});
+      return {error: "bad" as const};
+    }
+    if (doc.tries >= MAX_TRIES) {
+      tx.update(ref, {codeHash: FieldValue.delete()});
+      return {error: "locked" as const};
+    }
+    tx.update(ref, {tries: doc.tries + 1});
+    return {doc};
+  });
+  if ("error" in outcome) {
+    if (outcome.error === "locked") throw new HttpsError("resource-exhausted", "Too many wrong tries. Request a new code.");
     throw bad();
   }
-  if (d.tries >= MAX_TRIES) {
-    await ref.delete();
-    throw new HttpsError("resource-exhausted", "Too many wrong tries. Request a new code.");
-  }
+  const d = outcome.doc;
   const given = Buffer.from(hashCode(email, code, d.salt));
   const want = Buffer.from(d.codeHash);
   if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) {
-    await ref.update({tries: admin.firestore.FieldValue.increment(1)});
     throw bad();
   }
-  await admin.auth().updateUser(d.uid, {password: newPassword});
-  await admin.auth().revokeRefreshTokens(d.uid);
-  await ref.delete();
+  await getAuth().updateUser(d.uid, {password: newPassword});
+  await getAuth().revokeRefreshTokens(d.uid);
+  await ref.update({codeHash: FieldValue.delete(), tries: 0});
   return {ok: true};
 });

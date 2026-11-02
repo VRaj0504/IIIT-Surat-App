@@ -1,11 +1,13 @@
 import {onCall, HttpsError} from "firebase-functions/v2/https";
-import * as admin from "firebase-admin";
+import {getFirestore} from "firebase-admin/firestore";
+import {getAuth} from "firebase-admin/auth";
+import {getStorage} from "firebase-admin/storage";
 
 export const deleteMyAccount = onCall({region: "asia-south1"}, async (req) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Sign in first.");
-  const db = admin.firestore();
-  const bucket = admin.storage().bucket();
+  const db = getFirestore();
+  const bucket = getStorage().bucket();
 
   const deleteWhere = async (collection: string, field: string) => {
     try {
@@ -22,7 +24,28 @@ export const deleteMyAccount = onCall({region: "asia-south1"}, async (req) => {
     }
   };
 
+  const userSnap = await db.collection("users").doc(uid).get();
+  const enrollmentNumber = userSnap.data()?.enrollmentNumber as string | undefined;
+
+  const deleteLeaves = async () => {
+    try {
+      const snap = await db.collection("leaveApplications").where("studentUid", "==", uid).get();
+      for (const d of snap.docs) {
+        await db.recursiveDelete(d.ref);
+        await db.collection("medicalExcusals").doc(d.id).delete().catch(() => undefined);
+      }
+      return snap.size;
+    } catch (e) {
+      console.error("[deleteMyAccount] leaveApplications:", e);
+      return 0;
+    }
+  };
+
   const counts = {
+    leaves: await deleteLeaves(),
+    sos: await deleteWhere("sosAlerts", "studentUid"),
+    examRegistrations: await deleteWhere("examRegistrations", "studentUid"),
+    excusals: await deleteWhere("eventExcusals", "submittedBy"),
     lostFound: await deleteWhere("lostFoundItems", "postedBy"),
     lostFoundContacts: (await deleteWhere("lostFoundContacts", "contactedByUid")) + (await deleteWhere("lostFoundContacts", "posterUid")),
     counselling: await deleteWhere("counsellingRequests", "studentUid"),
@@ -30,10 +53,18 @@ export const deleteMyAccount = onCall({region: "asia-south1"}, async (req) => {
   };
   await bucket.deleteFiles({prefix: `lostFound/${uid}/`}).catch(() => undefined);
   await bucket.deleteFiles({prefix: `profilePhotos/${uid}`}).catch(() => undefined);
+  await bucket.deleteFiles({prefix: `medicalReports/${uid}/`}).catch(() => undefined);
+  await bucket.deleteFiles({prefix: `posterScans/${uid}/`}).catch(() => undefined);
 
-  await db.collection("users").doc(uid).delete();
+  if (enrollmentNumber) {
+    const claimRef = db.collection("enrollmentClaims").doc(enrollmentNumber);
+    const claim = await claimRef.get();
+    if (claim.exists && claim.data()?.uid === uid) await claimRef.delete();
+  }
 
-  await admin.auth().deleteUser(uid);
+  await db.recursiveDelete(db.collection("users").doc(uid));
+
+  await getAuth().deleteUser(uid);
   console.log(`[deleteMyAccount] deleted ${uid}`, counts);
   return {ok: true};
 });

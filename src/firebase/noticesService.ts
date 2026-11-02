@@ -1,3 +1,4 @@
+import { isForViewer } from '../utils/audience';
 import {
   collection,
   addDoc,
@@ -105,7 +106,7 @@ export function subscribeToNotices(
           orderBy('createdAt', 'desc'),
         )
       : query(collection(db, NOTICES_COLLECTION), orderBy('createdAt', 'desc'), fsLimit(NOTICE_STAFF_VIEW_LIMIT));
-  return persisted(`notices:${viewer === undefined ? 'staff' : JSON.stringify(viewer)}`, (onUpdate) => onSnapshot(q, (snapshot) => {
+  return persisted(`notices:${viewer === undefined ? 'staff' : JSON.stringify(viewer)}`, (onUpdate, fail) => onSnapshot(q, (snapshot) => {
     const notices: Notice[] = snapshot.docs
       .map((docSnap) => ({
         id: docSnap.id,
@@ -113,12 +114,8 @@ export function subscribeToNotices(
       }))
       .filter((n) => {
         if (viewer === undefined) return true;
-        if (n.targetBranch && n.targetBranch !== viewer?.branch) return false;
-        if (n.targetSection && n.targetSection !== viewer?.section) return false;
-        if (n.targetAdmissionYear && n.targetAdmissionYear !== viewer?.admissionYear) return false;
-        if (n.targetSpecialization && n.targetSpecialization !== viewer?.specialization) return false;
-        return true;
+        return isForViewer(n, viewer);
       });
     onUpdate(notices);
-  }), onUpdate);
+  }, () => fail([])), onUpdate);
 }

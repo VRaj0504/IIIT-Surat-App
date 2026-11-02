@@ -1,86 +1,34 @@
 import {onDocumentCreated} from "firebase-functions/v2/firestore";
-import {getFirestore} from "firebase-admin/firestore";
+import {sendExpoPush} from "./expoPush";
+import {studentsFor, tokensFor} from "./audience";
 
 export const sendAnnouncementPush = onDocumentCreated(
   "announcements/{announcementId}",
   async (event) => {
     const snap = event.data;
     if (!snap) return;
-    const announcement = snap.data() as {
-      message: string;
-      targetBranch: string;
-      targetSection: string | null;
-      targetAdmissionYear: number | null;
-      targetSpecialization: string | null;
-      createdByName: string;
+    const a = snap.data() as {
+      message?: string;
+      targetBranch?: string | null;
+      targetSection?: string | null;
+      targetAdmissionYear?: number | null;
+      targetSpecialization?: string | null;
+      createdByName?: string;
     };
+    if (!a.message) return;
 
-    const db = getFirestore();
-    let query: FirebaseFirestore.Query = db.collection("users").where("role", "==", "student");
-    if (announcement.targetBranch) {
-      query = query.where("branch", "==", announcement.targetBranch);
-    }
-
-    const snapshot = await query.get();
-
-    const tokens: string[] = [];
-    snapshot.docs.forEach((doc) => {
-      const student = doc.data() as {
-        section?: string;
-        admissionYear?: number;
-        specialization?: string;
-        expoPushToken?: string;
-        notificationPreferences?: {announcements?: boolean};
-      };
-      if (!student.expoPushToken) return;
-      if (student.notificationPreferences?.announcements === false) return;
-      if (announcement.targetSection && announcement.targetSection !== student.section) return;
-      if (
-        announcement.targetAdmissionYear &&
-        announcement.targetAdmissionYear !== student.admissionYear
-      ) {
-        return;
-      }
-      if (
-        announcement.targetSpecialization &&
-        announcement.targetSpecialization !== student.specialization
-      ) {
-        return;
-      }
-      tokens.push(student.expoPushToken);
+    const {matched, total} = await studentsFor({
+      branches: a.targetBranch ? [a.targetBranch] : [],
+      sections: a.targetSection ? [a.targetSection] : [],
+      admissionYears: a.targetAdmissionYear ? [a.targetAdmissionYear] : [],
+      specialization: a.targetSpecialization ?? null,
     });
-
-    if (tokens.length === 0) return;
-
-    const CHUNK_SIZE = 100;
-    const chunks: string[][] = [];
-    for (let i = 0; i < tokens.length; i += CHUNK_SIZE) {
-      chunks.push(tokens.slice(i, i + CHUNK_SIZE));
-    }
-
-    await Promise.all(
-      chunks.map((chunk) =>
-        fetch("https://exp.host/--/api/v2/push/send", {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            "Accept-Encoding": "gzip, deflate",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(
-            chunk.map((token) => ({
-              to: token,
-              title: `Announcement from ${announcement.createdByName}`,
-              body: announcement.message,
-              sound: "default",
-              priority: "high",
-            })),
-          ),
-        }).catch((err) => {
-          // eslint-disable-next-line no-console
-          console.error("[sendAnnouncementPush] Expo push API call failed:", err);
-        }),
-      ),
+    const tokens = tokensFor(matched, "announcements");
+    // eslint-disable-next-line no-console
+    console.log(
+      `[sendAnnouncementPush] ${event.params.announcementId}: ${matched.length}/${total} students match ` +
+      `${[a.targetBranch, a.targetSection, a.targetAdmissionYear].filter(Boolean).join(" ")}, ${tokens.length} device(s)`,
     );
+    await sendExpoPush(tokens, `Announcement from ${a.createdByName || "Faculty"}`, a.message, "sendAnnouncementPush", {screen: "Announcements"});
   },
 );

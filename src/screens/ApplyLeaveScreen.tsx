@@ -1,51 +1,41 @@
-import React, { useState, useEffect, useMemo } from "react";
-import LoadingSpinner from "../components/LoadingSpinner";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  ActivityIndicator,
-  Alert,
-  Modal,
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  Linking,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
-import * as DocumentPicker from "expo-document-picker";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage } from "../firebase/storage";
-import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { colors, spacing, radius } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { subscribeToFacultyDirectory, FacultyMember } from "../firebase/facultyService";
 import {
   applyForLeave,
-  applyForMedicalLeave,
-  getMedicalLeaveConfig,
   subscribeToMyLeaveApplications,
   LeaveApplication,
   LeaveType,
-  MedicalLeaveConfig,
-  MedicalStage,
   approvalChain,
   approverName,
   APPROVER_LABEL,
-  ApproverRole,
 } from "../firebase/leaveService";
+import { MedicalRequest, isFlow2 } from "../firebase/medicalService";
+import MedicalApplyForm from "../components/medical/MedicalApplyForm";
+import { MedicalTrackCard } from "../components/medical/MedicalCards";
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 import DateField from "../components/DateField";
-
-const statusColors: Record<LeaveApplication["status"], string> = {
-  pending: colors.warning,
-  approved: colors.success,
-  rejected: colors.danger,
-};
+import LoadingSpinner from "../components/LoadingSpinner";
+import { openSafeUrl } from "../utils/safeLink";
+import { useWebLayout } from "../utils/useWebLayout";
+import {
+  Card,
+  EmptyState,
+  FieldLabel,
+  PrimaryButton,
+  Section,
+  Segmented,
+  SelectField,
+  SheetPicker,
+  StatusPill,
+  Timeline,
+  TimelineStep,
+  dateRange,
+  ui,
+} from "../components/ui";
 
 const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -53,261 +43,132 @@ function parseStrictDate(value: string): Date | null {
   if (!DATE_FORMAT.test(value)) return null;
   const [y, m, d] = value.split("-").map(Number);
   const date = new Date(y, m - 1, d);
-  if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) {
-    return null;
-  }
- return date;
+  if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) return null;
+  return date;
 }
 
-function maskDateInput(raw: string): string {
-  const digits = raw.replace(/\D/g, "").slice(0, 8);
-  if (digits.length <= 4) return digits;
-  if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
-  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
-}
-
-const SHORT_LABEL: Record<ApproverRole, string> = { doctor: "Doctor", dr: "DR", dean: "Dean", hod: "HOD" };
-
-function MedicalProgress({ app }: { app: LeaveApplication }) {
-  const stage = app.stage ?? "doctor";
+function medicalSteps(app: LeaveApplication): TimelineStep[] {
   const chain = approvalChain(app);
-  const steps: { stage: MedicalStage; label: string }[] = [
-    ...chain.map((r) => ({ stage: r as MedicalStage, label: SHORT_LABEL[r] })),
-    { stage: "done", label: "Approved" },
-  ];
-  const approved = stage === "teachers" || stage === "done";
-  const rejectedRole: ApproverRole | null =
-    stage !== "rejected" ? null : [...chain].reverse().find((r) => app[`${r}Decision` as const]?.decision === "rejected") ?? "doctor";
-  const currentIndex = approved
-    ? steps.length - 1
-    : steps.findIndex((s) => s.stage === (rejectedRole ?? stage));
-  const rejectedAt: MedicalStage | null = rejectedRole;
-
-  let caption: string;
-  if (approved) {
-    caption = app.teacherNote ?? "Fully approved. Your classes in these dates count as present. A teacher can still choose not to excuse one of their classes.";
-  } else if (rejectedRole) {
-    const d = app[`${rejectedRole}Decision` as const];
-    caption = `Rejected by ${d?.byName ?? approverName(rejectedRole, app)}${d?.remark ? `: "${d.remark}"` : "."}`;
-  } else {
-    const role = stage as ApproverRole;
-    const idx = chain.indexOf(role);
-    const prev = idx > 0 ? `${APPROVER_LABEL[chain[idx - 1]]} approved · ` : "";
-    caption = `${prev}Waiting for ${approverName(role, app)}${role === "doctor" ? " to check your report" : ""}.`;
-  }
-  const MEDICAL_STEPS = steps;
-
-  return (
-    <View style={{ marginTop: spacing.sm }}>
-      <View style={progressStyles.row}>
-        {MEDICAL_STEPS.map((s, i) => {
-          const isRejectedHere = rejectedAt === s.stage;
-          const done = approved || i < currentIndex;
-          const active = !isRejectedHere && i === currentIndex && !approved;
-          const color = isRejectedHere ? colors.danger : done ? colors.success : active ? colors.primary : colors.border;
-          return (
-            <React.Fragment key={s.stage}>
-              {i > 0 && <View style={[progressStyles.line, { backgroundColor: done || active ? color : colors.border }]} />}
-              <View style={progressStyles.step}>
-                <View style={[progressStyles.dot, { backgroundColor: color }]}>
-                  {(done || isRejectedHere) && (
-                    <Ionicons name={isRejectedHere ? "close" : "checkmark"} size={11} color={colors.surface} />
-                  )}
-                </View>
-                <Text style={[progressStyles.label, (active || isRejectedHere) && { color, fontWeight: "700" }]}>
-                  {s.label}
-                </Text>
-              </View>
-            </React.Fragment>
-          );
-        })}
-      </View>
-      <Text style={progressStyles.caption}>{caption}</Text>
-      {(stage === "teachers" || stage === "done") && (app.unmatchedFaculty?.length ?? 0) > 0 && (
-        <Text style={progressStyles.note}>
-          Some classes list no matched teacher ({app.unmatchedFaculty!.join(", ")}) — show your approved leave to them
-          directly.
-        </Text>
-      )}
-    </View>
-  );
+  const stage = app.stage ?? "doctor";
+  const done = stage === "teachers" || stage === "done";
+  const steps: TimelineStep[] = chain.map((role) => {
+    const d = app[`${role}Decision` as const];
+    const name = approverName(role, app);
+    if (d?.decision === "approved") {
+      return { title: `${APPROVER_LABEL[role]} approved`, detail: d.byName || name, note: d.remark, state: "done" };
+    }
+    if (d?.decision === "rejected") {
+      return { title: `${APPROVER_LABEL[role]} rejected`, detail: d.byName || name, note: d.remark, state: "rejected" };
+    }
+    if (stage === role) {
+      return {
+        title: `Waiting for ${APPROVER_LABEL[role]}`,
+        detail: role === "doctor" ? `${name} checks your report` : name,
+        state: "current",
+      };
+    }
+    return { title: APPROVER_LABEL[role], detail: name, state: stage === "rejected" ? "todo" : "todo" };
+  });
+  steps.push({
+    title: done ? "Approved" : "Classes counted as present",
+    detail: done
+      ? app.teacherNote ?? "Your classes in these dates count as present. A teacher can still choose not to excuse one of theirs."
+      : "After the last approval",
+    state: done ? "done" : "todo",
+  });
+  return steps;
 }
-
-const progressStyles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "flex-start" },
-  step: { alignItems: "center", width: 56 },
-  dot: { width: 18, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center" },
-  line: { flex: 1, height: 2, marginTop: 8 },
-  label: { fontSize: 11, color: colors.textSecondary, marginTop: 4 },
-  caption: { fontSize: 12, color: colors.textPrimary, marginTop: spacing.sm },
-  note: { fontSize: 11, color: colors.textSecondary, marginTop: 4, fontStyle: "italic" },
-});
 
 export default function ApplyLeaveScreen() {
   const { profile } = useAuth();
+  const { isDesktop } = useWebLayout();
+  const [tab, setTab] = useState<"new" | "mine">("new");
   const [faculty, setFaculty] = useState<FacultyMember[]>([]);
-  const [facultySearch, setFacultySearch] = useState("");
   const [selectedFaculty, setSelectedFaculty] = useState<FacultyMember | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [facultyPickerOpen, setFacultyPickerOpen] = useState(false);
   const [type, setType] = useState<LeaveType>("casual");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [reason, setReason] = useState("");
-  const [medicalReportUrl, setMedicalReportUrl] = useState("");
-  const [medicalReportFileName, setMedicalReportFileName] = useState("");
-  const [uploadingReport, setUploadingReport] = useState(false);
+  const [editing, setEditing] = useState<MedicalRequest | null>(null);
+  const [formKey, setFormKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-
-  const [medicalConfig, setMedicalConfig] = useState<MedicalLeaveConfig | null | undefined>(undefined);
-  useEffect(() => {
-    getMedicalLeaveConfig()
-      .then(setMedicalConfig)
-      .catch(() => setMedicalConfig(null));
-  }, []);
-  const medicalHod = profile?.branch ? medicalConfig?.hodByBranch?.[profile.branch] : undefined;
-
-  const handleTypeChange = (next: LeaveType) => {
-    setType(next);
-    setSelectedFaculty(null);
-    if (next !== "medical") {
-      setMedicalReportUrl("");
-      setMedicalReportFileName("");
-    }
-  };
-
-  const handlePickMedicalReport = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: ["application/pdf", "image/*"],
-      copyToCacheDirectory: true,
-    });
-    if (result.canceled || !result.assets?.length) return;
-    const asset = result.assets[0];
-
-    if (!profile) return;
-    setUploadingReport(true);
-    try {
-
-      const safeName = asset.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-      const path = `medicalReports/${profile.uid}/${Date.now()}-${safeName}`;
-      const fileRef = ref(storage, path);
-      const response = await fetch(asset.uri);
-      const blob = await response.blob();
-      await uploadBytes(fileRef, blob, { contentType: asset.mimeType ?? "application/octet-stream" });
-      const url = await getDownloadURL(fileRef);
-      setMedicalReportUrl(url);
-      setMedicalReportFileName(asset.name);
-    } catch (err: any) {
-      Alert.alert("Couldn't upload", err.message ?? "Please try again.");
-    } finally {
-      setUploadingReport(false);
-    }
-  };
-
   const [myApplications, setMyApplications] = useState<LeaveApplication[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
 
-  useEffect(() => {
-    const unsubscribe = subscribeToFacultyDirectory((data) => setFaculty(data));
-    return () => unsubscribe();
-  }, []);
+
+  useEffect(() => subscribeToFacultyDirectory(setFaculty), []);
 
   useEffect(() => {
     if (!profile?.uid) return;
-    const unsubscribe = subscribeToMyLeaveApplications(profile.uid, (apps) => {
+    return subscribeToMyLeaveApplications(profile.uid, (apps) => {
       setMyApplications(apps);
       setHistoryLoading(false);
     });
-    return () => unsubscribe();
   }, [profile?.uid]);
 
-  const filteredFaculty = useMemo(() => {
-    const q = facultySearch.trim().toLowerCase();
-    if (!q) return faculty;
-    return faculty.filter((f) => f.name?.toLowerCase().includes(q));
-  }, [faculty, facultySearch]);
+  const pendingCount = myApplications.filter((a) => a.status === "pending").length;
+
+
+  const reset = () => {
+    setSelectedFaculty(null);
+    setFromDate("");
+    setToDate("");
+    setReason("");
+  };
+
+  const medicalDone = (msg: string) => {
+    setEditing(null);
+    setFormKey((k) => k + 1);
+    setTab("mine");
+    Alert.alert("Application sent", msg);
+  };
+
+  const editMedical = (r: MedicalRequest) => {
+    setEditing(r);
+    setType("medical");
+    setTab("new");
+  };
 
   const handleSubmit = async () => {
     if (!profile) return;
-    if (type === "casual" && !selectedFaculty) {
-      Alert.alert("Pick a faculty member", "Choose who this request is addressed to.");
+    if (!selectedFaculty) {
+      Alert.alert("Pick a teacher", "Choose who this request goes to.");
       return;
     }
-    if (!fromDate.trim() || !toDate.trim() || !reason.trim()) {
-      Alert.alert("Missing details", "Fill in the dates and a reason.");
-      return;
-    }
-
     const from = parseStrictDate(fromDate.trim());
-   const to = parseStrictDate(toDate.trim());
+    const to = parseStrictDate(toDate.trim());
     if (!from || !to) {
-      Alert.alert("Invalid dates", 'Enter both dates as YYYY-MM-DD, e.g. "2026-09-15".');
+      Alert.alert("Pick the dates", "Choose the first and last day of your leave.");
       return;
     }
     if (to < from) {
-      Alert.alert("Invalid date range", 'The "To" date can\'t be before the "From" date.');
+      Alert.alert("Check the dates", "The last day can't be before the first day.");
       return;
     }
     const reasonTrimmed = reason.trim();
-    const wordCount = reasonTrimmed.split(/\s+/).filter(Boolean).length;
-    if (reasonTrimmed.length < 10 || wordCount < 3) {
-      Alert.alert(
-        "Add a real reason",
-        "Briefly explain why you need this leave, in a few actual words — not a placeholder.",
-      );
+    if (reasonTrimmed.length < 10 || reasonTrimmed.split(/\s+/).filter(Boolean).length < 3) {
+      Alert.alert("Add a reason", "Briefly explain why you need this leave, in a few words.");
       return;
     }
-
-    const reportUrlTrimmed = medicalReportUrl.trim();
-
-    if (type === "medical" && !reportUrlTrimmed) {
-      Alert.alert("Add your medical report", "Attach a PDF or photo of your report before submitting.");
-      return;
-    }
-
     setSubmitting(true);
     try {
-      let sentTo: string;
-      if (type === "medical") {
-        if (!profile.branch) throw new Error("Your profile has no branch set, so your HOD can't be found. Contact the admin.");
-        const route = await applyForMedicalLeave({
-          studentUid: profile.uid,
-          studentName: profile.name,
-          studentEnrollmentNumber: profile.enrollmentNumber,
-          studentBranch: profile.branch,
-          fromDate: fromDate.trim(),
-          toDate: toDate.trim(),
-          reason: reasonTrimmed,
-          medicalReportUrl: reportUrlTrimmed,
-        });
-        const after = [
-          route.drName ? `${route.drName} (Deputy Registrar)` : "",
-          route.deanName ? `${route.deanName} (Dean)` : "",
-          `${route.hodName} (HOD)`,
-        ].filter(Boolean);
-        sentTo = `${route.doctorName}. After the doctor, it goes to ${after.join(", then ")}. Once approved, your classes in those dates count as present.`;
-      } else {
-        const to = selectedFaculty!;
-        await applyForLeave({
-          studentUid: profile.uid,
-          studentName: profile.name,
-          studentEnrollmentNumber: profile.enrollmentNumber,
-          facultyEmail: to.email,
-          facultyUid: to.uid,
-          facultyName: to.name,
-          type,
-          fromDate: fromDate.trim(),
-          toDate: toDate.trim(),
-          reason: reasonTrimmed,
-        });
-        sentTo = `${to.name}.`;
-      }
-      setSelectedFaculty(null);
-      setFromDate("");
-      setToDate("");
-      setReason("");
-      setMedicalReportUrl("");
-      setMedicalReportFileName("");
-      Alert.alert("Submitted", `Your leave request was sent to ${sentTo}`);
+      const t = selectedFaculty;
+      await applyForLeave({
+        studentUid: profile.uid,
+        studentName: profile.name,
+        studentEnrollmentNumber: profile.enrollmentNumber,
+        facultyEmail: t.email,
+        facultyUid: t.uid,
+        facultyName: t.name,
+        type,
+        fromDate,
+        toDate,
+        reason: reasonTrimmed,
+      });
+      reset();
+      setTab("mine");
+      Alert.alert("Request sent", `It went to ${t.name}. You can track it under My requests.`);
     } catch (err: any) {
       Alert.alert("Couldn't submit", err.message ?? "Please try again.");
     } finally {
@@ -315,320 +176,251 @@ export default function ApplyLeaveScreen() {
     }
   };
 
-  return (
-    <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <KeyboardAvoidingView behavior={undefined} style={{ flex: 1 }}>
-        <KeyboardAwareScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          <Text style={styles.header}>Apply for Leave</Text>
-
-          <Text style={styles.label}>Type</Text>
-          <View style={styles.toggleRow}>
-            <TouchableOpacity
-              style={[styles.toggleButton, type === "casual" && styles.toggleButtonActive]}
-              onPress={() => handleTypeChange("casual")}
-            >
-              <Text style={[styles.toggleText, type === "casual" && styles.toggleTextActive]}>Casual</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toggleButton, type === "medical" && styles.toggleButtonActive]}
-              onPress={() => handleTypeChange("medical")}
-            >
-              <Text style={[styles.toggleText, type === "medical" && styles.toggleTextActive]}>Medical</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.label}>Addressed to</Text>
-          {type === "medical" ? (
-            <View style={styles.routeCard}>
-              {medicalConfig === undefined ? (
-                <ActivityIndicator color={colors.primary} />
-              ) : !medicalConfig?.doctor || !medicalHod ? (
-                <Text style={styles.routeWarning}>
-                  Medical leave isn't set up for your branch yet — contact the admin.
-                </Text>
-              ) : (
-                <>
-                  {[
-                    `${medicalConfig.doctor.name} (Doctor)`,
-                    ...(medicalConfig.dr?.email ? [`${medicalConfig.dr.name || "Deputy Registrar"} (Deputy Registrar)`] : []),
-                    ...(medicalConfig.dean?.email ? [`${medicalConfig.dean.name || "Dean"} (Dean, Academics)`] : []),
-                    `${medicalHod.name} (HOD, ${profile?.branch ?? ""})`,
-                    "Approved: your classes in these dates count as present",
-                  ].map((line, i) => (
-                    <Text key={i} style={styles.routeStep}>
-                      {i + 1} · {line}
-                    </Text>
-                  ))}
-                </>
-              )}
-            </View>
-          ) : (
-          <TouchableOpacity
-            style={styles.dropdownField}
-            onPress={() => setPickerOpen(true)}
-          >
-            <Text
-              style={selectedFaculty ? styles.dropdownValue : styles.dropdownPlaceholder}
-            >
-              {selectedFaculty ? selectedFaculty.name : "Select a faculty member"}
-            </Text>
-            <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
-          </TouchableOpacity>
-          )}
-
-          <Modal
-            visible={pickerOpen}
-            animationType="slide"
-            transparent
-            onRequestClose={() => setPickerOpen(false)}
-          >
-            <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
-              <View style={styles.modalSheet}>
-                <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>Select faculty</Text>
-                  <TouchableOpacity onPress={() => setPickerOpen(false)} hitSlop={8}>
-                    <Ionicons name="close" size={22} color={colors.textPrimary} />
-                  </TouchableOpacity>
-                </View>
-                <TextInput
-                  style={styles.input}
-                  value={facultySearch}
-                  onChangeText={setFacultySearch}
-                  placeholder="Search faculty by name"
-                  placeholderTextColor={colors.textSecondary}
-                  autoFocus
-                />
-                <FlatList
-                  data={filteredFaculty}
-                  keyExtractor={(f) => f.uid ?? f.email}
-                  style={styles.modalList}
-                  keyboardShouldPersistTaps="handled"
-                  ListEmptyComponent={
-                    <Text style={styles.emptyNote}>No faculty match that name.</Text>
-                  }
-                  renderItem={({ item: f }) => (
+  const newForm = (
+    <>
+            <Section title="Type of leave">
+              <View style={styles.typeRow}>
+                {(
+                  [
+                    { v: "casual", icon: "calendar-outline", title: "Casual", sub: "Goes to one teacher" },
+                    { v: "medical", icon: "medkit-outline", title: "Medical", sub: "Official IIIT Surat form" },
+                  ] as const
+                ).map((o) => {
+                  const active = type === o.v;
+                  return (
                     <TouchableOpacity
-                      style={styles.facultyOption}
+                      key={o.v}
+                      style={[styles.typeCard, active && styles.typeCardActive]}
                       onPress={() => {
-                        setSelectedFaculty(f);
-                        setFacultySearch("");
-                        setPickerOpen(false);
+                        setType(o.v);
+                        setSelectedFaculty(null);
+                        if (o.v === "casual") setEditing(null);
                       }}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: active }}
                     >
-                      <Text style={styles.facultyOptionText}>{f.name}</Text>
+                      <Ionicons name={o.icon} size={22} color={active ? colors.primary : colors.textSecondary} />
+                      <Text style={[styles.typeTitle, active && { color: colors.primary }]}>{o.title}</Text>
+                      <Text style={styles.typeSub}>{o.sub}</Text>
+                      {active && <Ionicons name="checkmark-circle" size={18} color={colors.primary} style={styles.typeCheck} />}
                     </TouchableOpacity>
-                  )}
+                  );
+                })}
+              </View>
+            </Section>
+
+            {type === "medical" ? (
+              profile ? (
+                <MedicalApplyForm
+                  key={`${editing?.id ?? "new"}-${formKey}`}
+                  profile={profile}
+                  existing={editing}
+                  onDone={medicalDone}
+                  onCancel={editing ? () => setEditing(null) : undefined}
                 />
-              </View>
-            </KeyboardAvoidingView>
-          </Modal>
-
-          <Text style={styles.label}>From</Text>
-          <DateField
-            value={fromDate}
-            onChange={(d) => {
-              setFromDate(d);
-              if (toDate && toDate < d) setToDate(d);
-            }}
-            placeholder="First day of leave"
-          />
-
-          <Text style={styles.label}>To</Text>
-          <DateField value={toDate} onChange={setToDate} min={fromDate || undefined} placeholder="Last day of leave" />
-
-          {type === "medical" && (
-            <>
-              <Text style={styles.label}>Medical Report (PDF or photo)</Text>
-              <TouchableOpacity
-                style={styles.attachButton}
-                onPress={handlePickMedicalReport}
-                disabled={uploadingReport}
-              >
-                {uploadingReport ? (
-                  <ActivityIndicator color={colors.primary} />
-                ) : (
-                  <>
-                    <Ionicons
-                      name={medicalReportUrl ? "checkmark-circle" : "attach-outline"}
-                      size={18}
-                      color={medicalReportUrl ? colors.success : colors.primary}
-                    />
-                    <Text style={[styles.attachButtonText, medicalReportUrl && { color: colors.success }]}>
-                      {medicalReportFileName || "Attach report"}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-              <Text style={styles.hint}>
-                Attach the actual PDF or photo of your report from your phone — the Medical Officer needs to open it
-                before approving.
-              </Text>
-            </>
-          )}
-
-          <Text style={styles.label}>Reason</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            value={reason}
-            onChangeText={setReason}
-            placeholder="Briefly explain why you need this leave"
-            placeholderTextColor={colors.textSecondary}
-            multiline
-          />
-
-          <TouchableOpacity
-            style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
-            onPress={handleSubmit}
-            disabled={submitting}
-          >
-            {submitting ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.submitButtonText}>Submit Request</Text>}
-          </TouchableOpacity>
-
-          <Text style={styles.historyHeader}>Your Requests</Text>
-          {historyLoading ? (
-            <LoadingSpinner style={{ marginTop: spacing.md }} />
-          ) : myApplications.length === 0 ? (
-            <Text style={styles.emptyText}>No leave requests yet.</Text>
-          ) : (
-            myApplications.map((app) => (
-              <View key={app.id} style={styles.historyCard}>
-                <View style={styles.historyHeaderRow}>
-                  <Text style={styles.historyTitle}>
-                    {app.type === "medical" ? "Medical" : "Casual"} · {app.fromDate} to {app.toDate}
-                  </Text>
-                  <View style={[styles.statusPill, { backgroundColor: statusColors[app.status] + "20" }]}>
-                    <Text style={[styles.statusPillText, { color: statusColors[app.status] }]}>{app.status}</Text>
-                  </View>
+              ) : null
+            ) : (
+              <>
+            <Section title="Dates">
+              <View style={styles.dateRow}>
+                <View style={{ flex: 1 }}>
+                  <FieldLabel>First day</FieldLabel>
+                  <DateField
+                    value={fromDate}
+                    onChange={(d) => {
+                      setFromDate(d);
+                      if (!toDate || toDate < d) setToDate(d);
+                    }}
+                    placeholder="Pick"
+                  />
                 </View>
-                {app.type === "medical" && app.stage ? (
+                <View style={{ flex: 1 }}>
+                  <FieldLabel>Last day</FieldLabel>
+                  <DateField value={toDate} onChange={setToDate} min={fromDate || undefined} placeholder="Pick" />
+                </View>
+              </View>
+              {fromDate && toDate ? <Text style={styles.daysNote}>{dateRange(fromDate, toDate)}</Text> : null}
+            </Section>
+
+              <Section title="Send to">
+                <SelectField
+                  value={selectedFaculty?.name}
+                  placeholder="Choose a teacher"
+                  icon="person-outline"
+                  onPress={() => setFacultyPickerOpen(true)}
+                />
+              </Section>
+
+            <Section title="Reason">
+              <TextInput
+                style={[ui.input, styles.textArea]}
+                value={reason}
+                onChangeText={setReason}
+                placeholder="e.g. Family function at home"
+                placeholderTextColor={colors.textSecondary}
+                multiline
+                maxLength={500}
+              />
+              <Text style={styles.counter}>{reason.trim().length}/500</Text>
+            </Section>
+
+            <PrimaryButton label="Send request" icon="send" onPress={handleSubmit} loading={submitting} />
+              </>
+            )}
+    </>
+  );
+
+  const mineList = historyLoading ? (
+          <LoadingSpinner style={{ marginTop: spacing.xl }} />
+        ) : myApplications.length === 0 ? (
+          <EmptyState icon="document-text-outline" title="No requests yet" hint="Leaves you apply for show up here with their progress." />
+        ) : (
+          myApplications.map((app) => {
+            if (isFlow2(app as any)) return <MedicalTrackCard key={app.id} r={app as unknown as MedicalRequest} onEdit={editMedical} />;
+            const medical = app.type === "medical" && !!app.stage;
+            return (
+              <Card key={app.id} style={styles.reqCard}>
+                <View style={styles.reqHead}>
+                  <View style={[styles.reqIcon, medical && { backgroundColor: colors.badge.pink.bg }]}>
+                    <Ionicons
+                      name={medical ? "medkit-outline" : "calendar-outline"}
+                      size={18}
+                      color={medical ? colors.badge.pink.fg : colors.badge.blue.fg}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.reqTitle}>{medical ? "Medical leave" : "Casual leave"}</Text>
+                    <Text style={styles.reqSub}>{dateRange(app.fromDate, app.toDate)}</Text>
+                  </View>
+                  <StatusPill status={app.status} />
+                </View>
+                <Text style={styles.reqReason}>{app.reason}</Text>
+                {medical ? (
                   <>
-                    <Text style={styles.historyReason}>{app.reason}</Text>
-                    <MedicalProgress app={app} />
+                    <Timeline steps={medicalSteps(app)} />
+                    {app.medicalReportUrl ? (
+                      <TouchableOpacity onPress={() => openSafeUrl(app.medicalReportUrl!).catch(() => undefined)} style={styles.reportLink}>
+                        <Ionicons name="document-outline" size={16} color={colors.primary} />
+                        <Text style={styles.reportLinkText}>View your report</Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </>
                 ) : (
-                  <>
-                    <Text style={styles.historySubtitle}>To {app.facultyName}</Text>
-                    <Text style={styles.historyReason}>{app.reason}</Text>
-                    {app.facultyRemark && (
-                      <Text style={styles.historyRemark}>Remark: {app.facultyRemark}</Text>
-                    )}
-                  </>
+                  <Text style={styles.reqTo}>
+                    To {app.facultyName}
+                    {app.facultyRemark ? `\nRemark: “${app.facultyRemark}”` : ""}
+                  </Text>
                 )}
-              </View>
-            ))
-          )}
-        </KeyboardAwareScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </LinearGradient>
+              </Card>
+            );
+          })
+        );
+
+  return (
+    <View style={styles.screen}>
+      <KeyboardAwareScrollView contentContainerStyle={[styles.content, isDesktop && styles.contentDesk]} keyboardShouldPersistTaps="handled">
+        {isDesktop ? (
+          <View style={styles.desk}>
+            <View style={styles.deskForm}>
+              <Text style={styles.deskTitle}>New request</Text>
+              {newForm}
+            </View>
+            <View style={styles.deskList}>
+              <Text style={styles.deskTitle}>
+                Your requests{pendingCount ? ` · ${pendingCount} in progress` : ""}
+              </Text>
+              {mineList}
+            </View>
+          </View>
+        ) : (
+          <>
+        <Segmented
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: "new", label: "New request" },
+            { value: "mine", label: "My requests", badge: pendingCount || undefined },
+          ]}
+        />
+
+            {tab === "new" ? newForm : mineList}
+          </>
+        )}
+      </KeyboardAwareScrollView>
+
+      <SheetPicker
+        visible={facultyPickerOpen}
+        title="Send to"
+        items={faculty}
+        keyOf={(f) => f.uid ?? f.email}
+        labelOf={(f) => f.name}
+        sublabelOf={(f) => f.department}
+        selectedKey={selectedFaculty ? selectedFaculty.uid ?? selectedFaculty.email : null}
+        onPick={setSelectedFaculty}
+        onClose={() => setFacultyPickerOpen(false)}
+        searchable
+        emptyText="No teacher matches that name."
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scrollContent: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
-  header: { ...typography.h2, color: colors.textPrimary, marginBottom: spacing.md },
-  label: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.md, marginBottom: 4, fontWeight: "600" },
-  hint: { ...typography.caption, color: colors.textSecondary, marginTop: 4, fontStyle: "italic" },
-  routeCard: {
+  screen: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.md, paddingBottom: spacing.xl * 2 },
+  contentDesk: { paddingHorizontal: 16, paddingTop: 16, width: "100%", maxWidth: 1180, alignSelf: "center" },
+  desk: { flexDirection: "row", alignItems: "flex-start", gap: 24 },
+  deskForm: { flex: 1.1, minWidth: 0, backgroundColor: colors.surface, borderRadius: 22, borderWidth: 1.5, borderColor: colors.border, padding: 24 },
+  deskList: { flex: 1, minWidth: 0 },
+  deskTitle: { fontSize: 22, fontWeight: "800", letterSpacing: -0.4, color: colors.textPrimary, marginBottom: spacing.md },
+  typeRow: { flexDirection: "row", gap: spacing.sm },
+  typeCard: {
+    flex: 1,
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
     borderColor: colors.border,
     padding: spacing.md,
-    gap: 6,
+    gap: 4,
   },
-  routeStep: { ...typography.body, color: colors.textPrimary, fontWeight: "600" },
-  routeWarning: { ...typography.caption, color: colors.danger, fontWeight: "600" },
-  attachButton: {
+  typeCardActive: { borderColor: colors.primary, backgroundColor: colors.badge.blue.bg },
+  typeTitle: { fontSize: 16, fontWeight: "800", color: colors.textPrimary, marginTop: 4 },
+  typeSub: { fontSize: 12, color: colors.textSecondary },
+  typeCheck: { position: "absolute", top: 10, right: 10 },
+  dateRow: { flexDirection: "row", gap: spacing.sm },
+  daysNote: { fontSize: 13, fontWeight: "700", color: colors.primary, marginTop: spacing.sm },
+  warn: { fontSize: 14, color: colors.danger, fontWeight: "600" },
+  upload: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderColor: colors.primary,
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
+    minHeight: 72,
   },
-  attachButtonText: { ...typography.body, color: colors.primary, fontWeight: "600" },
-  input: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    ...typography.body,
-    color: colors.textPrimary,
-  },
-  textArea: { minHeight: 80, textAlignVertical: "top" },
-  toggleRow: { flexDirection: "row", backgroundColor: colors.surface, borderRadius: radius.full, padding: 4 },
-  toggleButton: { flex: 1, paddingVertical: spacing.sm, borderRadius: radius.full, alignItems: "center" },
-  toggleButtonActive: { backgroundColor: colors.primary },
-  toggleText: { ...typography.body, color: colors.textSecondary, fontWeight: "600" },
-  toggleTextActive: { color: colors.surface },
-  dropdownField: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  uploadDone: { borderStyle: "solid", borderColor: colors.successBorder, backgroundColor: colors.successBg },
+  uploadTitle: { fontSize: 15, fontWeight: "700", color: colors.textPrimary },
+  uploadSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  textArea: { minHeight: 96, textAlignVertical: "top" },
+  counter: { fontSize: 11, color: colors.textSecondary, alignSelf: "flex-end", marginTop: 4 },
+  reqCard: { marginBottom: spacing.md },
+  reqHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  reqIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.badge.blue.bg,
     alignItems: "center",
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    justifyContent: "center",
   },
-  dropdownValue: { ...typography.body, color: colors.textPrimary, fontWeight: "600" },
-  dropdownPlaceholder: { ...typography.body, color: colors.textSecondary },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: colors.overlay,
-    justifyContent: "flex-end",
-  },
-  modalSheet: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    padding: spacing.lg,
-    maxHeight: "75%",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: spacing.md,
-  },
-  modalTitle: { ...typography.h3, color: colors.textPrimary },
-  modalList: { marginTop: spacing.sm },
-  emptyNote: { ...typography.caption, color: colors.textSecondary, marginVertical: spacing.md, textAlign: "center" },
-  facultyOption: {
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.xs,
-  },
-  facultyOptionText: { ...typography.body, color: colors.textPrimary },
-  submitButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
-    paddingVertical: spacing.md,
-    alignItems: "center",
-    marginTop: spacing.xl,
-    ...clayShadowSoft,
-  },
-  submitButtonDisabled: { opacity: 0.6 },
-  submitButtonText: { color: colors.surface, fontWeight: "700", fontSize: 16 },
-  historyHeader: { ...typography.h3, color: colors.textPrimary, marginTop: spacing.xl, marginBottom: spacing.sm },
-  emptyText: { ...typography.body, color: colors.textSecondary },
-  historyCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm, ...clayShadowSoft },
-  historyHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  historyTitle: { ...typography.body, color: colors.textPrimary, fontWeight: "600", flex: 1 },
-  historySubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  historyReason: { ...typography.caption, color: colors.textSecondary, marginTop: 4 },
-  historyRemark: { fontSize: 12, color: colors.textPrimary, marginTop: 4, fontStyle: "italic" },
-  statusPill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.full },
-  statusPillText: { fontSize: 11, fontWeight: "700", textTransform: "capitalize" },
+  reqTitle: { fontSize: 15, fontWeight: "800", color: colors.textPrimary },
+  reqSub: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
+  reqReason: { fontSize: 13, color: colors.textPrimary, marginTop: spacing.sm, lineHeight: 19 },
+  reqTo: { fontSize: 13, color: colors.textSecondary, marginTop: spacing.sm, lineHeight: 19 },
+  reportLink: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.xs },
+  reportLinkText: { fontSize: 13, fontWeight: "700", color: colors.primary },
 });

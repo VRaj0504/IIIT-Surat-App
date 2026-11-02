@@ -1,5 +1,6 @@
 import {onRequest} from "firebase-functions/v2/https";
-import * as admin from "firebase-admin";
+import {getFirestore, FieldValue} from "firebase-admin/firestore";
+import {getStorage} from "firebase-admin/storage";
 import * as crypto from "crypto";
 import {defineSecret} from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
@@ -331,7 +332,7 @@ export const ingestFacultyEmail = onRequest(
       return;
     }
 
-    const db = admin.firestore();
+    const db = getFirestore();
     const fromEmail = body.from.toLowerCase().trim();
 
     if (!senderIsAuthenticated(body.authResults, fromEmail)) {
@@ -340,7 +341,7 @@ export const ingestFacultyEmail = onRequest(
         reason: "sender could not be authenticated (no passing SPF/DKIM/DMARC for the From domain)",
         from: fromEmail,
         subject: body.subject,
-        flaggedAt: admin.firestore.FieldValue.serverTimestamp(),
+        flaggedAt: FieldValue.serverTimestamp(),
       });
       res.status(200).send("ok");
       return;
@@ -369,7 +370,7 @@ export const ingestFacultyEmail = onRequest(
           clubName: clubData.name,
           createdBy: clubData.leadUid,
           createdByName: clubData.leadName,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
           targetBranch: null,
           targetSection: null,
           targetAdmissionYear: null,
@@ -387,7 +388,7 @@ export const ingestFacultyEmail = onRequest(
           reason: `sender leads ${clubMatches.length} clubs — ambiguous which one this email is for`,
           from: fromEmail,
           subject: body.subject,
-          flaggedAt: admin.firestore.FieldValue.serverTimestamp(),
+          flaggedAt: FieldValue.serverTimestamp(),
         });
         res.status(200).send("ok");
         return;
@@ -398,7 +399,7 @@ export const ingestFacultyEmail = onRequest(
         reason: "sender not an allowlisted faculty member or club lead",
         from: fromEmail,
         subject: body.subject,
-        flaggedAt: admin.firestore.FieldValue.serverTimestamp(),
+        flaggedAt: FieldValue.serverTimestamp(),
       });
       res.status(200).send("ok");
       return;
@@ -415,7 +416,7 @@ export const ingestFacultyEmail = onRequest(
         );
         const extraction = normalizeExtraction(raw);
         if (extraction.groups.length > 0) {
-          const bucket = admin.storage().bucket();
+          const bucket = getStorage().bucket();
           const storagePath = `pendingImports/${body.messageId}/${examAttachment.filename}`;
           const downloadToken = crypto.randomUUID();
           await bucket.file(storagePath).save(Buffer.from(examAttachment.dataBase64, "base64"), {
@@ -448,7 +449,7 @@ export const ingestFacultyEmail = onRequest(
             examGroups: extraction.groups,
             examWarnings: extraction.warnings,
             status: "pending",
-            receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+            receivedAt: FieldValue.serverTimestamp(),
             reviewedBy: null,
             reviewedAt: null,
             rejectionReason: null,
@@ -530,7 +531,7 @@ export const ingestFacultyEmail = onRequest(
       }
     }
 
-    const bucket = admin.storage().bucket();
+    const bucket = getStorage().bucket();
     const storedAttachments: {filename: string; storagePath: string; mimeType: string; downloadUrl: string}[] = [];
     for (const attachment of body.attachments ?? []) {
       const storagePath = `pendingImports/${body.messageId}/${attachment.filename}`;
@@ -587,7 +588,7 @@ export const ingestFacultyEmail = onRequest(
                   storagePath: attachment.storagePath,
                   uploadedBy: uploaderUid,
                   uploadedByName: facultyName,
-                  createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                  createdAt: FieldValue.serverTimestamp(),
                 });
               }),
             ),
@@ -605,7 +606,7 @@ export const ingestFacultyEmail = onRequest(
           clubName: null,
           createdBy: uploaderUid,
           createdByName: facultyName,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
           targetBranch: scope.scope === "all" ? null : scope.branch,
           targetSection: scope.scope === "section" ? scope.section : null,
           targetAdmissionYear: scope.admissionYear,
@@ -625,7 +626,7 @@ export const ingestFacultyEmail = onRequest(
       attachments: storedAttachments,
       ...classification,
       status: "pending",
-      receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+      receivedAt: FieldValue.serverTimestamp(),
       reviewedBy: null,
       reviewedAt: null,
       rejectionReason: null,

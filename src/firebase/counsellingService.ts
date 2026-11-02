@@ -10,6 +10,7 @@ import {
   onSnapshot,
   serverTimestamp,
   Timestamp,
+  limit as fsLimit,
 } from "firebase/firestore";
 import { db } from "./firestore";
 
@@ -98,7 +99,7 @@ export function subscribeToMyCounsellingRequests(
 }
 
 export function subscribeToCounsellingQueue(onUpdate: (requests: CounsellingRequest[]) => void): () => void {
-  const q = query(collection(db, REQUESTS_COLLECTION), orderBy("createdAt", "desc"));
+  const q = query(collection(db, REQUESTS_COLLECTION), orderBy("createdAt", "desc"), fsLimit(200));
   return onSnapshot(
     q,
     (snapshot) => {

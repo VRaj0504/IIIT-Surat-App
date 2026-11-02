@@ -1,14 +1,7 @@
-import {
-  collection,
-  doc,
-  setDoc,
-  getDoc,
-  getDocs,
-  query,
-  where,
-  serverTimestamp,
-} from "firebase/firestore";
+import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "./firestore";
+import { httpsCallable } from "firebase/functions";
+import { functions } from "./functionsClient";
 import { getApprovedExcusalRanges, isDateWithinExcusal } from "./eventExcusalService";
 
 const COLLECTION = "attendanceSessions";
@@ -40,8 +33,10 @@ function sessionDocId(params: {
   section: string | null;
   subjectCode: string;
   date: string;
+  lecture?: number;
 }): string {
-  return `${params.branch}_${params.admissionYear}_${params.section ?? "NONE"}_${params.subjectCode}_${params.date}`;
+  const base = `${params.branch}_${params.admissionYear}_${params.section || "NONE"}_${params.subjectCode.replace(/\//g, "-")}_${params.date}`;
+  return params.lecture && params.lecture > 1 ? `${base}_L${params.lecture}` : base;
 }
 
 export async function markAttendance(params: {
@@ -56,6 +51,8 @@ export async function markAttendance(params: {
   markedByName?: string;
   semester?: number;
   specialization?: string | null;
+  lecture?: number;
+  classSize?: number;
 }): Promise<void> {
   const id = sessionDocId(params);
 
@@ -76,7 +73,8 @@ export async function markAttendance(params: {
     subjectCode: params.subjectCode,
     subjectName: params.subjectName,
     date: params.date,
-    lecture: 1,
+    lecture: params.lecture ?? 1,
+    ...(params.classSize ? { classSize: params.classSize } : {}),
     ...(params.semester ? { semester: params.semester } : {}),
     specialization: params.specialization ?? null,
     absentEnrollmentNumbers: params.absentEnrollmentNumbers,
@@ -95,6 +93,7 @@ export async function getExistingSession(params: {
   section: string | null;
   subjectCode: string;
   date: string;
+  lecture?: number;
 }): Promise<string[] | null> {
   const id = sessionDocId(params);
   const snap = await getDoc(doc(db, COLLECTION, id));
@@ -125,6 +124,23 @@ function slack(present: number, total: number) {
   return { canMiss, needToAttend };
 }
 
+type MySessionRow = Omit<AttendanceSession, "absentEnrollmentNumbers" | "excusedEnrollmentNumbers"> & {
+  absent: boolean;
+  excused: boolean;
+};
+const SESSIONS_TTL_MS = 90 * 1000;
+const sessionCache = new Map<string, { at: number; p: Promise<MySessionRow[]> }>();
+
+function fetchMySessions(key: string, force: boolean): Promise<MySessionRow[]> {
+  const hit = sessionCache.get(key);
+  if (!force && hit && Date.now() - hit.at < SESSIONS_TTL_MS) return hit.p;
+  const call = httpsCallable<void, { sessions: MySessionRow[] }>(functions, "getMyAttendanceSessions");
+  const p = call().then((r) => r.data.sessions);
+  sessionCache.set(key, { at: Date.now(), p });
+  p.catch(() => sessionCache.delete(key));
+  return p;
+}
+
 export async function getMyAttendance(params: {
   enrollmentNumber: string;
   branch: string;
@@ -134,20 +150,25 @@ export async function getMyAttendance(params: {
   semester: number;
   subjects: { code: string; name: string }[];
   medicalExcusedSessions?: Set<string>;
+  force?: boolean;
 }): Promise<SubjectAttendance[]> {
-  const q = query(
-    collection(db, COLLECTION),
-    where("branch", "==", params.branch),
-    where("admissionYear", "==", params.admissionYear),
-    where("section", "==", params.section),
-  );
-  const [snap, excusalRanges] = await Promise.all([getDocs(q), getApprovedExcusalRanges(params.enrollmentNumber)]);
+  const [mySessions, excusalRanges] = await Promise.all([
+    fetchMySessions(params.enrollmentNumber, !!params.force),
+    getApprovedExcusalRanges(params.enrollmentNumber),
+  ]);
+  const snap = mySessions.map((x): AttendanceSession => {
+    const { absent, excused, ...rest } = x;
+    return {
+      ...rest,
+      absentEnrollmentNumbers: absent ? [params.enrollmentNumber] : [],
+      excusedEnrollmentNumbers: excused ? [params.enrollmentNumber] : [],
+    };
+  });
   const norm = (c: string) => String(c ?? "").replace(/\s+/g, "").toUpperCase();
   const semCodes = new Map(params.subjects.map((s) => [norm(s.code), s]));
 
   const bySubject = new Map<string, { code: string; name: string; total: number; present: number; last: string | null }>();
-  snap.forEach((docSnap) => {
-    const d = docSnap.data() as AttendanceSession;
+  snap.forEach((d) => {
     const key = norm(d.subjectCode);
     const thisSem = d.semester !== undefined ? d.semester === params.semester : semCodes.has(key);
     if (!thisSem) return;
