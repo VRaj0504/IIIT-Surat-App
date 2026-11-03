@@ -55,3 +55,11 @@ sample-templates/marks-*.xlsx
 __MACOSX/
 ._*
 .DS_Store
+.claude/
+firestore-debug.log
+*.log
+__pycache__/
+*.pyc
+serviceAccountKey.json
+.env
+.env.*
