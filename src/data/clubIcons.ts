@@ -5,10 +5,18 @@ export type ClubIconEntry = {
   icon: keyof typeof Ionicons.glyphMap;
   color: string;
   image?: ImageSourcePropType;
+  /** Wide logo for the club page header. */
+  logo?: ImageSourcePropType;
 };
 
 const CLUB_ICON_MAP: Record<string, ClubIconEntry> = {
   saras: { icon: 'sparkles', color: '#EC4899' },
+  imagine: {
+    icon: 'aperture',
+    color: '#111111',
+    image: require('../../assets/clubs/imagine-mark.png'),
+    logo: require('../../assets/clubs/imagine-logo.png'),
+  },
   'abstract art and design club': { icon: 'color-palette', color: '#F97316' },
   'antra poetry club': { icon: 'create', color: '#8B5CF6' },
   'swarang singing club': { icon: 'musical-notes', color: '#22A559' },

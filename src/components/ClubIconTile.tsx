@@ -1,8 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import Ionicons from "@expo/vector-icons/Ionicons";
 import ClayCard from './ClayCard';
 import { colors, spacing, radius, typography } from '../theme/theme';
+import ClubGlyph from './ClubGlyph';
 import { getClubIcon } from '../data/clubIcons';
 
 type ClubIconTileProps = {
@@ -11,12 +11,12 @@ type ClubIconTileProps = {
 };
 
 export default function ClubIconTile({ name, onPress }: ClubIconTileProps) {
-  const { icon, color } = getClubIcon(name);
+  const { color } = getClubIcon(name);
 
   return (
     <ClayCard flat style={styles.card} onPress={onPress}>
       <View style={[styles.iconCircle, { backgroundColor: color + '22' }]}>
-        <Ionicons name={icon} size={26} color={color} />
+        <ClubGlyph name={name} size={26} />
       </View>
       <Text style={styles.name} numberOfLines={2}>
         {name}

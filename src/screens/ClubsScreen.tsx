@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { subscribeToClubs, subscribeToAllUpcomingEvents, Club, ClubEvent } from '../firebase/clubsService';
 import { getClubIcon } from '../data/clubIcons';
 import LoadingSpinner from '../components/LoadingSpinner';
+import ClubGlyph from '../components/ClubGlyph';
 import TapCard from '../components/TapCard';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
@@ -201,7 +202,7 @@ export default function ClubsScreen() {
             return (
               <TapCard style={styles.clubCard} onPress={() => openClub(club.id, club.name)}>
                 <View style={[styles.clubIcon, { backgroundColor: color + '1F' }]}>
-                  <Ionicons name={icon} size={22} color={color} />
+                  <ClubGlyph name={club.name} size={22} />
                 </View>
                 <Text style={styles.clubName} numberOfLines={2}>
                   {club.name}

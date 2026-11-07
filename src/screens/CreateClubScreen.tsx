@@ -153,7 +153,7 @@ export default function CreateClubScreen() {
 
             <Text style={styles.label}>Part of a bigger club? (optional)</Text>
             <Text style={styles.hint}>
-              e.g. Exposure and Groove are sub-clubs under Saaras — pick Saaras
+              e.g. Exposure and Cineworks are sub-clubs under Imagine — pick Imagine
               here so this club shows up inside it instead of as its own entry
               on the Clubs tab.
             </Text>

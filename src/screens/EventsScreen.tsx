@@ -12,6 +12,7 @@ import { getClubIcon } from "../data/clubIcons";
 import GlassCard from "../components/GlassCard";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
+import ClubGlyph from "../components/ClubGlyph";
 import { SelectField, SheetPicker, Segmented } from "../components/ui";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
@@ -164,7 +165,7 @@ export default function EventsScreen() {
                 <GlassCard style={[styles.eventCard, tab === "past" && { opacity: 0.75 }]}>
                   <TouchableOpacity style={styles.eventCardInner} onPress={() => openEvent(event)} activeOpacity={0.7}>
                     <View style={[styles.eventIconWrap, { backgroundColor: color + "22" }]}>
-                      <Ionicons name={icon} size={20} color={color} />
+                      <ClubGlyph name={event.clubName} size={20} />
                     </View>
                     <View style={styles.eventInfo}>
                       <Text style={styles.eventTitle} numberOfLines={2}>{event.title}</Text>

@@ -15,6 +15,10 @@ const CLUBS = {
     description: "Cultural club of IIIT Surat.",
     leadName: "Abhinav Prakash", leadEmail: "ui24ec01@iiitsurat.ac.in",
   },
+  "Imagine": {
+    category: "Cultural",
+    description: "Creative club: photography, videography and design.",
+  },
   "Abstract (Art and Design Club)": {
     category: "Cultural", description: "Art and design club under SARAS.", parent: "SARAS",
     leadName: "Divya", leadEmail: "ui24ec45@iiitsurat.ac.in",
@@ -39,12 +43,12 @@ const CLUBS = {
     extraLeads: [{ name: "Apekshaa Yadav", email: "ui24cs84@iiitsurat.ac.in" }],
   },
   "Cineworks (Videography Club)": {
-    category: "Cultural", description: "Videography club under SARAS.", parent: "SARAS",
+    category: "Cultural", description: "Videography club under Imagine.", parent: "Imagine",
     leadName: "Parth Gupta", leadEmail: "ui24cs57@iiitsurat.ac.in",
     extraLeads: [{ name: "Divyanshu Meena", email: "ui24cs22@iiitsurat.ac.in" }],
   },
   "Exposure (Photography Club)": {
-    category: "Cultural", description: "Photography club under SARAS.", parent: "SARAS",
+    category: "Cultural", description: "Photography club under Imagine.", parent: "Imagine",
     leadName: "Rachit Singh", leadEmail: "ui24cs67@iiitsurat.ac.in",
     extraLeads: [
       { name: "Parth Gupta", email: "ui24cs57@iiitsurat.ac.in" },
@@ -112,7 +116,7 @@ const CLUBS = {
   "Athletics": { category: "Sports", description: "Athletics team under Indominous Club.", parent: "Indominous Club", leadName: "Jadav Siddu" },
   "Badminton": { category: "Sports", description: "Badminton team under Indominous Club.", parent: "Indominous Club", leadName: "Mayank Sachdev" },
   "PR": { category: "Sports", description: "Public relations team for Indominous Club.", parent: "Indominous Club", leadName: "Parth Mahajan", extraLeads: [{ name: "Mayank Sachdev" }] },
-  "Design": { category: "Sports", description: "Chief design lead for Indominous Club.", parent: "Indominous Club", leadName: "Om Sahoo" },
+  "Design": { category: "Cultural", description: "Design club under Imagine.", parent: "Imagine", leadName: "Om Sahoo" },
   "Content": { category: "Sports", description: "Content team for Indominous Club.", parent: "Indominous Club", leadName: "Yuvi" },
   "Media": { category: "Sports", description: "Media team for Indominous Club.", parent: "Indominous Club", leadName: "Raman Gupta", extraLeads: [{ name: "Divyanshu Meena" }] },
   "Girls Coordination": { category: "Sports", description: "Girls' coordination team for Indominous Club.", parent: "Indominous Club", leadName: "Aashi Rajput", extraLeads: [{ name: "Akshita Shukla" }, { name: "Tanisha Rathore" }] },

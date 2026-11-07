@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, Alert } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, Alert, Image } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -27,6 +27,7 @@ import {
 } from "../firebase/noticesService";
 import { openSafeUrl } from "../utils/safeLink";
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
+import ClubGlyph from "../components/ClubGlyph";
 import ClubCoreTeam from "../components/ClubCoreTeam";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
@@ -192,23 +193,27 @@ function ClubDetailScreenInner() {
   };
 
   const [tab, setTab] = useState<"events" | "notices">("events");
-  const { icon, color } = getClubIcon(clubName);
+  const { icon, color, logo } = getClubIcon(clubName);
   const canPost = isLead || isFaculty;
 
   return (
     <View style={styles.screen}>
       <KeyboardAwareScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
-          <View style={[styles.heroIcon, { backgroundColor: color + "22" }]}>
-            <Ionicons name={icon} size={30} color={color} />
-          </View>
+          {logo ? (
+            <Image source={logo} style={styles.heroLogo} resizeMode="contain" accessibilityLabel={`${clubName} logo`} />
+          ) : (
+            <View style={[styles.heroIcon, { backgroundColor: color + "22" }]}>
+              <Ionicons name={icon} size={30} color={color} />
+            </View>
+          )}
           <Text style={styles.title}>{clubName}</Text>
           {club ? (
             <>
               <View style={styles.heroMetaRow}>
                 {club.category ? <StatusPill status="info" label={club.category} /> : null}
               </View>
-              <Text style={styles.leads}>{formatClubLeads(club)}</Text>
+              {club.leadName ? <Text style={styles.leads}>{formatClubLeads(club)}</Text> : null}
               {club.description ? <Text style={styles.description}>{club.description}</Text> : null}
             </>
           ) : null}
@@ -262,7 +267,7 @@ function ClubDetailScreenInner() {
               return (
                 <Card key={sc.id} style={styles.subClub} onPress={() => openSubClub(sc)}>
                   <View style={[styles.subIcon, { backgroundColor: sub.color + "22" }]}>
-                    <Ionicons name={sub.icon} size={18} color={sub.color} />
+                    <ClubGlyph name={sc.name} size={18} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.subName}>{sc.name}</Text>
@@ -448,6 +453,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: spacing.md,
   },
+  heroLogo: { width: 240, height: 66, marginBottom: spacing.sm, backgroundColor: "#FFFFFF", borderRadius: 12 },
   heroIcon: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center", marginBottom: spacing.sm },
   title: { fontSize: 22, fontWeight: "800", color: colors.textPrimary, textAlign: "center" },
   heroMetaRow: { flexDirection: "row", marginTop: spacing.sm },
