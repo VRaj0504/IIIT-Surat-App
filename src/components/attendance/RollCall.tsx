@@ -35,6 +35,7 @@ export const RollCallCard = memo(function RollCallCard({
   onMark,
   onUndo,
   onRestPresent,
+  onDuty,
 }: {
   students: RollStudent[];
   index: number;
@@ -43,6 +44,7 @@ export const RollCallCard = memo(function RollCallCard({
   onMark: (reg: string, m: Mark) => void;
   onUndo: () => void;
   onRestPresent: () => void;
+  onDuty?: Map<string, string>;
 }) {
   const { width } = useWindowDimensions();
   const s = students[index];
@@ -114,6 +116,11 @@ export const RollCallCard = memo(function RollCallCard({
         </Text>
         <Text style={st.reg}>{s.enrollmentNumber}</Text>
         <Text style={st.roll}>Roll {s.enrollmentNumber.slice(-3)}</Text>
+        {onDuty?.get(s.enrollmentNumber) ? (
+          <Text style={st.duty} numberOfLines={2}>
+            On event duty · {onDuty.get(s.enrollmentNumber)}
+          </Text>
+        ) : null}
         <Text style={st.swipeHint}>Swipe right for present, left for absent</Text>
       </Animated.View>
 
@@ -145,6 +152,7 @@ export const RollCallCard = memo(function RollCallCard({
 });
 
 const st = StyleSheet.create({
+  duty: { marginTop: 6, fontSize: 12.5, fontWeight: "800", color: colors.tile.lilac.fg, backgroundColor: colors.tile.lilac.bg, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3, overflow: "hidden", textAlign: "center" },
   progressRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", marginTop: spacing.md },
   progressText: { fontSize: 22, fontWeight: "800", color: colors.textPrimary },
   progressOf: { fontSize: 14, fontWeight: "600", color: colors.textSecondary },

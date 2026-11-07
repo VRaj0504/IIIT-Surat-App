@@ -14,12 +14,16 @@ export const sendExcusalResolutionPush = onDocumentWritten(
       (before.data() as {status?: string}) :
       undefined;
     const afterData = after.data() as {
+      flow?: number;
       submittedBy: string;
       status: "pending" | "approved" | "rejected";
       eventName: string;
       facultyCoordinatorName: string;
       facultyRemark: string | null;
     };
+
+    // The 3-signature flow (flow 2) sends its own pushes from excusalFlow.ts.
+    if (afterData.flow === 2) return;
 
     const wasPending = !beforeData || beforeData.status === "pending";
     const justResolved =

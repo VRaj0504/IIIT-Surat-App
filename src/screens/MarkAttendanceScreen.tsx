@@ -27,6 +27,7 @@ import { SelectField, SheetPicker, FieldLabel } from "../components/ui";
 import { subscribeToFacultyTimetable, FacultyScheduleEntry } from "../firebase/timetableService";
 import { mergeContiguousSlots, toMinutes } from "../utils/timetable";
 import { RollCallCard } from "../components/attendance/RollCall";
+import { excusalCovers, getApprovedExcusalsOn, rangeFor } from "../firebase/eventExcusalService";
 import { rosterForYear } from "../firebase/rosterCache";
 
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
@@ -80,10 +81,12 @@ const AttendanceRow = memo(function AttendanceRow({
   item,
   isAbsent,
   onToggle,
+  onDuty,
 }: {
   item: RosterStudent;
   isAbsent: boolean;
   onToggle: (enrollmentNumber: string) => void;
+  onDuty?: string;
 }) {
   return (
     <Pressable
@@ -96,6 +99,11 @@ const AttendanceRow = memo(function AttendanceRow({
       <View style={{ flex: 1 }}>
         <Text style={styles.studentName} numberOfLines={1}>{item.name}</Text>
         <Text style={styles.studentReg}>{item.enrollmentNumber}</Text>
+        {onDuty ? (
+          <Text style={styles.dutyTag} numberOfLines={1}>
+            On event duty · {onDuty}
+          </Text>
+        ) : null}
       </View>
       <View style={[styles.statusPill, isAbsent ? styles.statusPillAbsent : styles.statusPillPresent]}>
         <Text style={styles.statusPillText}>{isAbsent ? "Absent" : "Present"}</Text>
@@ -482,11 +490,38 @@ export default function MarkAttendanceScreen() {
     }
   };
 
+  // Students on an approved event excusal for this class: they can be marked absent and it still counts as attended.
+  const [onDuty, setOnDuty] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    const code = selectedSubject?.code;
+    if (!code || roster.length === 0 || !isValidDate(date)) {
+      setOnDuty(new Map());
+      return;
+    }
+    let alive = true;
+    getApprovedExcusalsOn(date)
+      .then((list) => {
+        if (!alive) return;
+        const m = new Map<string, string>();
+        const regs = new Set(roster.map((r) => r.enrollmentNumber));
+        list.forEach((x) =>
+          x.studentEnrollmentNumbers.forEach((reg) => {
+            if (regs.has(reg) && !m.has(reg) && excusalCovers(rangeFor(x, reg), date, code)) m.set(reg, x.eventName);
+          }),
+        );
+        setOnDuty(m);
+      })
+      .catch(() => alive && setOnDuty(new Map()));
+    return () => {
+      alive = false;
+    };
+  }, [selectedSubject?.code, roster, date]);
+
   const renderRow = useCallback(
     ({ item }: { item: RosterStudent & { branch: string } }) => (
-      <AttendanceRow item={item} isAbsent={absentSet.has(item.enrollmentNumber)} onToggle={toggleAbsent} />
+      <AttendanceRow item={item} isAbsent={absentSet.has(item.enrollmentNumber)} onToggle={toggleAbsent} onDuty={onDuty.get(item.enrollmentNumber)} />
     ),
-    [absentSet, toggleAbsent],
+    [absentSet, toggleAbsent, onDuty],
   );
 
   const ListHeader = (
@@ -735,7 +770,7 @@ export default function MarkAttendanceScreen() {
                   </View>
                 </View>
               ) : mode === "roll" && phase === "mark" ? (
-                <RollCallCard students={roster} index={Math.min(cursor, roster.length - 1)} marks={marks} absentCount={absentSet.size} onMark={markOne} onUndo={undo} onRestPresent={restPresent} />
+                <RollCallCard students={roster} index={Math.min(cursor, roster.length - 1)} marks={marks} absentCount={absentSet.size} onMark={markOne} onUndo={undo} onRestPresent={restPresent} onDuty={onDuty} />
               ) : mode === "roll" ? (
                 <View style={styles.reviewCard}>
                   <Text style={styles.reviewTitle}>Check before saving</Text>
@@ -843,7 +878,7 @@ export default function MarkAttendanceScreen() {
           <Pressable style={styles.lowBackdrop} onPress={() => setLowOpen(false)}>
             <Pressable style={styles.lowSheet} onPress={() => undefined}>
               <Text style={styles.lowSheetTitle}>Below {ATTENDANCE_TARGET}% in {selectedSubject?.name}</Text>
-              <Text style={styles.lowSheetSub}>Counts every class marked for this subject. Event or medical excusals not recorded on a class aren't included.</Text>
+              <Text style={styles.lowSheetSub}>Counts every class marked for this subject, with approved event and medical excusals counted as attended.</Text>
               <FlatList
                 data={lowStudents}
                 keyExtractor={(s) => s.enrollmentNumber}
@@ -1011,6 +1046,7 @@ const styles = StyleSheet.create({
   filterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   filterChipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
   filterChipText: { fontSize: 12, fontWeight: "700", color: colors.textSecondary },
+  dutyTag: { fontSize: 11.5, fontWeight: "800", color: colors.tile.lilac.fg, marginTop: 2 },
   rollBadge: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center", marginRight: spacing.sm },
   rollBadgeAbsent: { backgroundColor: colors.danger + "20" },
   rollBadgeText: { fontSize: 13, fontWeight: "800", color: colors.textPrimary },

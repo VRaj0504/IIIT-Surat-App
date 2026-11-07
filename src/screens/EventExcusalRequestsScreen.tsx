@@ -1,153 +1,296 @@
-import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, FlatList, TextInput } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
-import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
+import React, { useState, useEffect, useMemo } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, Alert, TextInput, Switch } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { colors, spacing, radius, typography } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
-import { subscribeToAssignedExcusals, respondToExcusal, EventExcusal } from "../firebase/eventExcusalService";
+import {
+  actOnExcusal,
+  respondToExcusal,
+  subscribeToAssignedExcusals,
+  subscribeToSignerExcusals,
+  EventExcusal,
+  SIGN_STEPS,
+  STEP_TITLE,
+  type SignStep,
+} from "../firebase/eventExcusalService";
+import { loadMySignature, type SignatureVector } from "../firebase/medicalService";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { KeyboardAwareFlatList } from "../components/KeyboardAware";
-import { EmptyState } from "../components/ui";
+import { EmptyState, PrimaryButton, Segmented } from "../components/ui";
+import SignaturePad, { SignatureView } from "../components/medical/SignaturePad";
+import ExcusalSteps from "../components/ExcusalSteps";
+import { excusalWhen } from "./SubmitEventExcusalScreen";
 
-export default function EventExcusalRequestsScreen() {
-  const { profile } = useAuth();
-  const [excusals, setExcusals] = useState<EventExcusal[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [remarkDrafts, setRemarkDrafts] = useState<Record<string, string>>({});
-  const [respondingId, setRespondingId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!profile?.uid) return;
-    const unsubscribe = subscribeToAssignedExcusals(profile.uid, (data) => {
-      setExcusals(data);
-      setLoading(false);
+function StudentList({ x }: { x: EventExcusal }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const list = x.students ?? x.studentEnrollmentNumbers.map((r) => ({ regNo: r, name: "", branch: "", section: null }));
+  const term = q.trim().toLowerCase();
+  const shown = term ? list.filter((s) => `${s.regNo} ${s.name}`.toLowerCase().includes(term)) : list;
+  const byClass = useMemo(() => {
+    const m = new Map<string, number>();
+    list.forEach((s) => {
+      const sec = s.section && s.section !== s.branch ? s.section : null;
+      const k = (sec && sec.toUpperCase().includes(s.branch.toUpperCase()) ? sec : [s.branch, sec].filter(Boolean).join(" ")) || "—";
+      m.set(k, (m.get(k) ?? 0) + 1);
     });
-    return () => unsubscribe();
-  }, [profile?.uid]);
-
-  const handleRespond = async (excusal: EventExcusal, status: "approved" | "rejected") => {
-    setRespondingId(excusal.id);
-    try {
-      await respondToExcusal(excusal.id, status, remarkDrafts[excusal.id]?.trim() || null);
-    } catch (err: any) {
-      Alert.alert("Couldn't respond", err.message ?? "Please try again.");
-    } finally {
-      setRespondingId(null);
-    }
-  };
-
-  const pending = excusals.filter((e) => e.status === "pending");
-  const resolved = excusals.filter((e) => e.status !== "pending");
-
+    return Array.from(m.entries()).map(([k, n]) => `${k}: ${n}`).join(" · ");
+  }, [list]);
   return (
-    <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
-      <SafeAreaView style={styles.container} edges={["top"]}>
-        <Text style={styles.helper}>
-          Approving covers every listed student's attendance across all their subjects for the
-          given dates — individual subject faculty don't need to separately approve anything.
+    <View style={s.students}>
+      <TouchableOpacity style={s.studentsHead} onPress={() => setOpen((v) => !v)}>
+        <Ionicons name="people-outline" size={16} color={colors.primary} />
+        <Text style={s.studentsTitle}>{list.length} students</Text>
+        <Text style={s.studentsSub} numberOfLines={1}>
+          {byClass}
         </Text>
-
-        {loading ? (
-          <LoadingSpinner style={{ marginTop: spacing.xl }} />
-        ) : excusals.length === 0 ? (
-          <EmptyState icon="checkmark-done-outline" title="All caught up" hint="Event excusal requests sent to you will show up here." />
-        ) : (
-          <KeyboardAwareFlatList
-            data={[...pending, ...resolved]}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            renderItem={({ item }) => (
-              <View style={styles.card}>
-                <Text style={styles.eventName}>{item.eventName}</Text>
-                <Text style={styles.detail}>{item.fromDate} to {item.toDate}</Text>
-                <Text style={styles.detail}>Submitted by {item.submittedByName}</Text>
-                <Text style={styles.detail}>{item.studentEnrollmentNumbers.length} students: {item.studentEnrollmentNumbers.join(", ")}</Text>
-
-                {item.status === "pending" ? (
-                  <>
-                    <TextInput
-                      style={styles.remarkInput}
-                      placeholder="Optional remark"
-                      placeholderTextColor={colors.textSecondary}
-                      value={remarkDrafts[item.id] ?? ""}
-                      onChangeText={(text) => setRemarkDrafts((prev) => ({ ...prev, [item.id]: text }))}
-                    />
-                    <View style={styles.actionRow}>
-                      <TouchableOpacity
-                        style={styles.rejectButton}
-                        onPress={() => handleRespond(item, "rejected")}
-                        disabled={respondingId === item.id}
-                      >
-                        <Text style={styles.rejectButtonText}>Reject</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.approveButton}
-                        onPress={() => handleRespond(item, "approved")}
-                        disabled={respondingId === item.id}
-                      >
-                        {respondingId === item.id ? (
-                          <ActivityIndicator color={colors.surface} />
-                        ) : (
-                          <Text style={styles.approveButtonText}>Approve</Text>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  </>
-                ) : (
-                  <View style={[styles.statusPill, { backgroundColor: item.status === "approved" ? colors.success : colors.danger }]}>
-                    <Text style={styles.statusPillText}>{item.status === "approved" ? "Approved" : "Rejected"}</Text>
-                  </View>
-                )}
-              </View>
-            )}
-          />
-        )}
-      </SafeAreaView>
-    </LinearGradient>
+        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={16} color={colors.textSecondary} />
+      </TouchableOpacity>
+      {open && (
+        <>
+          {list.length > 8 && (
+            <TextInput style={s.search} value={q} onChangeText={setQ} placeholder="Search students" placeholderTextColor={colors.textSecondary} autoCorrect={false} />
+          )}
+          {shown.map((st) => (
+            <View key={st.regNo} style={s.studentRow}>
+              <Text style={s.studentName} numberOfLines={1}>
+                {st.name || st.regNo}
+              </Text>
+              <Text style={s.studentMeta}>
+                {st.regNo}
+                {st.branch ? ` · ${st.branch}${st.section && st.section !== st.branch ? ` ${st.section}` : ""}` : ""}
+              </Text>
+            </View>
+          ))}
+        </>
+      )}
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { ...typography.h2, color: colors.textPrimary, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
-  helper: { ...typography.caption, color: colors.textSecondary, paddingHorizontal: spacing.md, marginTop: spacing.sm, marginBottom: spacing.sm, lineHeight: 18 },
-  emptyNote: { ...typography.body, color: colors.textSecondary, textAlign: "center", marginTop: spacing.xl },
-  listContent: { padding: spacing.md, gap: spacing.md },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    ...clayShadowSoft,
-  },
-  eventName: { ...typography.h3, color: colors.textPrimary },
-  detail: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-  remarkInput: {
+function SignedBy({ x }: { x: EventExcusal }) {
+  const done = SIGN_STEPS.filter((k) => x.signatures?.[k]);
+  if (!done.length) return null;
+  return (
+    <View style={s.signedWrap}>
+      {done.map((k) => {
+        const sg = x.signatures![k]!;
+        return (
+          <View key={k} style={s.signed}>
+            <Text style={s.signedTitle}>{STEP_TITLE[k]}</Text>
+            {sg.signature ? <SignatureView sig={sg.signature} height={36} width={110} /> : null}
+            <Text style={s.signedName} numberOfLines={1}>
+              {sg.name}
+            </Text>
+            {sg.remark ? <Text style={s.signedRemark}>“{sg.remark}”</Text> : null}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function SignBox({ x, uid, onDone }: { x: EventExcusal; uid: string; onDone: () => void }) {
+  const [sig, setSig] = useState<SignatureVector | null>(null);
+  const [remember, setRemember] = useState(true);
+  const [remark, setRemark] = useState("");
+  const [busy, setBusy] = useState<null | "sign" | "reject">(null);
+  const step = x.stage as SignStep;
+  useEffect(() => {
+    loadMySignature(uid).then((v) => v && setSig(v));
+  }, [uid]);
+
+  const run = async (action: "sign" | "reject") => {
+    setBusy(action);
+    try {
+      await actOnExcusal({ excusalId: x.id, action, signature: action === "sign" ? sig : null, saveSignature: remember, remark: remark.trim() || undefined });
+      onDone();
+    } catch (e: any) {
+      Alert.alert("Couldn't save", e?.message ?? "Try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+  const approve = () => {
+    if (!sig) return Alert.alert("Sign first", "Draw your signature in the box.");
+    const last = step === "dean";
+    Alert.alert(
+      `Sign as ${STEP_TITLE[step]}?`,
+      last ? `This approves it. Attendance updates for all ${x.studentEnrollmentNumbers.length} students.` : `It goes to ${STEP_TITLE[SIGN_STEPS[SIGN_STEPS.indexOf(step) + 1]]} next.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Sign", onPress: () => run("sign") },
+      ],
+    );
+  };
+  const reject = () => {
+    if (remark.trim().length < 3) return Alert.alert("Add a reason", "Say why it's rejected. The club lead sees it.");
+    Alert.alert("Reject this request?", "The club lead can fix it and send it again.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Reject", style: "destructive", onPress: () => run("reject") },
+    ]);
+  };
+
+  return (
+    <View style={{ marginTop: spacing.sm, gap: 8 }}>
+      <TextInput
+        style={s.search}
+        value={remark}
+        onChangeText={setRemark}
+        placeholder="Remark (needed to reject)"
+        placeholderTextColor={colors.textSecondary}
+      />
+      <SignaturePad value={sig} onChange={setSig} />
+      <View style={s.remember}>
+        <Switch value={remember} onValueChange={setRemember} trackColor={{ true: colors.primary, false: colors.border }} />
+        <Text style={s.rememberText}>Remember my signature</Text>
+      </View>
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <PrimaryButton tone="danger" label="Reject" icon="close" onPress={reject} loading={busy === "reject"} style={{ flex: 1 }} />
+        <PrimaryButton tone="success" label="Sign" icon="checkmark" onPress={approve} loading={busy === "sign"} style={{ flex: 1 }} />
+      </View>
+    </View>
+  );
+}
+
+function OldCard({ x }: { x: EventExcusal }) {
+  const [remark, setRemark] = useState("");
+  const [busy, setBusy] = useState(false);
+  const go = async (status: "approved" | "rejected") => {
+    setBusy(true);
+    try {
+      await respondToExcusal(x.id, status, remark.trim() || null);
+    } catch (e: any) {
+      Alert.alert("Couldn't save", e?.message ?? "Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <View style={{ marginTop: spacing.sm, gap: 8 }}>
+      <Text style={s.meta}>Sent before the 3-signature process. You can still finish it.</Text>
+      <TextInput style={s.search} value={remark} onChangeText={setRemark} placeholder="Optional remark" placeholderTextColor={colors.textSecondary} />
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <PrimaryButton tone="danger" label="Reject" onPress={() => go("rejected")} loading={busy} style={{ flex: 1 }} />
+        <PrimaryButton tone="success" label="Approve" onPress={() => go("approved")} loading={busy} style={{ flex: 1 }} />
+      </View>
+    </View>
+  );
+}
+
+export default function EventExcusalRequestsScreen() {
+  const { profile } = useAuth();
+  const email = (profile?.email ?? "").toLowerCase();
+  const [v2, setV2] = useState<EventExcusal[] | null>(null);
+  const [v1, setV1] = useState<EventExcusal[]>([]);
+  const [tab, setTab] = useState<"waiting" | "done">("waiting");
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!email) return;
+    return subscribeToSignerExcusals(email, setV2);
+  }, [email]);
+  useEffect(() => {
+    if (!profile?.uid) return;
+    return subscribeToAssignedExcusals(profile.uid, (l) => setV1(l.filter((x) => x.flow !== 2)));
+  }, [profile?.uid]);
+
+  const all = useMemo(() => [...(v2 ?? []), ...v1], [v2, v1]);
+  const mineNow = (x: EventExcusal) => (x.flow === 2 ? x.status === "pending" && (x.currentApproverEmail ?? "") === email : x.status === "pending");
+  const waiting = all.filter(mineNow);
+  const done = all.filter((x) => !mineNow(x));
+  const shown = tab === "waiting" ? waiting : done;
+
+  if (v2 === null) return <LoadingSpinner style={{ flex: 1, backgroundColor: colors.background }} />;
+
+  return (
+    <View style={s.page}>
+      <KeyboardAwareFlatList
+        data={shown}
+        keyExtractor={(x) => x.id}
+        contentContainerStyle={s.content}
+        keyboardShouldPersistTaps="handled"
+        ListHeaderComponent={
+          <View style={{ marginBottom: spacing.md }}>
+            <Segmented
+              options={[
+                { value: "waiting", label: "Waiting for you", badge: waiting.length || undefined },
+                { value: "done", label: "Others & done" },
+              ]}
+              value={tab}
+              onChange={setTab}
+            />
+          </View>
+        }
+        ListEmptyComponent={
+          <EmptyState
+            icon="checkmark-done-outline"
+            title={tab === "waiting" ? "Nothing to sign" : "Nothing here yet"}
+            hint={tab === "waiting" ? "Event excusals that need your signature show up here, and you get a notification." : undefined}
+          />
+        }
+        renderItem={({ item: x }) => {
+          const canAct = mineNow(x);
+          const open = openId === x.id || (canAct && waiting.length === 1);
+          return (
+            <View style={s.card}>
+              <TouchableOpacity onPress={() => setOpenId(openId === x.id ? null : x.id)} activeOpacity={0.8}>
+                <Text style={s.kicker}>
+                  {[x.category, x.parentClubName && x.clubName !== x.parentClubName ? `${x.clubName} · ${x.parentClubName}` : x.clubName].filter(Boolean).join(" · ") || "Event"}
+                </Text>
+                <Text style={s.title}>{x.eventName}</Text>
+                <Text style={s.meta}>{excusalWhen(x)}</Text>
+                <Text style={s.meta}>Sent by {x.submittedByName}</Text>
+                {x.flow === 2 ? <ExcusalSteps x={x} /> : null}
+                {x.status !== "pending" && (
+                  <Text style={[s.meta, { fontWeight: "800", color: x.status === "approved" ? colors.successFg : colors.danger }]}>
+                    {x.status === "approved" ? "Approved" : x.status === "withdrawn" ? "Withdrawn by the club" : `Rejected${x.rejectedReason || x.facultyRemark ? `: ${x.rejectedReason || x.facultyRemark}` : ""}`}
+                  </Text>
+                )}
+              </TouchableOpacity>
+              <StudentList x={x} />
+              {open && x.flow === 2 && <SignedBy x={x} />}
+              {canAct && (open ? x.flow === 2 ? <SignBox x={x} uid={profile!.uid} onDone={() => setOpenId(null)} /> : <OldCard x={x} /> : (
+                <PrimaryButton label="Review & sign" icon="create-outline" onPress={() => setOpenId(x.id)} style={{ marginTop: spacing.sm }} />
+              ))}
+            </View>
+          );
+        }}
+      />
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  page: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.md, paddingBottom: spacing.xl * 2 },
+  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md },
+  kicker: { fontSize: 11.5, fontWeight: "800", color: colors.primary, textTransform: "uppercase", letterSpacing: 0.4 },
+  title: { ...typography.h3, color: colors.textPrimary, marginTop: 2 },
+  meta: { fontSize: 13, color: colors.textSecondary, marginTop: 3 },
+  students: { marginTop: spacing.sm, backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: 10 },
+  studentsHead: { flexDirection: "row", alignItems: "center", gap: 6 },
+  studentsTitle: { fontSize: 14, fontWeight: "800", color: colors.textPrimary },
+  studentsSub: { flex: 1, fontSize: 12, color: colors.textSecondary },
+  studentRow: { paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  studentName: { fontSize: 13.5, fontWeight: "700", color: colors.textPrimary },
+  studentMeta: { fontSize: 12, color: colors.textSecondary },
+  search: {
     backgroundColor: colors.background,
     borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    marginTop: spacing.sm,
-    fontSize: 13,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
     color: colors.textPrimary,
+    marginVertical: 6,
   },
-  actionRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
-  rejectButton: {
-    flex: 1,
-    backgroundColor: colors.background,
-    borderRadius: radius.full,
-    paddingVertical: spacing.sm,
-    alignItems: "center",
-  },
-  rejectButtonText: { color: colors.danger, fontWeight: "700" },
-  approveButton: {
-    flex: 1,
-    backgroundColor: colors.success,
-    borderRadius: radius.full,
-    paddingVertical: spacing.sm,
-    alignItems: "center",
-  },
-  approveButtonText: { color: colors.surface, fontWeight: "700" },
-  statusPill: { alignSelf: "flex-start", paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.full, marginTop: spacing.sm },
-  statusPillText: { color: colors.surface, fontSize: 11, fontWeight: "700" },
+  signedWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: spacing.sm },
+  signed: { backgroundColor: colors.successBg, borderRadius: radius.md, padding: 8, minWidth: 120 },
+  signedTitle: { fontSize: 11, fontWeight: "800", color: colors.successFg },
+  signedName: { fontSize: 12.5, fontWeight: "700", color: colors.textPrimary },
+  signedRemark: { fontSize: 12, color: colors.textSecondary, fontStyle: "italic" },
+  remember: { flexDirection: "row", alignItems: "center", gap: 8 },
+  rememberText: { fontSize: 13, color: colors.textPrimary },
 });

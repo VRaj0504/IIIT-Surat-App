@@ -2,7 +2,7 @@ import { doc, setDoc, getDoc, getDocs, collection, query, where, serverTimestamp
 import { db } from "./firestore";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "./functionsClient";
-import { getApprovedExcusalRanges, isDateWithinExcusal } from "./eventExcusalService";
+import { getApprovedExcusalRanges, excusalCovers, rangeFor, type EventExcusal } from "./eventExcusalService";
 
 const COLLECTION = "attendanceSessions";
 
@@ -134,7 +134,9 @@ export type AttendanceDay = {
   date: string;
   lecture: number;
   hours: number;
-  status: "present" | "absent" | "excused";
+  status: "present" | "absent" | "excused" | "event";
+  /** Event name when an approved event excusal covers this class. */
+  eventName?: string;
 };
 
 export const ATTENDANCE_TARGET = 75;
@@ -211,13 +213,20 @@ export async function getMyAttendance(params: {
     };
     entry.total += w;
     const absent = d.absentEnrollmentNumbers.includes(params.enrollmentNumber);
+    const event = absent ? excusalRanges.find((r) => excusalCovers(r, d.date, d.subjectCode)) : undefined;
     const excused =
       d.excusedEnrollmentNumbers?.includes(params.enrollmentNumber) ||
-      isDateWithinExcusal(d.date, excusalRanges) ||
+      !!event ||
       params.medicalExcusedSessions?.has(`${d.subjectCode}|${d.date}`) ||
       params.medicalExcusedSessions?.has(`*|${d.date}`);
     if (!absent || excused) entry.present += w;
-    entry.days.push({ date: d.date, lecture: d.lecture ?? 1, hours: w, status: !absent ? "present" : excused ? "excused" : "absent" });
+    entry.days.push({
+      date: d.date,
+      lecture: d.lecture ?? 1,
+      hours: w,
+      status: !absent ? "present" : event ? "event" : excused ? "excused" : "absent",
+      ...(event ? { eventName: event.eventName } : {}),
+    });
     if (!entry.last || d.date > entry.last) entry.last = d.date;
     bySubject.set(key, entry);
   });
@@ -255,9 +264,14 @@ async function classExcusals(regs: string[]): Promise<Map<string, { ranges: { fr
     getDocs(collection(db, "medicalExcusals")).catch(() => null),
   ]);
   events?.docs.forEach((d) => {
-    const x = d.data() as { studentEnrollmentNumbers?: string[]; fromDate?: string; toDate?: string };
+    const x = { id: d.id, ...(d.data() as Omit<EventExcusal, "id">) };
     if (!x.fromDate || !x.toDate) return;
-    (x.studentEnrollmentNumbers ?? []).forEach((r) => want.has(r) && entry(r).ranges.push({ from: x.fromDate!, to: x.toDate! }));
+    (x.studentEnrollmentNumbers ?? []).forEach((r) => {
+      if (!want.has(r)) return;
+      const rg = rangeFor(x, r);
+      if (rg.sessions) rg.sessions.forEach((k) => entry(r).sessions.add(k));
+      else entry(r).ranges.push({ from: x.fromDate, to: x.toDate });
+    });
   });
   medical?.docs.forEach((d) => {
     const x = d.data() as { enrollmentNumber?: string | null; fromDate?: string | null; toDate?: string | null; sessions?: string[]; allDates?: boolean };

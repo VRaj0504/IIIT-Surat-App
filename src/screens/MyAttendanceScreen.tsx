@@ -27,6 +27,13 @@ const tone = (p: number) =>
       ? { fg: colors.warning, bg: colors.warningBg }
       : { fg: colors.danger, bg: colors.dangerBg };
 
+const STATUS_TONE: Record<"present" | "absent" | "excused" | "event", { bg: string; fg: string; label: string }> = {
+  present: { bg: colors.successBg, fg: colors.success, label: "Present" },
+  absent: { bg: colors.dangerBg, fg: colors.danger, label: "Absent" },
+  excused: { bg: colors.warningBg, fg: colors.warning, label: "Excused" },
+  event: { bg: colors.tile.lilac.bg, fg: colors.tile.lilac.fg, label: "Event" },
+};
+
 export default function MyAttendanceScreen() {
   const { profile } = useAuth();
   const { isDesktop } = useWebLayout();
@@ -247,22 +254,9 @@ export default function MyAttendanceScreen() {
                         {d.lecture > 1 ? ` · class ${d.lecture}` : ""}
                         {d.hours > 1 ? ` · ${d.hours} hr` : ""}
                       </Text>
-                      <View
-                        style={[
-                          styles.statusPill,
-                          {
-                            backgroundColor:
-                              d.status === "present" ? colors.successBg : d.status === "excused" ? colors.warningBg : colors.dangerBg,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.statusText,
-                            { color: d.status === "present" ? colors.success : d.status === "excused" ? colors.warning : colors.danger },
-                          ]}
-                        >
-                          {d.status === "present" ? "Present" : d.status === "excused" ? "Excused" : "Absent"}
+                      <View style={[styles.statusPill, { backgroundColor: STATUS_TONE[d.status].bg }]}>
+                        <Text style={[styles.statusText, { color: STATUS_TONE[d.status].fg }]} numberOfLines={1}>
+                          {d.status === "event" ? `Event · ${d.eventName ?? "excused"}` : STATUS_TONE[d.status].label}
                         </Text>
                       </View>
                     </View>
@@ -352,7 +346,7 @@ const styles = StyleSheet.create({
   historyRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 6 },
   historyDate: { fontSize: 13, fontWeight: "600", color: colors.textPrimary },
   historyEmpty: { fontSize: 12, color: colors.textSecondary },
-  statusPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  statusPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3, maxWidth: "62%" },
   statusText: { fontSize: 11.5, fontWeight: "800" },
   expandHint: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, marginTop: 10 },
   expandHintText: { fontSize: 12, fontWeight: "700", color: colors.primary },

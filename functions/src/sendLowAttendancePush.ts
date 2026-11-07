@@ -16,8 +16,17 @@ async function excusalsFor(reg: string): Promise<Excused> {
     db.collection("medicalExcusals").where("enrollmentNumber", "==", reg).get(),
   ]);
   events.docs.forEach((d) => {
-    const x = d.data() as {fromDate?: string; toDate?: string};
-    if (x.fromDate && x.toDate) out.ranges.push({from: x.fromDate, to: x.toDate});
+    const x = d.data() as {
+      flow?: number; fullDay?: boolean; fromDate?: string; toDate?: string;
+      students?: {regNo: string; classKey: string | null}[]; sessionsByClass?: Record<string, string[]> | null;
+    };
+    if (!x.fromDate || !x.toDate) return;
+    if (x.flow === 2 && x.fullDay === false) {
+      const key = x.students?.find((s) => s.regNo === reg)?.classKey;
+      ((key && x.sessionsByClass?.[key]) || []).forEach((k) => out.sessions.add(k));
+    } else {
+      out.ranges.push({from: x.fromDate, to: x.toDate});
+    }
   });
   medical.docs.forEach((d) => {
     const x = d.data() as {fromDate?: string | null; toDate?: string | null; sessions?: string[]; allDates?: boolean};

@@ -225,28 +225,20 @@ service cloud.firestore {
     }
 
     match /eventExcusals/{docId} {
-
+      // New 3-signature flow (flow 2) is written only by Cloud Functions: excusalSubmit / excusalAct / excusalWithdraw.
       allow read: if isAdmin() ||
         (isFaculty() && resource.data.status == 'approved') ||
         (request.auth != null && resource.data.submittedBy == request.auth.uid) ||
-        (request.auth != null && resource.data.facultyCoordinatorUid == request.auth.uid) ||
+        (request.auth != null && resource.data.get('facultyCoordinatorUid', null) == request.auth.uid) ||
+        (isMember() && myEmail() in resource.data.get('approverEmails', [])) ||
         (request.auth != null &&
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.enrollmentNumber in resource.data.studentEnrollmentNumbers);
-      allow create: if isMember() &&
-        request.resource.data.submittedBy == request.auth.uid &&
-        request.resource.data.status == 'pending' &&
-        request.resource.data.facultyCoordinatorUid is string &&
-        request.resource.data.facultyCoordinatorUid != request.auth.uid &&
-        get(/databases/$(database)/documents/users/$(request.resource.data.facultyCoordinatorUid)).data.role == 'faculty' &&
-        request.resource.data.studentEnrollmentNumbers is list &&
-        request.resource.data.studentEnrollmentNumbers.size() > 0 &&
-        request.resource.data.studentEnrollmentNumbers.size() <= 150 &&
-        request.resource.data.fromDate is string &&
-        request.resource.data.toDate is string &&
-        request.resource.data.toDate >= request.resource.data.fromDate;
+      allow create: if false;
 
+      // Old one-faculty requests still pending can be finished by that faculty member.
       allow update: if isAdmin() ||
         (isFaculty() &&
+          resource.data.get('flow', 1) != 2 &&
           resource.data.facultyCoordinatorUid == request.auth.uid &&
           resource.data.submittedBy != request.auth.uid &&
           request.resource.data.status in ['pending', 'approved', 'rejected'] &&
@@ -716,7 +708,7 @@ service cloud.firestore {
 
     match /config/{docId} {
       allow read: if isMember();
-      allow create, update: if docId == 'placementStats' && isAdmin();
+      allow create, update: if docId in ['placementStats', 'eventExcusal'] && isAdmin();
       allow update: if docId == 'exams' &&
         (isAdmin() || isExamCell()) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['publishMode']) &&
