@@ -12,6 +12,7 @@ import { canPreviewRoles, useAuth } from "../context/AuthContext";
 import { getCurrentSemester } from "../utils/academicInfo";
 import TapCard from "../components/TapCard";
 import { openFacultyPortal } from "../utils/portal";
+import { restartApp } from "../utils/restartApp";
 import { usePlusAccess } from "../hooks/usePlus";
 
 export const PRIVACY_URL = "https://collegego-iiitsurat.web.app/privacy.html";
@@ -70,10 +71,19 @@ export default function ProfileScreen() {
   const [deleting, setDeleting] = useState(false);
   const [themeChoice, setThemeChoice] = useState<ThemePreference>(themePreference);
   const darkOn = themeChoice === "system" ? Appearance.getColorScheme() === "dark" : themeChoice === "dark";
+  const [applyingTheme, setApplyingTheme] = useState(false);
   const chooseTheme = async (v: ThemePreference) => {
     setThemeChoice(v);
     await saveThemePreference(v);
-    if (Platform.OS === "web") globalThis.location?.reload();
+    setApplyingTheme(true);
+    // Short pause so the switch visibly flips before the app restarts with the new colours.
+    setTimeout(async () => {
+      const ok = await restartApp();
+      if (!ok) {
+        setApplyingTheme(false);
+        Alert.alert("Theme saved", "Close and reopen the app to apply it.");
+      }
+    }, 600);
   };
   const plusOpen = usePlusAccess();
   const groups = React.useMemo(
@@ -224,9 +234,11 @@ export default function ProfileScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowLabel}>Dark theme</Text>
-                <Text style={styles.rowSub}>{darkOn ? "On" : "Off"}</Text>
+                <Text style={styles.rowSub}>{applyingTheme ? `Applying ${darkOn ? "dark" : "light"} theme…` : darkOn ? "On" : "Off"}</Text>
               </View>
+              {applyingTheme ? <ActivityIndicator color={colors.primary} style={{ marginRight: 8 }} /> : null}
               <Switch
+                disabled={applyingTheme}
                 value={darkOn}
                 onValueChange={(v) => chooseTheme(v ? "dark" : "light")}
                 trackColor={{ false: colors.border, true: colors.primary }}

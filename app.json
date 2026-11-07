@@ -8,7 +8,13 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.vaibhav.iiitsuratapp"
+      "bundleIdentifier": "com.vaibhav.iiitsuratapp",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "runtimeVersion": {
+        "policy": "fingerprint"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -20,7 +26,17 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.vaibhav.iiitsuratapp",
       "googleServicesFile": "./google-services.json",
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR"
+      ],
+      "runtimeVersion": {
+        "policy": "fingerprint"
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -52,7 +68,7 @@
         }
       ],
       "expo-status-bar",
-            "expo-sharing",
+      "expo-sharing",
       [
         "expo-build-properties",
         {
@@ -97,6 +113,12 @@
           "remindersPermission": false
         }
       ]
-    ]
+    ],
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/61f447cd-815d-4bcc-9aad-bfa3d6ba87b0"
+    }
   }
 }
