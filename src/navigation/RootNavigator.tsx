@@ -21,7 +21,6 @@ import TranscriptScreen from "../screens/TranscriptScreen";
 import MarksScreen from "../screens/MarksScreen";
 import ExamScheduleScreen from "../screens/ExamScheduleScreen";
 import ExamStatusScreen from "../screens/ExamStatusScreen";
-import GradeEntryScreen from "../screens/GradeEntryScreen";
 import ScanPosterScreen from "../screens/ScanPosterScreen";
 import MarkAttendanceScreen from "../screens/MarkAttendanceScreen";
 import MyAttendanceScreen from "../screens/MyAttendanceScreen";
@@ -37,7 +36,6 @@ import CreateClubScreen from "../screens/CreateClubScreen";
 import PostEventScreen from "../screens/PostEventScreen";
 import PostNoticeScreen from "../screens/PostNoticeScreen";
 import PlacementsScreen from "../screens/PlacementsScreen";
-import UploadResourceScreen from "../screens/faculty/UploadResourceScreen";
 import EditProfileScreen from "../screens/EditProfileScreen";
 import NotificationSettingsScreen from "../screens/NotificationSettingsScreen";
 import NotificationsScreen from "../screens/NotificationsScreen";
@@ -113,11 +111,6 @@ export default function RootNavigator() {
         options={{ title: "Resources" }}
       />
       <Stack.Screen
-        name="UploadResource"
-        component={UploadResourceScreen}
-        options={{ title: "Upload Resource" }}
-      />
-      <Stack.Screen
         name="Faculty"
         component={FacultyDirectoryScreen}
         options={{ title: "Faculty Directory" }}
@@ -174,11 +167,6 @@ export default function RootNavigator() {
         name="ExamStatus"
         component={ExamStatusScreen}
         options={{ title: "Exam Status" }}
-      />
-      <Stack.Screen
-        name="GradeEntry"
-        component={GradeEntryScreen}
-        options={{ title: "Enter Grades" }}
       />
       <Stack.Screen
         name="ScanPoster"

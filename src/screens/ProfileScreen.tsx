@@ -11,6 +11,7 @@ import { colors, spacing, typography, themePreference, saveThemePreference, type
 import { canPreviewRoles, useAuth } from "../context/AuthContext";
 import { getCurrentSemester } from "../utils/academicInfo";
 import TapCard from "../components/TapCard";
+import { openFacultyPortal } from "../utils/portal";
 import { usePlusAccess } from "../hooks/usePlus";
 
 export const PRIVACY_URL = "https://collegego-iiitsurat.web.app/privacy.html";
@@ -88,7 +89,7 @@ export default function ProfileScreen() {
   const handleDelete = () => {
     Alert.alert(
       "Delete your account?",
-      "Your CollegeGo account and profile (phone, emergency contacts, lost & found posts, complaints, counselling requests) are deleted permanently.\n\nYour attendance, grades and other academic records stay with the institute.",
+      "Your CollegeGo account and profile (phone, emergency contacts, complaints, counselling requests) are deleted permanently.\n\nYour attendance, grades and other academic records stay with the institute.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -162,6 +163,19 @@ export default function ProfileScreen() {
               <Text style={styles.editText}>Edit profile</Text>
             </TapCard>
           </View>
+
+          {(previewRole ?? profile?.role) === "faculty" && (
+            <TapCard style={styles.portalCard} onPress={openFacultyPortal} accessibilityLabel="Open faculty portal">
+              <View style={[styles.rowIcon, { backgroundColor: colors.tile.blue.bg }]}>
+                <Ionicons name="desktop-outline" size={18} color={colors.tile.blue.fg} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowLabel}>Open faculty portal</Text>
+                <Text style={styles.rowSub}>For grades, marks, uploads and timetables · collegego-faculty.web.app</Text>
+              </View>
+              <Ionicons name="open-outline" size={18} color={colors.textSecondary} />
+            </TapCard>
+          )}
 
           {groups.map((g) => (
             <View key={g.title}>
@@ -260,6 +274,7 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  portalCard: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: colors.surface, borderRadius: 20, padding: 14, marginTop: 14 },
   page: { flex: 1, backgroundColor: colors.background },
   scroll: { paddingHorizontal: 18, paddingTop: spacing.md, paddingBottom: 110 },
   h1: { ...typography.h1, color: colors.textPrimary, marginBottom: 14 },

@@ -6,6 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { useWebLayout } from "../utils/useWebLayout";
 import { useWebBadges, markNoticesSeen } from "../utils/webBadges";
 import { useInboxUnread } from "../hooks/useInboxUnread";
+import { openFacultyPortal } from "../utils/portal";
 import { useFacultyWaiting } from "../hooks/useFacultyWaiting";
 import { subscribeToNotices, Notice } from "../firebase/noticesService";
 
@@ -64,7 +65,7 @@ const FACULTY_NAV: Group[] = [
       { label: "Today", icon: "home-outline", tab: "Home", keywords: "home dashboard" },
       { label: "Timetable", icon: "calendar-outline", tab: "Timetable", keywords: "classes schedule" },
       { label: "Mark attendance", icon: "checkmark-done-outline", route: "MarkAttendance", keywords: "attendance present absent" },
-      { label: "Enter grades", icon: "create-outline", route: "GradeEntry", keywords: "grades marks" },
+      { label: "Faculty portal", icon: "open-outline", route: "__portal", keywords: "grades marks upload timetable curriculum portal web" },
       { label: "Empty classrooms", icon: "business-outline", route: "RoomAvailability", keywords: "free room" },
     ],
   },
@@ -149,6 +150,10 @@ export default function WebShell({ navigationRef, currentRoute, children }: Prop
 
   const go = (item: Item) => {
     if (!navigationRef.isReady()) return;
+    if (item.route === "__portal") {
+      openFacultyPortal();
+      return;
+    }
     if (item.tab) navigationRef.navigate("Tabs", { screen: item.tab });
     else if (item.route) navigationRef.navigate(item.route);
     setPaletteOpen(false);

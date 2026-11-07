@@ -92,14 +92,13 @@ const studentSections: Section[] = [
 
 const facultySections: Section[] = [
   {
-    title: 'Faculty Tools',
+    title: 'Approve & respond',
     tiles: [
-      { label: 'SOS Alerts', icon: 'alert-circle-outline', route: 'SosAlerts', badge: 'pink' },
       { label: 'Leave Requests', icon: 'mail-open-outline', route: 'LeaveRequests', badge: 'blue' },
-      { label: 'Announcements', icon: 'notifications-outline', route: 'Announcements', badge: 'purple' },
       { label: 'Excusal Requests', icon: 'megaphone-outline', route: 'EventExcusalRequests', badge: 'blue' },
       { label: 'Complaints & Doubts', icon: 'alert-circle-outline', route: 'Complaints', badge: 'peach' },
       { label: 'Counselling Requests', icon: 'heart-outline', route: 'CounsellingQueue', badge: 'pink' },
+      { label: 'SOS Alerts', icon: 'alert-circle-outline', route: 'SosAlerts', badge: 'pink' },
     ],
   },
   {
@@ -114,7 +113,6 @@ const facultySections: Section[] = [
       { label: 'Mark Attendance', icon: 'checkmark-done-outline', route: 'MarkAttendance', badge: 'green' },
       { label: 'Resources', icon: 'book-outline', route: 'Resources', badge: 'blue' },
       { label: 'Academic Calendar', icon: 'calendar-outline', route: 'AcademicCalendar', badge: 'peach' },
-      { label: 'Curriculum', icon: 'library-outline', route: 'Curriculum', badge: 'purple' },
     ],
   },
   {
@@ -161,15 +159,23 @@ const facultyBento: Bento = {
   big: { label: 'Leave requests', sub: 'Medical & casual', icon: 'mail-open-outline', route: 'LeaveRequests', tone: 'mint' },
   small: [
     { label: 'Empty classrooms', sub: 'Find a free classroom', icon: 'business-outline', route: 'RoomAvailability', tone: 'lilac' },
-    { label: 'Resources', sub: 'Share notes & papers', icon: 'book-outline', route: 'Resources', tone: 'peach' },
+    { label: 'Resources', sub: 'Notes & papers', icon: 'book-outline', route: 'Resources', tone: 'peach' },
   ],
   chips: [
-    { label: 'Attendance', icon: 'checkmark-done-outline', route: 'MarkAttendance', tone: 'mint' },
-    { label: 'Grades', icon: 'school-outline', route: 'GradeEntry', tone: 'blue' },
-    { label: 'Announce', icon: 'notifications-outline', route: 'Announcements', tone: 'lilac' },
+    { label: 'Excusals', icon: 'megaphone-outline', route: 'EventExcusalRequests', tone: 'mint' },
     { label: 'Complaints', icon: 'alert-circle-outline', route: 'Complaints', tone: 'peach' },
+    { label: 'Counselling', icon: 'heart-outline', route: 'CounsellingQueue', tone: 'lilac' },
+    { label: 'SOS', icon: 'alert-circle-outline', route: 'SosAlerts', tone: 'blue' },
   ],
 };
+
+// Things faculty do on the spot from the phone. Grades, marks, uploads and timetables are on the web portal.
+const facultyQuick: QuickItem[] = [
+  { label: 'Post notice', icon: 'create-outline', route: 'PostNotice', tone: 'blue' },
+  { label: 'Announce', icon: 'megaphone-outline', route: 'Announcements', tone: 'lilac' },
+  { label: 'Class change', icon: 'swap-horizontal-outline', route: 'Timetable' as keyof RootStackParamList, tone: 'peach' },
+  { label: 'Attendance', icon: 'checkmark-done-outline', route: 'MarkAttendance', tone: 'mint' },
+];
 
 function to12h(time: string): string {
   const m = toMinutes(time);
@@ -468,6 +474,21 @@ function MobileHome() {
               </Text>
               <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
             </TapCard>
+          )}
+
+          {isFaculty && (
+            <View style={styles.quickRow}>
+              {facultyQuick.map((c) => (
+                <TapCard key={c.label} style={styles.quickItem} onPress={() => go(c.route)} accessibilityLabel={c.label}>
+                  <View style={[styles.quickIcon, { backgroundColor: colors.tile[c.tone].bg }]}>
+                    <Ionicons name={c.icon} size={22} color={colors.tile[c.tone].fg} />
+                  </View>
+                  <Text style={styles.quickLabel} numberOfLines={1}>
+                    {c.label}
+                  </Text>
+                </TapCard>
+              ))}
+            </View>
           )}
 
           <HomeMeetings onOpenAll={() => go('Meetings' as any)} />
