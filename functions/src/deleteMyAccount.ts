@@ -6,6 +6,11 @@ import {getStorage} from "firebase-admin/storage";
 export const deleteMyAccount = onCall({region: "asia-south1"}, async (req) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Sign in first.");
+  // Deleting is permanent, so ask for a fresh sign-in (stops someone using a phone left logged in).
+  const signedInAt = Number(req.auth?.token?.auth_time ?? 0) * 1000;
+  if (!signedInAt || Date.now() - signedInAt > 10 * 60 * 1000) {
+    throw new HttpsError("failed-precondition", "REAUTH: For safety, sign out and sign in again, then delete within 10 minutes.");
+  }
   const db = getFirestore();
   const bucket = getStorage().bucket();
 

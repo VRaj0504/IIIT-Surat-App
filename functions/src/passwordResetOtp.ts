@@ -4,6 +4,7 @@ import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {getAuth} from "firebase-admin/auth";
 import * as crypto from "crypto";
 import * as nodemailer from "nodemailer";
+import {callerIp, rateLimit} from "./rateLimit";
 
 const smtpUser = defineSecret("SMTP_USER");
 const smtpPass = defineSecret("SMTP_PASS");
@@ -48,6 +49,7 @@ export const requestPasswordResetOtp = onCall(
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       throw new HttpsError("invalid-argument", "Enter a valid email address.");
     }
+    await rateLimit(`reset-ip:${callerIp(req)}`, 30, 60 * 60 * 1000, "Too many reset requests from this network. Try again in an hour.");
     if (!ALLOWED(email)) return {ok: true};
     try {
       const user = await getAuth().getUserByEmail(email);
@@ -89,6 +91,7 @@ export const confirmPasswordResetOtp = onCall({region: "asia-south1"}, async (re
   const code = String(req.data?.code ?? "").trim();
   const newPassword = String(req.data?.newPassword ?? "");
   if (!/^\d{6}$/.test(code)) throw new HttpsError("invalid-argument", "Enter the 6-digit code.");
+  await rateLimit(`reset-confirm-ip:${callerIp(req)}`, 40, 60 * 60 * 1000, "Too many tries from this network. Try again in an hour.");
   if (newPassword.length < 8) throw new HttpsError("invalid-argument", "Use at least 8 characters for the password.");
 
   const ref = getFirestore().collection(COLLECTION).doc(docIdFor(email));
@@ -119,7 +122,8 @@ export const confirmPasswordResetOtp = onCall({region: "asia-south1"}, async (re
   if (given.length !== want.length || !crypto.timingSafeEqual(given, want)) {
     throw bad();
   }
-  await getAuth().updateUser(d.uid, {password: newPassword});
+  // The code reached their inbox, so the email is proven theirs.
+  await getAuth().updateUser(d.uid, {password: newPassword, emailVerified: true});
   await getAuth().revokeRefreshTokens(d.uid);
   await ref.update({codeHash: FieldValue.delete(), tries: 0});
   return {ok: true};

@@ -118,7 +118,19 @@ export default function ProfileScreen() {
                     await logOut().catch(() => {});
                     Alert.alert("Account deleted", "Your account has been deleted.");
                   } catch (e: any) {
-                    Alert.alert("Couldn't delete", `${e?.message ?? "Please try again."}\n\nYou can also request deletion at ${PRIVACY_URL.replace("privacy", "delete-account")}`);
+                    const msg = String(e?.message ?? "");
+                    if (msg.includes("REAUTH")) {
+                      Alert.alert(
+                        "Sign in again first",
+                        "For safety, deleting needs a fresh sign-in. Log out, sign in again, then delete within 10 minutes.",
+                        [
+                          { text: "Not now", style: "cancel" },
+                          { text: "Log out now", style: "destructive", onPress: () => logOut().catch(() => {}) },
+                        ],
+                      );
+                    } else {
+                      Alert.alert("Couldn't delete", `${msg || "Please try again."}\n\nYou can also request deletion at ${PRIVACY_URL.replace("privacy", "delete-account")}`);
+                    }
                   } finally {
                     setDeleting(false);
                   }

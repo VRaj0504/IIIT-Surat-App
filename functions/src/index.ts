@@ -55,3 +55,4 @@ export {sendMeetingPush} from "./sendMeetingPush";
 export {getDirectorOverview} from "./getDirectorOverview";
 export {archiveDatabase} from "./archiveDatabase";
 export {excusalSubmit, excusalAct, excusalWithdraw, excusalReminder} from "./excusalFlow";
+export {classChangeSet} from "./classChange";

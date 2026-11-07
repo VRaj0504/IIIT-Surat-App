@@ -420,7 +420,7 @@ export default function TimetableScreen() {
                         onPress={async () => {
                           setBusy(true);
                           try {
-                            await removeClassChange(actionChange.id);
+                            await removeClassChange(actionChange.id, actionChange);
                             setAction(null);
                           } catch (err: any) {
                             Alert.alert("Couldn't undo", err?.message ?? "Please try again.");

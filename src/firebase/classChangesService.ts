@@ -1,4 +1,6 @@
-import { collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, setDoc, where } from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
+import { functions } from "./functionsClient";
 import { db } from "./firestore";
 
 const COLLECTION = "classChanges";
@@ -71,11 +73,21 @@ export function findClassChange(
   );
 }
 
+const cleanError = (e: any) => new Error(String(e?.message ?? "Couldn't save. Try again.").replace(/^.*?:\s*/, ""));
+
+/** Saved by the server, which checks you teach this class (or are an admin). */
 export async function saveClassChange(input: Omit<ClassChange, "id">): Promise<void> {
-  const id = classChangeId(input);
-  await setDoc(doc(db, COLLECTION, id), { ...input, createdAt: serverTimestamp() });
+  try {
+    await httpsCallable(functions, "classChangeSet")({ action: "save", ...input });
+  } catch (e) {
+    throw cleanError(e);
+  }
 }
 
-export async function removeClassChange(id: string): Promise<void> {
-  await deleteDoc(doc(db, COLLECTION, id));
+export async function removeClassChange(id: string, change?: Omit<ClassChange, "id">): Promise<void> {
+  try {
+    await httpsCallable(functions, "classChangeSet")({ action: "remove", id, ...(change ?? {}) });
+  } catch (e) {
+    throw cleanError(e);
+  }
 }

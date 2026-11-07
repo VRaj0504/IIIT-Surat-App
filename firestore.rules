@@ -816,15 +816,9 @@ service cloud.firestore {
     }
 
     match /classChanges/{changeId} {
+      // Written only by the classChangeSet function, which checks the caller teaches that class.
       allow read: if signedIn();
-      allow create: if isFaculty() &&
-        request.resource.data.createdBy == request.auth.uid &&
-        request.resource.data.type in ['cancelled', 'room'];
-      allow update: if isFaculty() &&
-        resource.data.createdBy == request.auth.uid &&
-        request.resource.data.createdBy == request.auth.uid &&
-        request.resource.data.type in ['cancelled', 'room'];
-      allow delete: if isAdmin() || (isFaculty() && resource.data.createdBy == request.auth.uid);
+      allow write: if false;
     }
 
     match /attendanceSessions/{docId} {

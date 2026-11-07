@@ -1,6 +1,7 @@
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {getFirestore} from "firebase-admin/firestore";
 import {getAuth} from "firebase-admin/auth";
+import {callerIp, rateLimit} from "./rateLimit";
 
 const DOMAIN = "@iiitsurat.ac.in";
 const norm = (v: unknown) => String(v ?? "").trim();
@@ -49,6 +50,25 @@ export const createAccount = onCall(
         "This email isn't on the student roster or the faculty list yet. Contact the academic office.",
       );
     }
+    // Slow down scripts: per network and per email.
+    const ip = callerIp(req);
+    await rateLimit(`signup-ip:${ip}`, 20, 60 * 60 * 1000, "Too many sign-ups from this network. Try again in an hour.");
+    await rateLimit(`signup-email:${email}`, 5, 24 * 60 * 60 * 1000, "Too many tries for this email today. Try again tomorrow or use \"Forgot password\".");
+
+    // Someone may have started an account with this email but never verified it (they can't, without the inbox).
+    // After an hour, let the real owner sign up instead of being stuck on "already has an account".
+    try {
+      const existing = await getAuth().getUserByEmail(email);
+      const ageMs = Date.now() - Date.parse(existing.metadata.creationTime);
+      const hasProfile = (await getFirestore().collection("users").doc(existing.uid).get()).exists;
+      if (!existing.emailVerified && !hasProfile && ageMs > 60 * 60 * 1000) {
+        await getAuth().deleteUser(existing.uid);
+        console.log("[createAccount] replaced an unverified account older than 1 hour");
+      }
+    } catch (e: any) {
+      if (e?.code !== "auth/user-not-found") console.error("[createAccount] lookup", e?.code);
+    }
+
     try {
       await getAuth().createUser({email, password, displayName: name, emailVerified: false});
     } catch (e: any) {
