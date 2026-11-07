@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { hodFor } from "../../utils/deptCode";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as DocumentPicker from "expo-document-picker";
@@ -83,8 +84,7 @@ export default function MedicalApplyForm({
   const hods = useMemo(() => hodChoices(cfg), [cfg]);
   useEffect(() => {
     if (hodEmail || hods.length === 0) return;
-    const b = (profile.branch ?? "").toUpperCase();
-    const mine = hods.find((h) => h.department.toUpperCase() === b);
+    const mine = hodFor(hods, profile.branch);
     if (mine) setHodEmail(mine.email);
   }, [hods, profile.branch, hodEmail]);
   const hod = hods.find((h) => h.email === hodEmail) ?? null;
@@ -233,7 +233,7 @@ export default function MedicalApplyForm({
 
       <View style={s.formHead}>
         <View style={{ flex: 1 }}>
-          <Text style={s.kicker}>IIIT SURAT · EXAMS/ACADEMICS</Text>
+          <Text style={s.kicker}>OFFICIAL FORM · EXAMS/ACADEMICS</Text>
           <Text style={s.formTitle}>Request for considering absenteeism due to medical reasons</Text>
         </View>
         <Pressable onPress={() => openSafeUrl(MEDICAL_TEMPLATE_URL).catch(() => undefined)} style={s.tpl} accessibilityRole="link">

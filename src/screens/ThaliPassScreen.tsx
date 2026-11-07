@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -10,7 +10,6 @@ import LoadingSpinner from "../components/LoadingSpinner";
 import {
   checkMySubscription,
   getTodaysMealStatus,
-  monthLabel,
   MealSlot,
   MealStatus,
 } from "../firebase/messSubscriptionService";
@@ -40,7 +39,7 @@ export default function ThaliPassScreen() {
   const [mode, setMode] = useState<PageMode>("card");
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState(false);
-  const [month, setMonth] = useState<string | undefined>();
+  const [validTill, setValidTill] = useState<string | undefined>();
   const [mealStatus, setMealStatus] = useState<Record<MealSlot, MealStatus> | null>(null);
 
   useEffect(() => {
@@ -51,7 +50,7 @@ export default function ThaliPassScreen() {
     checkMySubscription(profile.enrollmentNumber)
       .then((subscription) => {
         setActive(subscription.active);
-        setMonth(subscription.month);
+        setValidTill(subscription.validTill);
       })
       .catch((err) => {
         // eslint-disable-next-line no-console
@@ -72,7 +71,7 @@ export default function ThaliPassScreen() {
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-
+        <ScrollView style={{ flex: 1, alignSelf: "stretch" }} contentContainerStyle={{ alignItems: "center", paddingBottom: spacing.xl }} showsVerticalScrollIndicator={false}>
         {loading ? (
           <LoadingSpinner style={{ marginTop: spacing.xl }} />
         ) : active ? (
@@ -95,7 +94,7 @@ export default function ThaliPassScreen() {
             {mode === "card" ? (
               <View style={styles.idCard}>
                 <View style={styles.idCardBanner}>
-                  <Text style={styles.idCardBannerText}>IIIT SURAT</Text>
+                  <Text style={styles.idCardBannerText}>COLLEGEGO</Text>
                   <Text style={styles.idCardBannerSubtext}>Unlimited Thali — Student Pass</Text>
                 </View>
                 <View style={styles.idCardBody}>
@@ -124,7 +123,7 @@ export default function ThaliPassScreen() {
                   </View>
                 </View>
                 <View style={styles.idCardFooter}>
-                  <Text style={styles.idValidText}>Valid up to: {month ? monthLabel(month) : "—"}</Text>
+                  <Text style={styles.idValidText}>Valid till: {validTill ?? "—"}</Text>
                 </View>
               </View>
             ) : (
@@ -160,13 +159,14 @@ export default function ThaliPassScreen() {
           <View style={styles.emptyContainer}>
             <Ionicons name="close-circle-outline" size={48} color={colors.textSecondary} />
             <Text style={styles.emptyText}>
-              You don't have an active Unlimited Thali subscription this month.
+              You don't have an active Unlimited Thali subscription this semester.
             </Text>
             <Text style={styles.emptySubtext}>
               If you've already paid, check with the canteen — the list may not be updated yet.
             </Text>
           </View>
         )}
+        </ScrollView>
       </SafeAreaView>
     </LinearGradient>
   );

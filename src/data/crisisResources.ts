@@ -25,7 +25,7 @@ export const NATIONAL_HELPLINES: CrisisResource[] = [
 ];
 
 export const CAMPUS_CONTACT: CrisisResource = {
-  name: "IIIT Surat Medical Officer (Dr. Paresh Chhotala)",
+  name: "Campus Medical Officer (Dr. Paresh Chhotala)",
   description: "For anything urgent on campus — not counselling-specific, but real and reachable",
   phone: "9824270476",
 };

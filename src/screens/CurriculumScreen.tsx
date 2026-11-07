@@ -8,6 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import { getCurrentSemester } from "../utils/academicInfo";
 import { subscribeToCurriculum, CurriculumSubject } from "../firebase/curriculumService";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { EmptyState } from "../components/ui";
 
 const BRANCHES = ["CSE", "ECE", "MNC"];
 
@@ -58,7 +59,15 @@ export default function CurriculumScreen() {
         {subjects === null ? (
           <LoadingSpinner style={{ marginTop: spacing.xl }} />
         ) : subjects.length === 0 ? (
-          <Text style={styles.empty}>No subjects added for {branch} semester {semester} yet.</Text>
+          <EmptyState
+            icon="book-outline"
+            title={`No subjects for ${branch} · Semester ${semester} yet`}
+            hint={
+              profile?.role === "faculty"
+                ? "Subjects are added from the faculty portal → Curriculum. Try another semester or branch above."
+                : "The academic office hasn't added this semester yet. Try another semester or branch above."
+            }
+          />
         ) : (
           <ScrollView contentContainerStyle={{ paddingBottom: spacing.xl }}>
             <View style={styles.summary}>
@@ -117,7 +126,7 @@ export default function CurriculumScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  container: { flex: 1, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
   header: { ...typography.h2, color: colors.textPrimary },
   subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2, marginBottom: spacing.md },
   pickers: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },

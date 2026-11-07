@@ -238,7 +238,6 @@ export default function AnnouncementsScreen() {
         {posting ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.postButtonText}>Send Announcement</Text>}
       </TouchableOpacity>
 
-      <Text style={styles.historyHeading}>Sent Announcements</Text>
     </View>
   ) : null;
 
@@ -259,7 +258,14 @@ export default function AnnouncementsScreen() {
             data={announcements}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
-            ListHeaderComponent={ComposeForm}
+            ListHeaderComponent={
+              ComposeForm ? (
+                <View>
+                  {ComposeForm}
+                  {announcements.length > 0 && <Text style={styles.historyHeading}>Sent announcements</Text>}
+                </View>
+              ) : null
+            }
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Ionicons name="notifications-off-outline" size={40} color={colors.textSecondary} />
@@ -294,10 +300,10 @@ export default function AnnouncementsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  headerWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  headerWrap: { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
   emptyContainer: { alignItems: "center", gap: spacing.sm, paddingVertical: spacing.xl },
   emptyText: { ...typography.body, color: colors.textSecondary },
-  listContent: { padding: spacing.lg, gap: spacing.md },
+  listContent: { padding: spacing.md, gap: spacing.md },
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.xs },
   targetPill: { backgroundColor: colors.primary + "20", paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.full },
@@ -307,7 +313,7 @@ const styles = StyleSheet.create({
   cardFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: spacing.sm },
   author: { fontSize: 12, color: colors.textSecondary, fontStyle: "italic" },
 
-  composeCard: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.lg },
+  composeCard: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm },
   composeHeader: { ...typography.h3, color: colors.textPrimary },
   helper: { ...typography.caption, color: colors.textSecondary, marginTop: 4, marginBottom: spacing.sm },
   label: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.md, marginBottom: 4, fontWeight: "600" },
@@ -322,7 +328,7 @@ const styles = StyleSheet.create({
   },
   textArea: { minHeight: 90, textAlignVertical: "top" },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  chip: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.full, backgroundColor: colors.background },
+  chip: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.full, backgroundColor: colors.background },
   chipActive: { backgroundColor: colors.primary },
   chipText: { ...typography.body, color: colors.textSecondary, fontWeight: "600" },
   chipTextActive: { color: colors.surface },
@@ -335,5 +341,5 @@ const styles = StyleSheet.create({
   },
   postButtonDisabled: { opacity: 0.6 },
   postButtonText: { color: colors.surface, fontWeight: "700", fontSize: 16 },
-  historyHeading: { ...typography.h3, color: colors.textPrimary, marginTop: spacing.lg },
+  historyHeading: { ...typography.h3, color: colors.textPrimary, marginTop: spacing.md, marginBottom: spacing.xs },
 });

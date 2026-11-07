@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { View, Text, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
+import React, { useRef, useState } from "react";
+import { View, Text, KeyboardAvoidingView, ScrollView } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -17,6 +17,8 @@ export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
+  const scroll = useRef<ScrollView>(null);
+  const keepVisible = () => setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 280);
 
   const send = async () => {
     setError(null);
@@ -47,9 +49,9 @@ export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
 
   return (
     <GlassScreen>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <SafeAreaView edges={["top", "bottom"]} style={{ flex: 1 }}>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={authScroll} showsVerticalScrollIndicator={false}>
+          <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" alwaysBounceVertical overScrollMode="always" contentContainerStyle={authScroll} showsVerticalScrollIndicator={false}>
             <AuthSpacer min={36} />
 
             <Reveal delay={100} style={{ gap: 18 }}>
@@ -89,6 +91,7 @@ export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
                     value={id}
                     onChangeText={setId}
                     onSubmitEditing={send}
+                    onFocus={keepVisible}
                     suffix={id.includes("@") ? undefined : ALLOWED_EMAIL_DOMAIN}
                   />
                   <PrimaryButton label="Send reset link" onPress={send} loading={loading} />

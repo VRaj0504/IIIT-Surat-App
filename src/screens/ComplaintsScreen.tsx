@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, memo } from "react";
+import ComplaintPhotos from "../components/ComplaintPhotos";
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -43,6 +44,7 @@ const ComplaintRow = memo(function ComplaintRow({
       </Text>
       <Text style={styles.addressee}>{item.facultyName ? `To: ${item.facultyName}` : "To: Any faculty / admin"}</Text>
       <Text style={styles.reason}>{item.description}</Text>
+      <ComplaintPhotos paths={item.photoPaths} />
 
       {item.status === "pending" ? (
         <>

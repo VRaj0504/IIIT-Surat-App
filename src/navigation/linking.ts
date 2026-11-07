@@ -21,8 +21,6 @@ export const linking: LinkingOptions<any> | undefined =
       MessMenu: 'mess-menu',
       ThaliPass: 'thali-pass',
       ScanThaliPass: 'scan-thali-pass',
-      LostFound: 'lost-found',
-      PostLostFound: 'post-lost-found',
       Resources: 'resources',
       UploadResource: 'upload-resource',
       Faculty: 'faculty',
@@ -54,6 +52,7 @@ export const linking: LinkingOptions<any> | undefined =
       PostNotice: 'post-notice',
       EditProfile: 'edit-profile',
       NotificationSettings: 'notification-settings',
+      Notifications: 'notifications',
       HelpSupport: 'help-support',
       ImportantContacts: 'important-contacts',
       MyDownloads: 'my-downloads',
@@ -68,5 +67,5 @@ export const linking: LinkingOptions<any> | undefined =
 export function formatDocumentTitle(options: any, route: any): string {
   const raw = options?.title ?? route?.name ?? "Home";
   const pretty = String(raw).replace(/([a-z])([A-Z])/g, "$1 $2");
-  return `${pretty} · IIIT Surat`;
+  return `${pretty} · CollegeGo`;
 }

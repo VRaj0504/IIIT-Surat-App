@@ -234,7 +234,7 @@ export default function EditProfileScreen() {
                   value={[profile?.branch, profile?.section, semester ? `Sem ${semester}` : null].filter(Boolean).join(" · ") || "—"}
                 />
               </Section>
-              <Section title="Contact">{phoneField("Optional — used for Lost & Found contact.")}</Section>
+              <Section title="Contact">{phoneField("Optional — shown to faculty and the office if they need to reach you.")}</Section>
             </>
           )}
 
@@ -369,7 +369,7 @@ export default function EditProfileScreen() {
             </>
           )}
 
-          {!isStudent && !isFaculty && <Section title="Contact">{phoneField("Optional — used for Lost & Found contact.")}</Section>}
+          {!isStudent && !isFaculty && <Section title="Contact">{phoneField("Optional — shown to faculty and the office if they need to reach you.")}</Section>}
 
           {error && <Text style={styles.error}>{error}</Text>}
         </KeyboardAwareScrollView>

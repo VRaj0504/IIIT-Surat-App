@@ -8,7 +8,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing, typography, themePreference, saveThemePreference, type ThemePreference } from "../theme/theme";
-import { useAuth } from "../context/AuthContext";
+import { canPreviewRoles, useAuth } from "../context/AuthContext";
 import { getCurrentSemester } from "../utils/academicInfo";
 import TapCard from "../components/TapCard";
 import { usePlusAccess } from "../hooks/usePlus";
@@ -28,7 +28,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
   {
     title: "Account",
     rows: [
-      { label: "Notifications", sub: "What the app pings you about", icon: "notifications-outline", route: "NotificationSettings", tone: "lilac" },
+      { label: "Notification history", sub: "Everything sent to you, last 60 days", icon: "notifications-outline", route: "Notifications", tone: "lilac" },
+      { label: "Notification settings", sub: "What the app pings you about", icon: "options-outline", route: "NotificationSettings", tone: "blue" },
       { label: "My downloads", sub: "Files saved on this phone", icon: "download-outline", route: "MyDownloads", tone: "mint" },
     ],
   },
@@ -186,7 +187,7 @@ export default function ProfileScreen() {
             </View>
           ))}
 
-          {profile?.email === "ug25cse114@iiitsurat.ac.in" && (
+          {canPreviewRoles(profile) && (
             <View style={[styles.card, styles.row, { marginTop: 14 }]}>
               <View style={[styles.rowIcon, { backgroundColor: colors.surfaceAlt }]}>
                 <Ionicons name="flask-outline" size={18} color={colors.textSecondary} />
@@ -208,34 +209,15 @@ export default function ProfileScreen() {
                 <Ionicons name={darkOn ? "moon" : "sunny-outline"} size={18} color={colors.tile.blue.fg} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.rowLabel, themeChoice === "system" && { color: colors.textSecondary }]}>Dark theme</Text>
-                <Text style={styles.rowSub}>
-                  {themeChoice === "system" ? `Following your phone (${darkOn ? "dark" : "light"})` : darkOn ? "On" : "Off"}
-                </Text>
+                <Text style={styles.rowLabel}>Dark theme</Text>
+                <Text style={styles.rowSub}>{darkOn ? "On" : "Off"}</Text>
               </View>
               <Switch
                 value={darkOn}
-                disabled={themeChoice === "system"}
                 onValueChange={(v) => chooseTheme(v ? "dark" : "light")}
                 trackColor={{ false: colors.border, true: colors.primary }}
                 thumbColor="#fff"
                 accessibilityLabel="Dark theme"
-              />
-            </View>
-            <View style={[styles.row, styles.rowDivider]}>
-              <View style={[styles.rowIcon, { backgroundColor: colors.tile.lilac.bg }]}>
-                <Ionicons name="phone-portrait-outline" size={18} color={colors.tile.lilac.fg} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.rowLabel}>Match phone setting</Text>
-                <Text style={styles.rowSub}>Switch with your phone's light or dark mode</Text>
-              </View>
-              <Switch
-                value={themeChoice === "system"}
-                onValueChange={(v) => chooseTheme(v ? "system" : darkOn ? "dark" : "light")}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor="#fff"
-                accessibilityLabel="Match phone setting"
               />
             </View>
             {themeChoice !== themePreference && Platform.OS !== "web" ? (

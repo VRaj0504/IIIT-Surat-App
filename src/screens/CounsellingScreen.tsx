@@ -33,16 +33,18 @@ function callNumber(phone: string) {
 
 function HelplineRow({ resource }: { resource: CrisisResource }) {
   return (
-    <TouchableOpacity style={styles.helplineRow} onPress={() => callNumber(resource.phone)}>
-      <View style={styles.helplineIconWrap}>
-        <Ionicons name="call" size={18} color="#fff" />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.helplineName}>{resource.name}</Text>
-        <Text style={styles.helplineDesc}>{resource.description}</Text>
-      </View>
-      <Text style={styles.helplinePhone}>{resource.phone}</Text>
-    </TouchableOpacity>
+    <View style={styles.helplineRow}>
+      <Text style={styles.helplineName}>{resource.name}</Text>
+      {!!resource.description && <Text style={styles.helplineDesc}>{resource.description}</Text>}
+      <TouchableOpacity
+        style={styles.callBtn}
+        onPress={() => callNumber(resource.phone)}
+        accessibilityLabel={`Call ${resource.name} at ${resource.phone}`}
+      >
+        <Ionicons name="call" size={16} color="#fff" />
+        <Text style={styles.callBtnText}>Call {resource.phone}</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -113,7 +115,7 @@ export default function CounsellingScreen() {
 
           <Text style={styles.sectionTitle}>Other ways to get support</Text>
           <Text style={styles.sectionSubtitle}>
-            Independent platforms some students on campus already use — separate from IIIT Surat, open to anyone.
+            Independent platforms some students on campus already use — separate from your college, open to anyone.
           </Text>
           {EXTERNAL_SUPPORT.map((r) => (
             <TouchableOpacity
@@ -215,12 +217,9 @@ const styles = StyleSheet.create({
   crisisTitle: { ...typography.h3, color: colors.danger },
   crisisSubtitle: { ...typography.caption, color: colors.danger, marginTop: spacing.xs, marginBottom: spacing.md },
   helplineRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
     backgroundColor: colors.surface,
     borderRadius: radius.md,
-    padding: spacing.sm,
+    padding: spacing.md,
     marginBottom: spacing.sm,
   },
   helplineIconWrap: {
@@ -232,8 +231,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   helplineName: { ...typography.body, fontWeight: "700", color: colors.textPrimary },
-  helplineDesc: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  helplineDesc: { fontSize: 12, color: colors.textSecondary, marginTop: 2, lineHeight: 17 },
   helplinePhone: { ...typography.caption, fontWeight: "700", color: colors.danger },
+  callBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: colors.danger, borderRadius: 999, paddingVertical: 10, marginTop: 10 },
+  callBtnText: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
   linkRow: {
     flexDirection: "row",
     alignItems: "center",

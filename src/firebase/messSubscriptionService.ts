@@ -13,10 +13,29 @@ function currentMonthKey(now: Date = new Date()): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
+export function currentTermKey(now: Date = new Date()): string {
+  return now.getMonth() + 1 >= 7 ? `${now.getFullYear()}-odd` : `${now.getFullYear()}-even`;
+}
+
+export function termLabel(termKey: string): string {
+  const [y, half] = termKey.split("-");
+  return half === "odd" ? `Odd semester (Jul–Dec ${y})` : `Even semester (Jan–Jun ${y})`;
+}
+
+export function termEndLabel(termKey: string): string {
+  const [y, half] = termKey.split("-");
+  return half === "odd" ? `31 Dec ${y}` : `30 Jun ${y}`;
+}
+
 export function monthLabel(monthKey: string): string {
   const [year, month] = monthKey.split("-").map(Number);
   const date = new Date(year, month - 1, 1);
   return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
+function monthEndLabel(monthKey: string): string {
+  const [year, month] = monthKey.split("-").map(Number);
+  return new Date(year, month, 0).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function currentDateKey(now: Date = new Date()): string {
@@ -32,15 +51,22 @@ export function getCurrentMealSlot(now: Date = new Date()): MealSlot | null {
 export type SubscriptionCheck = {
   active: boolean;
   name?: string;
-  month?: string;
+  period?: string;
+  validTill?: string;
 };
 
 export async function checkMySubscription(enrollmentNumber: string): Promise<SubscriptionCheck> {
+  const term = currentTermKey();
   const month = currentMonthKey();
-  const snap = await getDoc(doc(db, "messSubscriptions", `${enrollmentNumber}_${month}`));
-  if (!snap.exists()) return { active: false };
-  const data = snap.data() as { active: boolean; name: string };
-  return { active: data.active, name: data.name, month };
+  const [termSnap, monthSnap] = await Promise.all([
+    getDoc(doc(db, "messSubscriptions", `${enrollmentNumber}_${term}`)),
+    getDoc(doc(db, "messSubscriptions", `${enrollmentNumber}_${month}`)),
+  ]);
+  const t = termSnap.exists() ? (termSnap.data() as { active: boolean; name: string }) : null;
+  if (t?.active) return { active: true, name: t.name, period: termLabel(term), validTill: termEndLabel(term) };
+  const m = monthSnap.exists() ? (monthSnap.data() as { active: boolean; name: string }) : null;
+  if (m?.active) return { active: true, name: m.name, period: monthLabel(month), validTill: monthEndLabel(month) };
+  return { active: false };
 }
 
 export type ScanResult =
@@ -59,13 +85,16 @@ export async function verifyAndLogMealScan(
 
   const month = currentMonthKey(now);
   const dateKey = currentDateKey(now);
+  const termRef = doc(db, "messSubscriptions", `${enrollmentNumber}_${currentTermKey(now)}`);
   const subscriptionRef = doc(db, "messSubscriptions", `${enrollmentNumber}_${month}`);
   const scanRef = doc(db, "messMealScans", `${enrollmentNumber}_${dateKey}_${mealSlot}`);
 
   return runTransaction(db, async (tx) => {
-    const [subscriptionSnap, scanSnap] = await Promise.all([tx.get(subscriptionRef), tx.get(scanRef)]);
+    const [termSnap, monthSnap, scanSnap] = await Promise.all([tx.get(termRef), tx.get(subscriptionRef), tx.get(scanRef)]);
+    const isActive = (s: typeof termSnap) => s.exists() && (s.data() as { active: boolean }).active;
+    const subscriptionSnap = isActive(termSnap) ? termSnap : monthSnap;
 
-    if (!subscriptionSnap.exists() || !(subscriptionSnap.data() as { active: boolean }).active) {
+    if (!isActive(subscriptionSnap)) {
       return { status: "not_subscribed" } as ScanResult;
     }
     if (scanSnap.exists()) {

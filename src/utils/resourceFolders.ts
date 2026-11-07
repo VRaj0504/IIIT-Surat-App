@@ -53,7 +53,19 @@ export type Location = {
 
 const norm = (s: string) => s.trim().toLowerCase();
 
-export function yearKeyOf(resource: Resource, mode: ViewMode): string | null {
+export const UNIT_NONE = 'U0';
+
+const unitOf = (r: Resource): number | null => (typeof r.unit === 'number' && r.unit > 0 ? r.unit : null);
+
+export function usesUnits(items: Resource[], type: ResourceType): boolean {
+  return type !== 'PYQ' && items.some((r) => r.type === type && unitOf(r) !== null);
+}
+
+export function yearKeyOf(resource: Resource, mode: ViewMode, units = false): string | null {
+  if (units) {
+    const u = unitOf(resource);
+    return u === null ? UNIT_NONE : `U${u}`;
+  }
   if (resource.type === 'PYQ') {
     return resource.examYear ? String(resource.examYear) : YEAR_UNSET;
   }
@@ -62,6 +74,8 @@ export function yearKeyOf(resource: Resource, mode: ViewMode): string | null {
 }
 
 export function yearLabel(key: string): string {
+  if (key === UNIT_NONE) return 'Other';
+  if (/^U\d+$/.test(key)) return `Unit ${key.slice(1)}`;
   return key === YEAR_UNSET ? YEAR_UNSET_LABEL : key;
 }
 
@@ -103,15 +117,21 @@ export function listTypeFolders(items: Resource[]): Folder[] {
 
 export function listYearFolders(items: Resource[], type: ResourceType, mode: ViewMode): Folder[] | null {
   const ofType = items.filter((r) => r.type === type);
+  const units = usesUnits(items, type);
   const counts = new Map<string, number>();
   for (const r of ofType) {
-    const key = yearKeyOf(r, mode);
+    const key = yearKeyOf(r, mode, units);
     if (key === null) return null;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   if (counts.size === 0) return null;
 
   const keys = Array.from(counts.keys()).sort((a, b) => {
+    if (units) {
+      if (a === UNIT_NONE) return 1;
+      if (b === UNIT_NONE) return -1;
+      return Number(a.slice(1)) - Number(b.slice(1));
+    }
     if (a === YEAR_UNSET) return 1;
     if (b === YEAR_UNSET) return -1;
     return b.localeCompare(a, undefined, { numeric: true });
@@ -125,8 +145,9 @@ function createdSeconds(r: Resource): number {
 }
 
 export function listFiles(items: Resource[], type: ResourceType, year: string | null, mode: ViewMode): Resource[] {
+  const units = usesUnits(items, type);
   let files = items.filter((r) => r.type === type);
-  if (year !== null) files = files.filter((r) => yearKeyOf(r, mode) === year);
+  if (year !== null) files = files.filter((r) => yearKeyOf(r, mode, units) === year);
 
   if (type === 'Notes' || type === 'Slides') {
     return [...files].sort((a, b) => createdSeconds(b) - createdSeconds(a));

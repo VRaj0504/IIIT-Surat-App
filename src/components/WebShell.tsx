@@ -5,6 +5,7 @@ import { colors, spacing, radius } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { useWebLayout } from "../utils/useWebLayout";
 import { useWebBadges, markNoticesSeen } from "../utils/webBadges";
+import { useInboxUnread } from "../hooks/useInboxUnread";
 import { useFacultyWaiting } from "../hooks/useFacultyWaiting";
 import { subscribeToNotices, Notice } from "../firebase/noticesService";
 
@@ -38,10 +39,10 @@ const STUDENT_NAV: Group[] = [
     title: "CAMPUS",
     items: [
       { label: "Notices", icon: "notifications-outline", tab: "Notices", keywords: "news updates" },
+      { label: "Notification history", icon: "file-tray-full-outline", route: "Notifications", keywords: "bell alerts push inbox" },
       { label: "Clubs & events", icon: "people-outline", tab: "Clubs", keywords: "club event fest" },
       { label: "Announcements", icon: "megaphone-outline", route: "Announcements", keywords: "class updates" },
       { label: "Meetings", icon: "people-circle-outline", route: "Meetings", keywords: "director meeting called" },
-      { label: "Lost & found", icon: "search-outline", route: "LostFound", keywords: "lost found item" },
       { label: "Faculty directory", icon: "id-card-outline", route: "Faculty", keywords: "teacher cabin phone email" },
       { label: "Placements", icon: "briefcase-outline", route: "Placement", keywords: "tnp jobs internship" },
     ],
@@ -81,6 +82,7 @@ const FACULTY_NAV: Group[] = [
     title: "CAMPUS",
     items: [
       { label: "Notices", icon: "notifications-outline", tab: "Notices", keywords: "news" },
+      { label: "Notification history", icon: "file-tray-full-outline", route: "Notifications", keywords: "bell alerts push inbox" },
       { label: "Announcements", icon: "megaphone-outline", route: "Announcements", keywords: "notify class" },
       { label: "Meetings", icon: "people-circle-outline", route: "Meetings", keywords: "director meeting called" },
       { label: "Clubs & events", icon: "people-outline", tab: "Clubs", keywords: "club" },
@@ -123,7 +125,9 @@ export default function WebShell({ navigationRef, currentRoute, children }: Prop
     if (currentRoute === "Notices") markNoticesSeen();
   }, [currentRoute, notices.length]);
   const unreadNotices = notices.filter((n) => (n.createdAt?.toMillis?.() ?? 0) > badges.noticesSeenAt).length;
+  const inboxUnread = useInboxUnread();
   const badgeFor = (i: Item): { n: number; tone: "red" | "orange" | "blue" } | null => {
+    if (i.route === "Notifications" && inboxUnread) return { n: inboxUnread, tone: "blue" };
     if (i.tab === "Notices" && unreadNotices) return { n: unreadNotices, tone: "orange" };
     if (i.route === "MyAttendance" && badges.lowAttendance) return { n: badges.lowAttendance, tone: "red" };
     if (i.route === "LeaveRequests" && waiting?.total) return { n: waiting.total, tone: "blue" };
@@ -182,7 +186,7 @@ export default function WebShell({ navigationRef, currentRoute, children }: Prop
           <View style={styles.brandTop}>
             <Image source={require("../../assets/icon.png")} style={styles.logo} />
             <Text style={styles.brandPanelName}>CollegeGo</Text>
-            <Text style={styles.brandPanelTag}>IIIT Surat</Text>
+            <Text style={styles.brandPanelTag}>Campus app</Text>
           </View>
           <View style={{ gap: 28, maxWidth: 520 }}>
             <Text style={styles.brandHeadline}>Your whole college day, on one screen.</Text>
@@ -215,7 +219,7 @@ export default function WebShell({ navigationRef, currentRoute, children }: Prop
               </View>
             </View>
           </View>
-          <Text style={styles.brandFoot}>For students and faculty of IIIT Surat</Text>
+          <Text style={styles.brandFoot}>For students and faculty</Text>
         </View>
         <View style={styles.signedOutBody}>
           <View style={styles.signedOutColumn}>{children}</View>
@@ -239,7 +243,7 @@ export default function WebShell({ navigationRef, currentRoute, children }: Prop
           <Image source={require("../../assets/icon.png")} style={styles.logo} />
           <View>
             <Image source={require("../../assets/wordmark.png")} style={styles.wordmark} resizeMode="contain" accessibilityLabel="CollegeGo" />
-            <Text style={styles.brandSub}>IIIT Surat</Text>
+            <Text style={styles.brandSub}>Campus app</Text>
           </View>
         </Pressable>
 

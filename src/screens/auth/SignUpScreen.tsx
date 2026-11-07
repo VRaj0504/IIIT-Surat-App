@@ -103,7 +103,7 @@ export default function SignUpScreen({ onNavigateToLogin }: Props) {
             <AuthSpacer min={36} />
 
             <Reveal delay={80} style={{ gap: 18 }}>
-              <Heading icon="person-add-outline" title="Create account" subtitle="For IIIT Surat students and faculty. Takes under a minute." />
+              <Heading icon="person-add-outline" title="Create account" subtitle="For students and faculty. Takes under a minute." />
               <HintRow text="Got an account?" link="Log in here" onPress={onNavigateToLogin} />
             </Reveal>
 

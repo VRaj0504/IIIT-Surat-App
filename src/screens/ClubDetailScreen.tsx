@@ -16,6 +16,8 @@ import {
   Club,
   ClubEvent,
   formatClubLeads,
+  isFollowingClub,
+  setFollowClub,
 } from "../firebase/clubsService";
 import { getClubIcon } from "../data/clubIcons";
 import {
@@ -48,6 +50,21 @@ function ClubDetailScreenInner() {
   const route = useRoute<DetailRoute>();
   const { clubId, clubName } = route.params;
   const { user, profile } = useAuth();
+  const [following, setFollowing] = useState(() => isFollowingClub(profile?.followedClubs, clubId));
+  const [followBusy, setFollowBusy] = useState(false);
+  const toggleFollow = async () => {
+    if (!user) return;
+    const next = !following;
+    setFollowBusy(true);
+    try {
+      await setFollowClub(user.uid, clubId, next);
+      setFollowing(next);
+    } catch {
+      Alert.alert("Couldn't update", "Check your internet and try again.");
+    } finally {
+      setFollowBusy(false);
+    }
+  };
 
   const [club, setClub] = useState<Club | null>(null);
   const [subClubs, setSubClubs] = useState<Club[]>([]);
@@ -195,6 +212,28 @@ function ClubDetailScreenInner() {
               {club.description ? <Text style={styles.description}>{club.description}</Text> : null}
             </>
           ) : null}
+          {!canPost && (
+            <TouchableOpacity
+              style={[styles.followBtn, following && styles.followBtnOn]}
+              onPress={toggleFollow}
+              disabled={followBusy}
+              accessibilityLabel={following ? "Unfollow club" : "Follow club"}
+            >
+              {followBusy ? (
+                <ActivityIndicator size="small" color={following ? colors.primary : colors.onPrimary} />
+              ) : (
+                <>
+                  <Ionicons name={following ? "notifications" : "notifications-outline"} size={16} color={following ? colors.primary : colors.onPrimary} />
+                  <Text style={[styles.followText, following && { color: colors.primary }]}>{following ? "Following" : "Follow"}</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+          {!canPost && (
+            <Text style={styles.followHint}>
+              {following ? "You'll get a reminder an hour before each event." : "Follow to get a reminder an hour before each event."}
+            </Text>
+          )}
           {canPost && (
             <View style={styles.postRow}>
               <PrimaryButton
@@ -266,7 +305,11 @@ function ClubDetailScreenInner() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.itemTitle}>{item.title}</Text>
-                      <Text style={styles.itemMeta}>{formatEventDate(item.dateTime)}</Text>
+                      <Text style={styles.itemMeta}>
+                        {formatEventDate(item.dateTime)}
+                        {item.venue ? ` · ${item.venue}` : ""}
+                      </Text>
+                      {item.category ? <Text style={styles.itemCat}>{item.category}</Text> : null}
                     </View>
                   </View>
                   {item.description ? <Text style={styles.itemBody}>{item.description}</Text> : null}
@@ -389,6 +432,11 @@ function ClubDetailScreenInner() {
 }
 
 const styles = StyleSheet.create({
+  followBtn: { marginTop: spacing.md, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 6, minHeight: 40, paddingHorizontal: 20, borderRadius: radius.full, backgroundColor: colors.primary },
+  followBtnOn: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.primary },
+  followText: { color: colors.onPrimary, fontWeight: "800", fontSize: 14 },
+  followHint: { marginTop: 6, textAlign: "center", fontSize: 12, color: colors.textSecondary },
+  itemCat: { alignSelf: "flex-start", marginTop: 4, fontSize: 11, fontWeight: "700", color: colors.textSecondary, backgroundColor: colors.surfaceAlt, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, overflow: "hidden" },
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.md, paddingBottom: spacing.xl * 2 },
   hero: {

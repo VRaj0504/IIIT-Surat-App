@@ -6,7 +6,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { getCurrentSemester } from "../utils/academicInfo";
-import { subscribeToExamSchedules, ExamSchedule, ExamEntry } from "../firebase/examScheduleService";
+import { subscribeToExamSchedules, ExamSchedule, ExamEntry, entriesFor, isRestricted } from "../firebase/examScheduleService";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { openSafeUrl } from "../utils/safeLink";
 import { subscribeToMyQuizzes, roomFor, Quiz } from "../firebase/quizService";
@@ -32,6 +32,66 @@ function formatTime(hhmm: string): string {
   return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
 }
 
+const TYPE_NAMES: Record<string, string> = {
+  quiz: "Quiz",
+  midsem: "Mid Sem",
+  "midsem-repeaters": "Make-up · Mid Sem",
+  endsem: "End Sem",
+  "endsem-repeaters": "Repeaters · End Sem",
+  supplementary: "Supplementary",
+};
+
+type SheetInfo = {
+  sheet: ExamSchedule;
+  name: string;
+  sorted: ExamEntry[];
+  first: string | null;
+  last: string | null;
+  next: ExamEntry | null;
+  left: number;
+  live: boolean;
+};
+
+function shortDate(iso: string): string {
+  const d = parseLocalDate(iso);
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+
+function rangeLabel(first: string | null, last: string | null): string {
+  if (!first || !last) return "File only";
+  if (first === last) return shortDate(first);
+  const a = parseLocalDate(first);
+  const b = parseLocalDate(last);
+  if (a.getMonth() === b.getMonth()) return `${a.getDate()}–${b.getDate()} ${MONTHS[b.getMonth()]}`;
+  return `${shortDate(first)} – ${shortDate(last)}`;
+}
+
+function describe(s: ExamSchedule, now: Date, regNo?: string | null): SheetInfo {
+  const sorted = [...entriesFor(s, regNo)].sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
+  const upcoming = sorted.filter((e) => daysUntil(e.date, now) >= 0);
+  const updated = s.updatedAt?.toMillis?.() ?? 0;
+  const live = sorted.length ? upcoming.length > 0 : now.getTime() - updated < 30 * 86400000;
+  return {
+    sheet: s,
+    name: TYPE_NAMES[s.examType] ?? s.examTypeLabel,
+    sorted,
+    first: sorted[0]?.date ?? null,
+    last: sorted[sorted.length - 1]?.date ?? null,
+    next: upcoming[0] ?? null,
+    left: upcoming.length,
+    live,
+  };
+}
+
+function statusLabel(info: SheetInfo, now: Date): string {
+  if (!info.sorted.length) return "Open the file";
+  if (!info.next) return `${info.sorted.length} exams · over`;
+  const d = daysUntil(info.next.date, now);
+  const started = info.first ? daysUntil(info.first, now) < 0 : false;
+  if (started) return `Ongoing · ${info.left} left`;
+  return `${info.sorted.length} exams · ${d === 0 ? "starts today" : d === 1 ? "starts tomorrow" : `starts in ${d} days`}`;
+}
+
 function countdownLabel(days: number): string {
   if (days < 0) return "Done";
   if (days === 0) return "Today";
@@ -42,16 +102,19 @@ function countdownLabel(days: number): string {
 export default function ExamScheduleScreen() {
   const { profile } = useAuth();
   const [allSchedules, setSchedules] = useState<ExamSchedule[]>([]);
-  const schedules = useMemo(() => {
+  const { live, past } = useMemo(() => {
     const now = new Date();
-    return allSchedules.filter((s) => {
-      if (s.entries.length > 0) return s.entries.some((e) => daysUntil(e.date, now) >= -1);
-      const updated = s.updatedAt?.toMillis?.() ?? 0;
-      return now.getTime() - updated < 60 * 86400000;
-    });
-  }, [allSchedules]);
+    const all = allSchedules.map((s) => describe(s, now, profile?.enrollmentNumber));
+    const key = (i: SheetInfo) => i.next?.date ?? "9999";
+    return {
+      live: all.filter((i) => i.live).sort((a, b) => key(a).localeCompare(key(b))),
+      past: all.filter((i) => !i.live).sort((a, b) => (b.last ?? "").localeCompare(a.last ?? "")),
+    };
+  }, [allSchedules, profile?.enrollmentNumber]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showPast, setShowPast] = useState(false);
+  const [showDone, setShowDone] = useState(false);
 
   const semester = profile?.admissionYear ? getCurrentSemester(profile.admissionYear, undefined, profile.program) : null;
 
@@ -60,12 +123,12 @@ export default function ExamScheduleScreen() {
       setLoading(false);
       return;
     }
-    const unsubscribe = subscribeToExamSchedules(profile.branch, semester, (items) => {
+    const unsubscribe = subscribeToExamSchedules(profile.branch, semester, profile.enrollmentNumber, (items) => {
       setSchedules(items);
       setLoading(false);
     });
     return () => unsubscribe();
-  }, [profile?.branch, semester]);
+  }, [profile?.branch, semester, profile?.enrollmentNumber]);
 
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [openQuiz, setOpenQuiz] = useState<string | null>(null);
@@ -79,17 +142,39 @@ export default function ExamScheduleScreen() {
 
   const now = new Date();
 
-  const activeSchedule = useMemo(() => {
-    const picked = schedules.find((s) => s.id === selectedId);
-    if (picked) return picked;
-    const upcoming = schedules.find((s) => s.entries.some((e) => daysUntil(e.date, new Date()) >= 0));
-    return upcoming ?? schedules[0] ?? null;
-  }, [schedules, selectedId]);
+  const active: SheetInfo | null = useMemo(() => {
+    const picked = [...live, ...past].find((i) => i.sheet.id === selectedId);
+    return picked ?? live[0] ?? null;
+  }, [live, past, selectedId]);
+  const activeSchedule = active?.sheet ?? null;
+  const nextExam = active?.next ?? null;
+  const viewingPast = !!active && !active.live;
+  const doneEntries = active ? active.sorted.filter((e) => daysUntil(e.date, now) < 0) : [];
+  const shownEntries = active ? (viewingPast || showDone ? active.sorted : active.sorted.filter((e) => daysUntil(e.date, now) >= 0)) : [];
 
-  const nextExam: ExamEntry | null = useMemo(() => {
-    if (!activeSchedule) return null;
-    return activeSchedule.entries.find((e) => daysUntil(e.date, new Date()) >= 0) ?? null;
-  }, [activeSchedule]);
+  const pick = (id: string) => {
+    setSelectedId(id);
+    setShowDone(false);
+  };
+
+  const pastList = past.length > 0 && (
+    <View style={styles.pastBlock}>
+      <TouchableOpacity style={styles.pastToggle} onPress={() => setShowPast((v) => !v)}>
+        <Ionicons name={showPast ? "chevron-up" : "chevron-down"} size={16} color={colors.textSecondary} />
+        <Text style={styles.pastToggleText}>Past date sheets ({past.length})</Text>
+      </TouchableOpacity>
+      {showPast &&
+        past.map((i) => {
+          const selected = active?.sheet.id === i.sheet.id;
+          return (
+            <TouchableOpacity key={i.sheet.id} style={[styles.pastRow, selected && styles.pastRowSelected]} onPress={() => pick(i.sheet.id)}>
+              <Text style={styles.pastName}>{i.name}</Text>
+              <Text style={styles.pastMeta}>{rangeLabel(i.first, i.last)}</Text>
+            </TouchableOpacity>
+          );
+        })}
+    </View>
+  );
 
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
@@ -170,29 +255,53 @@ export default function ExamScheduleScreen() {
               <Ionicons name="alert-circle-outline" size={40} color={colors.textSecondary} />
               <Text style={styles.emptyText}>Your branch or admission year isn't set on your profile yet.</Text>
             </View>
-          ) : !activeSchedule ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="reader-outline" size={40} color={colors.textSecondary} />
-              <Text style={styles.emptyText}>No upcoming exam date sheet for your semester.</Text>
-              <Text style={styles.emptyHint}>You'll get a notification when faculty publishes one.</Text>
-            </View>
+          ) : !activeSchedule || !active ? (
+            <>
+              <View style={styles.emptyContainer}>
+                <Ionicons name="checkmark-done-outline" size={40} color={colors.textSecondary} />
+                <Text style={styles.emptyText}>No upcoming exams for your semester.</Text>
+                <Text style={styles.emptyHint}>You'll get a notification when faculty publishes the next date sheet.</Text>
+              </View>
+              {pastList}
+            </>
           ) : (
             <>
-              {schedules.length > 1 && (
-                <View style={styles.chips}>
-                  {schedules.map((s) => {
-                    const selected = s.id === activeSchedule.id;
+              {live.length > 0 && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+                  {live.map((i) => {
+                    const selected = i.sheet.id === activeSchedule.id;
                     return (
                       <TouchableOpacity
-                        key={s.id}
+                        key={i.sheet.id}
                         style={[styles.chip, selected && styles.chipSelected]}
-                        onPress={() => setSelectedId(s.id)}
+                        onPress={() => pick(i.sheet.id)}
+                        activeOpacity={0.85}
                       >
-                        <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{s.examTypeLabel}</Text>
+                        <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{i.name}</Text>
+                        <Text style={[styles.chipRange, selected && styles.chipTextSelected]}>{rangeLabel(i.first, i.last)}</Text>
+                        <Text style={[styles.chipMeta, selected && styles.chipMetaSelected]}>{statusLabel(i, now)}</Text>
                       </TouchableOpacity>
                     );
                   })}
+                </ScrollView>
+              )}
+
+              {viewingPast && (
+                <View style={styles.pastBanner}>
+                  <Text style={styles.pastBannerText}>{active.name} · {rangeLabel(active.first, active.last)} — finished</Text>
+                  {live.length > 0 && (
+                    <TouchableOpacity onPress={() => pick(live[0].sheet.id)}>
+                      <Text style={styles.pastBannerLink}>Back to upcoming</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
+              )}
+
+              {isRestricted(activeSchedule) && (
+                <Text style={styles.onlyYours}>
+                  Showing only the {active.sorted.length === 1 ? "exam" : `${active.sorted.length} exams`} you're listed for
+                  {activeSchedule.semester !== semester ? ` (Semester ${activeSchedule.semester} subjects)` : ""}.
+                </Text>
               )}
 
               {activeSchedule.sourcePdfUrl ? (
@@ -217,7 +326,7 @@ export default function ExamScheduleScreen() {
                     ? "Faculty shared the date sheet as a file. Tap above to open or download it."
                     : "No exams listed on this sheet yet."}
                 </Text>
-              ) : nextExam ? (
+              ) : viewingPast ? null : nextExam ? (
                 <View style={styles.nextCard}>
                   <Text style={styles.nextLabel}>NEXT EXAM · {countdownLabel(daysUntil(nextExam.date, now)).toUpperCase()}</Text>
                   <Text style={styles.nextTitle}>{nextExam.subjectName || nextExam.subjectCode}</Text>
@@ -234,7 +343,7 @@ export default function ExamScheduleScreen() {
                 </View>
               )}
 
-              {activeSchedule.entries.map((e, i) => {
+              {shownEntries.map((e, i) => {
                 const date = parseLocalDate(e.date);
                 const days = daysUntil(e.date, now);
                 const past = days < 0;
@@ -260,7 +369,15 @@ export default function ExamScheduleScreen() {
                   </View>
                 );
               })}
-              {activeSchedule.guidelines?.length ? (
+              {!viewingPast && doneEntries.length > 0 && (
+                <TouchableOpacity style={styles.pastToggle} onPress={() => setShowDone((v) => !v)}>
+                  <Ionicons name={showDone ? "chevron-up" : "chevron-down"} size={16} color={colors.textSecondary} />
+                  <Text style={styles.pastToggleText}>
+                    {showDone ? "Hide finished exams" : `Show ${doneEntries.length} finished exam${doneEntries.length === 1 ? "" : "s"}`}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              {activeSchedule.guidelines?.length && !viewingPast ? (
                 <View style={styles.guideCard}>
                   <Text style={styles.guideTitle}>Exam guidelines</Text>
                   {activeSchedule.guidelines.map((g, i) => (
@@ -268,6 +385,7 @@ export default function ExamScheduleScreen() {
                   ))}
                 </View>
               ) : null}
+              {pastList}
             </>
           )}
         </ScrollView>
@@ -289,24 +407,62 @@ const styles = StyleSheet.create({
   },
   guideTitle: { ...typography.body, color: colors.textPrimary, fontWeight: "700" },
   guideLine: { ...typography.caption, color: colors.textSecondary },
-  content: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
+  content: { padding: spacing.md, paddingBottom: spacing.xl * 2 },
   header: { ...typography.h2, color: colors.textPrimary },
   subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2, marginBottom: spacing.md },
   emptyContainer: { alignItems: "center", gap: spacing.sm, marginTop: spacing.xl },
   emptyText: { ...typography.body, color: colors.textSecondary, textAlign: "center" },
   emptyHint: { ...typography.caption, color: colors.textSecondary, textAlign: "center" },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, paddingBottom: spacing.md },
+  chips: { flexDirection: "row", gap: spacing.sm, paddingBottom: spacing.md },
   chip: {
+    minWidth: 150,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderRadius: radius.full,
+    borderRadius: radius.lg,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
+    gap: 2,
   },
   chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chipText: { ...typography.caption, color: colors.textPrimary, fontWeight: "600" },
+  chipText: { ...typography.caption, color: colors.textPrimary, fontWeight: "700" },
+  chipRange: { fontSize: 15, fontWeight: "800", color: colors.textPrimary },
+  chipMeta: { fontSize: 11, color: colors.textSecondary },
+  chipMetaSelected: { color: colors.onPrimary, opacity: 0.85 },
   chipTextSelected: { color: colors.onPrimary },
+  pastBlock: { marginTop: spacing.lg },
+  onlyYours: { fontSize: 12, color: colors.textSecondary, marginBottom: spacing.sm },
+  pastToggle: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: spacing.sm, alignSelf: "flex-start" },
+  pastToggleText: { fontSize: 13, fontWeight: "700", color: colors.textSecondary },
+  pastRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: spacing.xs,
+  },
+  pastRowSelected: { borderColor: colors.primary },
+  pastName: { fontSize: 13, fontWeight: "600", color: colors.textPrimary },
+  pastMeta: { fontSize: 12, color: colors.textSecondary },
+  pastBanner: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.md,
+  },
+  pastBannerText: { flex: 1, fontSize: 13, color: colors.textSecondary },
+  pastBannerLink: { fontSize: 13, fontWeight: "700", color: colors.primary },
   pdfButton: {
     flexDirection: "row",
     alignItems: "center",

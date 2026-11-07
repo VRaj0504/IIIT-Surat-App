@@ -42,6 +42,8 @@ export default function MyAttendanceScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [planning, setPlanning] = useState(false);
   const [plan, setPlan] = useState<Record<string, number>>({});
+  const [openCode, setOpenCode] = useState<string | null>(null);
+  const [rulesOpen, setRulesOpen] = useState(false);
 
   const ready = !!(profile?.enrollmentNumber && profile.branch && profile.admissionYear && semester);
 
@@ -197,7 +199,13 @@ export default function MyAttendanceScreen() {
         const need = p >= ATTENDANCE_TARGET ? 0 : Math.ceil((T * h - r.presentCount) / (1 - T) - 1e-9);
         const t = tone(p);
         return (
-          <Animated.View key={r.subjectCode} entering={FadeInDown.delay(60 + i * 40).duration(350)} style={styles.card}>
+          <Animated.View key={r.subjectCode} entering={FadeInDown.delay(60 + i * 40).duration(350)}>
+          <Pressable
+            style={styles.card}
+            onPress={() => !planning && setOpenCode((c) => (c === r.subjectCode ? null : r.subjectCode))}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: openCode === r.subjectCode }}
+          >
             <View style={styles.cardTop}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.code}>{r.subjectCode}</Text>
@@ -227,6 +235,41 @@ export default function MyAttendanceScreen() {
                   : `Attend next ${need} → ${ATTENDANCE_TARGET}%`}
               </Text>
             </View>
+            {!planning && openCode === r.subjectCode && (
+              <View style={styles.history}>
+                {(r.history ?? []).length === 0 ? (
+                  <Text style={styles.historyEmpty}>Pull down to refresh and see each class.</Text>
+                ) : (
+                  (r.history ?? []).map((d, k) => (
+                    <View key={`${d.date}-${d.lecture}-${k}`} style={styles.historyRow}>
+                      <Text style={styles.historyDate}>
+                        {prettyDate(d.date)}
+                        {d.lecture > 1 ? ` · class ${d.lecture}` : ""}
+                        {d.hours > 1 ? ` · ${d.hours} hr` : ""}
+                      </Text>
+                      <View
+                        style={[
+                          styles.statusPill,
+                          {
+                            backgroundColor:
+                              d.status === "present" ? colors.successBg : d.status === "excused" ? colors.warningBg : colors.dangerBg,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusText,
+                            { color: d.status === "present" ? colors.success : d.status === "excused" ? colors.warning : colors.danger },
+                          ]}
+                        >
+                          {d.status === "present" ? "Present" : d.status === "excused" ? "Excused" : "Absent"}
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            )}
             {planning && (
               <View style={styles.planRow}>
                 <Text style={styles.planLabel}>Skip next</Text>
@@ -250,6 +293,13 @@ export default function MyAttendanceScreen() {
                 </Pressable>
               </View>
             )}
+            {!planning && (
+              <View style={styles.expandHint}>
+                <Text style={styles.expandHintText}>{openCode === r.subjectCode ? "Hide classes" : "See each class"}</Text>
+                <Ionicons name={openCode === r.subjectCode ? "chevron-up" : "chevron-down"} size={14} color={colors.primary} />
+              </View>
+            )}
+          </Pressable>
           </Animated.View>
         );
       })}
@@ -260,10 +310,18 @@ export default function MyAttendanceScreen() {
         </Text>
       )}
 
-      <Text style={styles.footnote}>
-        A 2-hour lab or workshop counts as 2 classes, and only your own lab batch counts for you. On-duty, approved event excusals and medical leave your teacher confirmed count as attended. Something looks wrong?
-        Ask the subject teacher — they can correct it on the faculty portal.
-      </Text>
+      <Pressable onPress={() => setRulesOpen((v) => !v)} style={styles.rulesBtn} accessibilityRole="button">
+        <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
+        <Text style={styles.rulesBtnText}>How attendance is counted</Text>
+        <Ionicons name={rulesOpen ? "chevron-up" : "chevron-down"} size={14} color={colors.textSecondary} />
+      </Pressable>
+      {rulesOpen && (
+        <Text style={styles.footnote}>
+          A 2-hour lab or workshop counts as 2 classes, and only your own lab batch counts for you. On-duty, approved event excusals and
+          medical leave your teacher confirmed count as attended. Something looks wrong? Ask the subject teacher. They can correct it on
+          the faculty portal.
+        </Text>
+      )}
     </ScrollView>
   );
 }
@@ -290,6 +348,16 @@ const styles = StyleSheet.create({
   meta: { fontSize: 12, fontWeight: "600", color: colors.textSecondary, flexShrink: 1 },
   advice: { fontSize: 12, fontWeight: "800", textAlign: "right" },
   pending: { fontSize: 12, fontWeight: "600", color: colors.textSecondary, marginTop: 4, paddingHorizontal: 4 },
+  history: { marginTop: 12, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border },
+  historyRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 6 },
+  historyDate: { fontSize: 13, fontWeight: "600", color: colors.textPrimary },
+  historyEmpty: { fontSize: 12, color: colors.textSecondary },
+  statusPill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  statusText: { fontSize: 11.5, fontWeight: "800" },
+  expandHint: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, marginTop: 10 },
+  expandHintText: { fontSize: 12, fontWeight: "700", color: colors.primary },
+  rulesBtn: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, paddingHorizontal: 4, paddingVertical: 6 },
+  rulesBtnText: { flex: 1, fontSize: 12.5, fontWeight: "700", color: colors.textSecondary },
   footnote: { fontSize: 12, color: colors.textSecondary, lineHeight: 18, marginTop: 8, paddingHorizontal: 4 },
   planBtn: {
     position: "absolute",

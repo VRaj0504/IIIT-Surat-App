@@ -34,7 +34,21 @@ function formatBytes(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-type SavedFile = { uri: string; name: string; size: number | null };
+type SavedFile = { uri: string; name: string; size: number | null; modified: number | null };
+
+function fileIcon(name: string): keyof typeof Ionicons.glyphMap {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "pdf") return "document-text-outline";
+  if (["ppt", "pptx"].includes(ext)) return "easel-outline";
+  if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) return "image-outline";
+  if (["doc", "docx"].includes(ext)) return "document-outline";
+  return "document-attach-outline";
+}
+
+function fmtDate(ms: number | null): string {
+  if (!ms) return "";
+  return new Date(ms).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
 
 export default function MyDownloadsScreen() {
   const navigation = useNavigation<NavProp>();
@@ -99,11 +113,18 @@ export default function MyDownloadsScreen() {
           } catch {
             size = null;
           }
-          snapshots.push({ uri: e.uri, name: e.name, size });
+          let modified: number | null = null;
+          try {
+            modified = (e as unknown as { modificationTime?: number | null }).modificationTime ?? null;
+          } catch {
+            modified = null;
+          }
+          snapshots.push({ uri: e.uri, name: e.name, size, modified });
         } catch {
 
         }
       }
+      snapshots.sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0) || a.name.localeCompare(b.name));
       setFiles(snapshots);
     } catch {
       setFiles([]);
@@ -133,10 +154,38 @@ export default function MyDownloadsScreen() {
     [refresh],
   );
 
+  const clearAll = useCallback(() => {
+    if (!files.length) return;
+    Alert.alert("Delete all downloads?", `${files.length} file${files.length === 1 ? "" : "s"} will be removed from this phone. You can download them again from Resources.`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete all",
+        style: "destructive",
+        onPress: () => {
+          for (const f of files) {
+            try {
+              new File(f.uri).delete();
+            } catch {
+              // skip files that are already gone
+            }
+          }
+          refresh();
+        },
+      },
+    ]);
+  }, [files, refresh]);
+
+  const totalBytes = files.reduce((s, f) => s + (f.size ?? 0), 0);
+
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <ScreenHeader title="My Downloads" subtitle="Saved for offline viewing" />
+        <ScreenHeader
+          title="My Downloads"
+          subtitle={files.length ? `${files.length} file${files.length === 1 ? "" : "s"} · ${formatBytes(totalBytes)} on this phone` : "Saved for offline viewing"}
+          actionIcon={files.length ? "trash-outline" : undefined}
+          onAction={files.length ? clearAll : undefined}
+        />
         <FlatList
           data={files}
           keyExtractor={(f) => f.uri}
@@ -155,13 +204,16 @@ export default function MyDownloadsScreen() {
               {opening === item.uri ? (
                 <ActivityIndicator size="small" color={colors.primary} />
               ) : (
-                <Ionicons name="document-outline" size={20} color={colors.primary} />
+                <Ionicons name={fileIcon(item.name)} size={20} color={colors.primary} />
               )}
               <View style={styles.rowInfo}>
                 <Text style={styles.rowName}>{item.name.replace(/_/g, " ")}</Text>
-                <Text style={styles.rowMeta}>{formatBytes(item.size)}</Text>
+                <Text style={styles.rowMeta}>
+                  {formatBytes(item.size)}
+                  {item.modified ? ` · ${fmtDate(item.modified)}` : ""}
+                </Text>
               </View>
-              <TouchableOpacity onPress={() => handleDelete(item)} hitSlop={8}>
+              <TouchableOpacity onPress={() => handleDelete(item)} hitSlop={8} accessibilityLabel={`Delete ${item.name}`}>
                 <Ionicons name="trash-outline" size={18} color={colors.danger} />
               </TouchableOpacity>
             </TouchableOpacity>

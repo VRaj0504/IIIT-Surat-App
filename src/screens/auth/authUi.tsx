@@ -86,7 +86,7 @@ export function WrongAccountSheet({
         </View>
         <Text style={styles.sheetTitle}>That's a personal account</Text>
         <Text style={styles.sheetBody}>
-          Only IIIT Surat accounts can use the app. Sign in with the Google account that ends in{" "}
+          Only college accounts can use the app. Sign in with the Google account that ends in{" "}
           <Text style={{ fontWeight: "800", color: colors.textPrimary }}>{ALLOWED_EMAIL_DOMAIN}</Text>.
         </Text>
         <View style={styles.rejectedRow}>

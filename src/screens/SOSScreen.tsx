@@ -157,7 +157,7 @@ export default function SOSScreen() {
   const textContacts = (alert: { location: SosLocation | null } | null, list = contacts) => {
     if (list.length === 0) return;
     const where = alert?.location ? ` My location: ${mapsUrl(alert.location)}` : "";
-    const body = `SOS from ${profile?.name ?? "me"} (IIIT Surat). I need help.${where}`;
+    const body = `SOS from ${profile?.name ?? "me"} (CollegeGo). I need help.${where}`;
     Linking.openURL(smsUrl(list.map((c) => c.phone), body)).catch(() => Alert.alert("Couldn't open messages"));
   };
 

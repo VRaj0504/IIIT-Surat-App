@@ -32,7 +32,7 @@ export default function MeetingsScreen() {
           <Text style={styles.section}>Coming up</Text>
           {upcoming.length ? upcoming.map(card) : <Text style={styles.none}>Nothing coming up.</Text>}
           {past.length > 0 && (
-            <View style={{ opacity: 0.7 }}>
+            <View>
               <Text style={styles.section}>Past two weeks</Text>
               {past.map(card)}
             </View>

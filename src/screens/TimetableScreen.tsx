@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Pressable, Alert, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useNavigation } from "@react-navigation/native";
@@ -16,6 +16,20 @@ import {
 import { expandFaculty } from "../data/facultyLegend";
 import { mergeContiguousSlots, toMinutes } from "../utils/timetable";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { SheetPicker } from "../components/ui";
+import { getDayStatus } from "../utils/dayStatus";
+import { subscribeToHolidayOverrides } from "../firebase/holidayOverridesService";
+import { subscribeToExamSchedules, ExamSchedule } from "../firebase/examScheduleService";
+import { subscribeToAllTimetables } from "../firebase/timetableService";
+import { getRoomAvailability } from "../utils/roomAvailability";
+import {
+  ClassChange,
+  findClassChange,
+  isoDate,
+  removeClassChange,
+  saveClassChange,
+  subscribeToClassChanges,
+} from "../firebase/classChangesService";
 import DesktopWeek from "../components/web/DesktopWeek";
 import { useWebLayout } from "../utils/useWebLayout";
 
@@ -39,6 +53,13 @@ function fmtRange(a: number, b: number): string {
   const sameHalf = (a < 720) === (b < 720);
   const short = (m: number) => fmt(m).replace(/ (AM|PM)$/, "");
   return sameHalf ? `${short(a)} – ${fmt(b)}` : `${fmt(a)} – ${fmt(b)}`;
+}
+
+function fmtDur(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (!h) return `${m} min`;
+  return m ? `${h} hr ${m} min` : `${h} hr`;
 }
 
 function weekDates(today: Date): Date[] {
@@ -82,7 +103,7 @@ function buildRows(slots: Slot[], isToday: boolean, nowMin: number): Row[] {
 }
 
 export default function TimetableScreen() {
-  const { profile, previewRole } = useAuth();
+  const { profile, previewRole, user } = useAuth();
   const { isDesktop } = useWebLayout();
   const navigation = useNavigation<any>();
   const isFaculty = (previewRole ?? profile?.role) === "faculty";
@@ -127,6 +148,89 @@ export default function TimetableScreen() {
     });
     return () => unsubscribe();
   }, [isFaculty, profile?.name, profile?.branch, profile?.section, semester]);
+
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  useEffect(() => subscribeToHolidayOverrides(setOverrides), []);
+
+  const [exams, setExams] = useState<ExamSchedule[]>([]);
+  useEffect(() => {
+    if (isFaculty || !profile?.branch || !semester) return;
+    return subscribeToExamSchedules(profile.branch, semester, profile.enrollmentNumber, setExams);
+  }, [isFaculty, profile?.branch, semester, profile?.enrollmentNumber]);
+
+  const [changes, setChanges] = useState<ClassChange[]>([]);
+  useEffect(() => {
+    if (isFaculty) {
+      if (!user?.uid) return;
+      return subscribeToClassChanges({ createdBy: user.uid }, setChanges);
+    }
+    if (!semester) return;
+    return subscribeToClassChanges({ semester }, setChanges);
+  }, [isFaculty, user?.uid, semester]);
+
+  const isWeekendNow = now.getDay() === 0 || now.getDay() === 6;
+  const statusFor = (i: number) =>
+    getDayStatus(new Date(dates[i].getFullYear(), dates[i].getMonth(), dates[i].getDate(), 12), isFaculty ? [] : exams, overrides);
+  const selectedIndex = Math.max(0, WEEKDAYS.indexOf(selectedDay));
+  const selectedDate = dates[selectedIndex];
+  const selectedIso = isoDate(selectedDate);
+  const dayStatus = statusFor(selectedIndex);
+
+  const changeFor = (slot: Slot) =>
+    findClassChange(changes, slot, selectedIso, isFaculty ? { branch: slot.branch, section: slot.section } : { branch: profile?.branch, section: profile?.section });
+
+  const [action, setAction] = useState<Slot | null>(null);
+  const [roomPicker, setRoomPicker] = useState<{ slot: Slot; rooms: string[] } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const actionChange = action ? changeFor(action) : null;
+
+  const writeChange = async (slot: Slot, type: "cancelled" | "room", newRoom: string | null) => {
+    if (!user?.uid || !slot.branch || !slot.semester) return;
+    setBusy(true);
+    try {
+      await saveClassChange({
+        date: selectedIso,
+        branch: slot.branch,
+        semester: slot.semester,
+        section: slot.section ?? null,
+        subjectCode: slot.subjectCode,
+        subjectName: slot.subjectName || slot.subjectCode,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        type,
+        oldRoom: slot.room ?? null,
+        newRoom,
+        facultyName: profile?.name ?? "",
+        createdBy: user.uid,
+      });
+      setAction(null);
+    } catch (err: any) {
+      Alert.alert("Couldn't save", err?.message ?? "Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openRoomPicker = (slot: Slot) => {
+    setBusy(true);
+    const unsub = subscribeToAllTimetables(
+      (tts) => {
+        unsub();
+        const rooms = getRoomAvailability(tts, selectedDay, slot.startTime)
+          .filter((r) => !r.occupant)
+          .map((r) => r.room)
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        setBusy(false);
+        setAction(null);
+        setRoomPicker({ slot, rooms });
+      },
+      () => {
+        unsub();
+        setBusy(false);
+        Alert.alert("Couldn't load rooms", "Please try again.");
+      },
+    );
+  };
 
   const daySlots: Slot[] = isFaculty
     ? facultyEntries.filter((e) => e.day === selectedDay)
@@ -173,6 +277,9 @@ export default function TimetableScreen() {
               isFaculty={isFaculty}
               todayName={todayName}
               nowMin={nowMin}
+              changeFor={(slot, date) =>
+                findClassChange(changes, slot, isoDate(date), isFaculty ? { branch: slot.branch, section: slot.section } : { branch: profile?.branch, section: profile?.section })
+              }
               days={WEEKDAYS.map((d, i) => ({
                 day: d,
                 date: dates[i],
@@ -186,6 +293,7 @@ export default function TimetableScreen() {
               {WEEKDAYS.map((d, i) => {
                 const active = selectedDay === d;
                 const isTodayPill = d === todayName;
+                const off = !!statusFor(i);
                 return (
                   <TouchableOpacity
                     key={d}
@@ -196,17 +304,28 @@ export default function TimetableScreen() {
                     accessibilityLabel={d}
                   >
                     <Text style={[styles.dayName, active && styles.dayTextActive]}>{d.slice(0, 3).toUpperCase()}</Text>
-                    <Text style={[styles.dayNum, active && styles.dayTextActive]}>{dates[i].getDate()}</Text>
-                    {isTodayPill && !active && <View style={styles.todayDot} />}
+                    <Text style={[styles.dayNum, active && styles.dayTextActive, off && !active && { opacity: 0.45 }]}>{dates[i].getDate()}</Text>
+                    {off ? (
+                      <Text style={[styles.offMark, active && styles.dayTextActive]}>OFF</Text>
+                    ) : (
+                      isTodayPill && !active && <View style={styles.todayDot} />
+                    )}
                   </TouchableOpacity>
                 );
               })}
             </View>
+            {isWeekendNow && <Text style={styles.weekNote}>Showing next week</Text>}
 
             {loading ? (
               <LoadingSpinner style={{ marginTop: spacing.xl }} />
             ) : hasNoTimetableYet ? (
               <Text style={styles.emptyText}>No timetable has been uploaded for your section yet.</Text>
+            ) : dayStatus ? (
+              <View style={styles.offCard}>
+                <Ionicons name="sunny-outline" size={30} color={colors.tile.peach.fg} />
+                <Text style={styles.offTitle}>{dayStatus.label}</Text>
+                <Text style={styles.offSub}>No classes on this day.</Text>
+              </View>
             ) : classCount === 0 ? (
               <View style={styles.emptyDay}>
                 <Ionicons name="sunny-outline" size={34} color={colors.textSecondary} />
@@ -216,6 +335,7 @@ export default function TimetableScreen() {
               </View>
             ) : (
               <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+                {isFaculty && <Text style={styles.facultyHint}>Tap a class to cancel it or change its room for this day.</Text>}
                 {rows.map((row, i) => {
                   if (row.kind === "gap") {
                     return (
@@ -227,7 +347,7 @@ export default function TimetableScreen() {
                           activeOpacity={0.75}
                         >
                           <View style={{ flex: 1 }}>
-                            <Text style={styles.gapTitle}>Free · {Math.round((row.to - row.from) / 60 * 10) / 10} hr</Text>
+                            <Text style={styles.gapTitle}>Free · {fmtDur(row.to - row.from)}</Text>
                             <Text style={styles.gapSub}>
                               {fmt(row.from)} – {fmt(row.to)}
                             </Text>
@@ -242,7 +362,14 @@ export default function TimetableScreen() {
                       <Text style={[styles.timeCol, row.state === "past" && { opacity: 0.5 }]}>
                         {row.showTime ? fmt(toMinutes(row.slot.startTime)) : ""}
                       </Text>
-                      <ClassCard slot={row.slot} state={row.state} showSection={isFaculty} />
+                      <ClassCard
+                        slot={row.slot}
+                        state={row.state}
+                        showSection={isFaculty}
+                        nowMin={nowMin}
+                        change={changeFor(row.slot)}
+                        onPress={isFaculty && row.state !== "past" ? () => setAction(row.slot) : undefined}
+                      />
                     </View>
                   );
                 })}
@@ -251,20 +378,121 @@ export default function TimetableScreen() {
           </>
         )}
       </SafeAreaView>
+
+      <Modal visible={!!action} transparent animationType="slide" onRequestClose={() => setAction(null)}>
+        <Pressable style={styles.sheetBackdrop} onPress={() => !busy && setAction(null)}>
+          <Pressable style={styles.sheet} onPress={() => undefined}>
+            {action && (
+              <>
+                <Text style={styles.sheetTitle}>{action.subjectName || action.subjectCode}</Text>
+                <Text style={styles.sheetSub}>
+                  {selectedDate.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" })} ·{" "}
+                  {fmtRange(toMinutes(action.startTime), toMinutes(action.endTime))} ·{" "}
+                  {[action.branch, action.semester ? `Sem ${action.semester}` : null, action.section].filter(Boolean).join(" ")}
+                </Text>
+                {busy ? (
+                  <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.lg }} />
+                ) : (
+                  <>
+                    {actionChange?.type !== "cancelled" && (
+                      <TouchableOpacity
+                        style={[styles.sheetBtn, { backgroundColor: colors.danger + "18" }]}
+                        onPress={() =>
+                          Alert.alert("Cancel this class?", "Students in this section get a notification right away.", [
+                            { text: "Keep it", style: "cancel" },
+                            { text: "Cancel class", style: "destructive", onPress: () => writeChange(action, "cancelled", null) },
+                          ])
+                        }
+                      >
+                        <Ionicons name="close-circle-outline" size={20} color={colors.danger} />
+                        <Text style={[styles.sheetBtnText, { color: colors.danger }]}>Cancel this class</Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity style={styles.sheetBtn} onPress={() => openRoomPicker(action)}>
+                      <Ionicons name="business-outline" size={20} color={colors.primary} />
+                      <Text style={styles.sheetBtnText}>
+                        {actionChange?.type === "room" ? `Change room again (now ${actionChange.newRoom})` : "Change room for this day"}
+                      </Text>
+                    </TouchableOpacity>
+                    {actionChange && (
+                      <TouchableOpacity
+                        style={styles.sheetBtn}
+                        onPress={async () => {
+                          setBusy(true);
+                          try {
+                            await removeClassChange(actionChange.id);
+                            setAction(null);
+                          } catch (err: any) {
+                            Alert.alert("Couldn't undo", err?.message ?? "Please try again.");
+                          } finally {
+                            setBusy(false);
+                          }
+                        }}
+                      >
+                        <Ionicons name="arrow-undo-outline" size={20} color={colors.textPrimary} />
+                        <Text style={[styles.sheetBtnText, { color: colors.textPrimary }]}>
+                          Undo {actionChange.type === "cancelled" ? "cancellation" : "room change"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity style={styles.sheetClose} onPress={() => setAction(null)}>
+                      <Text style={styles.sheetCloseText}>Close</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <SheetPicker
+        visible={!!roomPicker}
+        title="Free rooms at this time"
+        items={roomPicker?.rooms ?? []}
+        keyOf={(r) => r}
+        labelOf={(r) => r}
+        selectedKey={null}
+        onPick={(r) => roomPicker && writeChange(roomPicker.slot, "room", r)}
+        onClose={() => setRoomPicker(null)}
+        searchable
+        emptyText="No free rooms found at this time."
+      />
     </View>
   );
 }
 
-function ClassCard({ slot, state, showSection }: { slot: Slot; state: "past" | "now" | "upcoming"; showSection: boolean }) {
-
+function ClassCard({
+  slot,
+  state,
+  showSection,
+  nowMin,
+  change,
+  onPress,
+}: {
+  slot: Slot;
+  state: "past" | "now" | "upcoming";
+  showSection: boolean;
+  nowMin: number;
+  change: ClassChange | null;
+  onPress?: () => void;
+}) {
   const isLab = (slot.room ?? "").toUpperCase().includes("LAB");
-  const tone = isLab ? colors.tile.peach : colors.tile.blue;
-  const live = state === "now";
+  const cancelled = change?.type === "cancelled";
+  const moved = change?.type === "room";
+  const tone = cancelled ? { bg: colors.surfaceAlt, fg: colors.textSecondary } : isLab ? colors.tile.peach : colors.tile.blue;
+  const live = state === "now" && !cancelled;
   const start = toMinutes(slot.startTime);
   const end = toMinutes(slot.endTime);
+  const progress = live && end > start ? Math.min(1, Math.max(0, (nowMin - start) / (end - start))) : 0;
+  const room = moved ? change?.newRoom : slot.room;
+  const tag = cancelled ? "CANCELLED" : moved ? "ROOM CHANGED" : live ? "NOW" : isLab ? "LAB" : null;
+  const Wrap: any = onPress ? TouchableOpacity : View;
 
   return (
-    <View
+    <Wrap
+      onPress={onPress}
+      activeOpacity={0.8}
       style={[
         styles.card,
         { backgroundColor: live ? colors.primary : tone.bg },
@@ -272,22 +500,32 @@ function ClassCard({ slot, state, showSection }: { slot: Slot; state: "past" | "
       ]}
     >
       <View style={styles.cardTop}>
-        <Text style={[styles.subject, { color: live ? colors.onPrimary : tone.fg }]} numberOfLines={2}>
+        <Text
+          style={[styles.subject, { color: live ? colors.onPrimary : tone.fg }, cancelled && styles.strike]}
+          numberOfLines={2}
+        >
           {slot.subjectName || slot.subjectCode}
           {slot.group ? ` · ${slot.group}` : ""}
         </Text>
-        {live ? (
-          <View style={[styles.tag, { backgroundColor: colors.onPrimary }]}>
-            <Text style={[styles.tagText, { color: colors.primary }]}>NOW</Text>
+        {tag && (
+          <View
+            style={[
+              styles.tag,
+              {
+                backgroundColor: live ? colors.onPrimary : cancelled ? colors.danger : moved ? colors.warning : colors.surface,
+              },
+            ]}
+          >
+            <Text style={[styles.tagText, { color: live ? colors.primary : cancelled || moved ? "#FFFFFF" : tone.fg }]}>{tag}</Text>
           </View>
-        ) : isLab ? (
-          <View style={[styles.tag, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.tagText, { color: tone.fg }]}>LAB</Text>
-          </View>
-        ) : null}
+        )}
       </View>
       <Text style={[styles.cardMeta, { color: live ? colors.onPrimary : colors.textPrimary }]} numberOfLines={1}>
-        {[slot.room, start >= 0 && end >= 0 ? fmtRange(start, end) : null].filter(Boolean).join(" · ")}
+        {cancelled
+          ? `No class · ${start >= 0 && end >= 0 ? fmtRange(start, end) : ""}`
+          : [moved && slot.room ? `${room} (was ${slot.room})` : room, start >= 0 && end >= 0 ? fmtRange(start, end) : null]
+              .filter(Boolean)
+              .join(" · ")}
       </Text>
       <Text style={[styles.cardMeta2, { color: live ? colors.onPrimary : colors.textSecondary }]} numberOfLines={2}>
         {[
@@ -299,7 +537,12 @@ function ClassCard({ slot, state, showSection }: { slot: Slot; state: "past" | "
           .filter(Boolean)
           .join(" · ")}
       </Text>
-    </View>
+      {live && (
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
+        </View>
+      )}
+    </Wrap>
   );
 }
 
@@ -356,6 +599,23 @@ const styles = StyleSheet.create({
   gapLink: { fontSize: 12, fontWeight: "800", color: colors.primary },
 
   emptyDay: { alignItems: "center", marginTop: spacing.xl, gap: spacing.sm },
+  offMark: { fontSize: 9, fontWeight: "900", color: colors.danger, letterSpacing: 0.6 },
+  weekNote: { fontSize: 12, fontWeight: "700", color: colors.textSecondary, marginTop: -spacing.sm, marginBottom: spacing.sm },
+  offCard: { alignItems: "center", gap: 6, backgroundColor: colors.tile.peach.bg, borderRadius: 20, paddingVertical: spacing.xl, paddingHorizontal: spacing.md },
+  offTitle: { fontSize: 18, fontWeight: "800", color: colors.tile.peach.fg, textAlign: "center" },
+  offSub: { fontSize: 13, fontWeight: "600", color: colors.textSecondary },
+  strike: { textDecorationLine: "line-through" },
+  progressTrack: { height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.3)", marginTop: 10, overflow: "hidden" },
+  progressFill: { height: 4, borderRadius: 2, backgroundColor: colors.onPrimary },
+  facultyHint: { fontSize: 12, fontWeight: "600", color: colors.textSecondary, marginBottom: 2 },
+  sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: spacing.lg, paddingBottom: spacing.xl, gap: spacing.sm },
+  sheetTitle: { fontSize: 18, fontWeight: "800", color: colors.textPrimary },
+  sheetSub: { fontSize: 13, fontWeight: "600", color: colors.textSecondary, marginBottom: spacing.sm },
+  sheetBtn: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: colors.surfaceAlt, borderRadius: 14, paddingVertical: 14, paddingHorizontal: spacing.md },
+  sheetBtnText: { fontSize: 15, fontWeight: "700", color: colors.primary, flex: 1 },
+  sheetClose: { alignItems: "center", paddingVertical: spacing.sm },
+  sheetCloseText: { fontSize: 15, fontWeight: "700", color: colors.textSecondary },
   emptyText: {
     ...typography.body,
     color: colors.textSecondary,

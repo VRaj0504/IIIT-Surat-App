@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -27,7 +27,23 @@ import {
   createEvent,
   updateEvent,
   deleteEvent,
+  EVENT_CATEGORIES,
 } from "../firebase/clubsService";
+import { SelectField, SheetPicker } from "../components/ui";
+import { subscribeToAllTimetables } from "../firebase/timetableService";
+import { getRoomAvailability } from "../utils/roomAvailability";
+
+const OTHER_VENUE = "Other (type it)";
+const FIXED_VENUES = ["Online", "Auditorium", "Seminar Hall", "Sports Ground", "Mess / Canteen area"];
+const TIME_SLOTS = Array.from({ length: (22 - 7) * 2 + 1 }, (_, i) => {
+  const m = 7 * 60 + i * 30;
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+});
+function clock12(t: string): string {
+  const [h, m] = t.split(":").map(Number);
+  if (!Number.isFinite(h)) return t;
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(m || 0).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+}
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 import DateField, { todayIso } from "../components/DateField";
 
@@ -56,6 +72,27 @@ function PostEventScreenInner() {
       : "",
   );
   const [link, setLink] = useState(editingEvent?.link ?? "");
+  const [sheet, setSheet] = useState<null | "time" | "venue" | "category">(null);
+  const [rooms, setRooms] = useState<string[]>([]);
+  const initialVenue = editingEvent?.venue ?? "";
+  const [venue, setVenue] = useState(initialVenue);
+  const [venueOther, setVenueOther] = useState("");
+  const [category, setCategory] = useState<string>(editingEvent?.category ?? "");
+
+  useEffect(() => {
+    const unsub = subscribeToAllTimetables((tts) => {
+      const set = new Set<string>();
+      getRoomAvailability(tts, "Monday", "10:00").forEach((r) => set.add(r.room));
+      setRooms([...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
+    });
+    return () => unsub();
+  }, []);
+  const venueOptions = useMemo(() => {
+    const base = [...FIXED_VENUES, ...rooms];
+    if (initialVenue && !base.includes(initialVenue)) base.unshift(initialVenue);
+    return [...base, OTHER_VENUE];
+  }, [rooms, initialVenue]);
+  const finalVenue = venue === OTHER_VENUE ? venueOther.trim() : venue;
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +106,10 @@ function PostEventScreenInner() {
       !timeText.trim()
     ) {
       setError("Fill in title, description, date, and time.");
+      return;
+    }
+    if (venue === OTHER_VENUE && !venueOther.trim()) {
+      setError("Type the venue, or pick one from the list.");
       return;
     }
     const dateTime = new Date(`${dateText.trim()}T${timeText.trim()}:00`);
@@ -89,6 +130,7 @@ function PostEventScreenInner() {
           description.trim(),
           dateTime,
           link.trim(),
+          { venue: finalVenue || null, category: category || null },
         );
       } else {
         await createEvent(
@@ -100,6 +142,7 @@ function PostEventScreenInner() {
           link.trim(),
           user.uid,
           profile.name,
+          { venue: finalVenue || null, category: category || null },
         );
       }
       navigation.goBack();
@@ -170,16 +213,34 @@ function PostEventScreenInner() {
                 <DateField value={dateText} onChange={setDateText} min={todayIso()} placeholder="Event date" />
               </View>
               <View style={styles.rowItem}>
-                <Text style={styles.label}>Time (24h)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="18:00"
-                  placeholderTextColor={colors.textSecondary}
-                  value={timeText}
-                  onChangeText={setTimeText}
-                />
+                <Text style={styles.label}>Time</Text>
+                <SelectField value={timeText ? clock12(timeText) : null} placeholder="Pick time" icon="time-outline" onPress={() => setSheet("time")} />
               </View>
             </View>
+
+            <SelectField
+              label="Venue"
+              value={venue || null}
+              placeholder="Pick venue"
+              icon="location-outline"
+              onPress={() => setSheet("venue")}
+            />
+            {venue === OTHER_VENUE && (
+              <TextInput
+                style={[styles.input, { marginTop: -spacing.sm, marginBottom: spacing.sm }]}
+                placeholder="Type the venue"
+                placeholderTextColor={colors.textSecondary}
+                value={venueOther}
+                onChangeText={setVenueOther}
+              />
+            )}
+            <SelectField
+              label="Category"
+              value={category || null}
+              placeholder="Pick category"
+              icon="pricetag-outline"
+              onPress={() => setSheet("category")}
+            />
 
             <Text style={styles.label}>
               Drive / Registration Link (optional)
@@ -223,6 +284,37 @@ function PostEventScreenInner() {
             )}
           </KeyboardAwareScrollView>
         </KeyboardAvoidingView>
+        <SheetPicker
+          visible={sheet === "time"}
+          title="Time"
+          items={TIME_SLOTS}
+          keyOf={(t) => t}
+          labelOf={clock12}
+          selectedKey={timeText || null}
+          onPick={setTimeText}
+          onClose={() => setSheet(null)}
+        />
+        <SheetPicker
+          visible={sheet === "venue"}
+          title="Venue"
+          items={venueOptions}
+          keyOf={(v) => v}
+          labelOf={(v) => v}
+          selectedKey={venue || null}
+          onPick={setVenue}
+          onClose={() => setSheet(null)}
+          searchable
+        />
+        <SheetPicker
+          visible={sheet === "category"}
+          title="Category"
+          items={[...EVENT_CATEGORIES]}
+          keyOf={(c) => c}
+          labelOf={(c) => c}
+          selectedKey={category || null}
+          onPick={setCategory}
+          onClose={() => setSheet(null)}
+        />
       </SafeAreaView>
     </LinearGradient>
   );

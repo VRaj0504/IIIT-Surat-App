@@ -26,6 +26,7 @@ import { subscribeToMessExtras, MessExtra, DEFAULT_MESS_EXTRAS } from "../../fir
 import { subscribeToMyLeaveApplications, approvalChain, APPROVER_LABEL, LeaveApplication, ApproverRole } from "../../firebase/leaveService";
 import { subscribeToAllUpcomingEvents, ClubEvent } from "../../firebase/clubsService";
 import { subscribeToActiveSos, SosAlert } from "../../firebase/sosService";
+import { subscribeToClassChanges, findClassChange, isoDate, ClassChange } from "../../firebase/classChangesService";
 import { messMenu } from "../../data/messMenu";
 import { expandFaculty } from "../../data/facultyLegend";
 import { isInCabin, cabinSince } from "../../utils/cabin";
@@ -139,7 +140,7 @@ function Ring({ pct }: { pct: number | null }) {
 export default function DesktopHome() {
   const navigation = useNavigation<any>();
   const go = (route: string, params?: object) => navigation.navigate(route, params);
-  const { profile, previewRole, setInCabin } = useAuth();
+  const { profile, previewRole, setInCabin, user } = useAuth();
   const isFaculty = (previewRole ?? profile?.role) === "faculty";
   const inCabinNow = isInCabin(profile?.inCabin, profile?.inCabinAt);
   const [cabinBusy, setCabinBusy] = useState(false);
@@ -176,8 +177,8 @@ export default function DesktopHome() {
   const [exams, setExams] = useState<ExamSchedule[]>([]);
   useEffect(() => {
     if (isFaculty || !profile?.branch || !semester) return;
-    return subscribeToExamSchedules(profile.branch, semester, setExams);
-  }, [isFaculty, profile?.branch, semester]);
+    return subscribeToExamSchedules(profile.branch, semester, profile.enrollmentNumber, setExams);
+  }, [isFaculty, profile?.branch, semester, profile?.enrollmentNumber]);
 
   const [holidays, setHolidays] = useState<Record<string, string>>({});
   useEffect(() => subscribeToHolidayOverrides(setHolidays), []);
@@ -215,6 +216,16 @@ export default function DesktopHome() {
     return subscribeToActiveSos(setActiveSos, () => setActiveSos([]));
   }, [isFaculty, profile?.isAdmin]);
 
+  const [classChanges, setClassChanges] = useState<ClassChange[]>([]);
+  useEffect(() => {
+    if (isFaculty) {
+      if (!user?.uid) return;
+      return subscribeToClassChanges({ createdBy: user.uid }, setClassChanges);
+    }
+    if (!semester) return;
+    return subscribeToClassChanges({ semester }, setClassChanges);
+  }, [isFaculty, user?.uid, semester]);
+
   const { noticesSeenAt: seenAt } = useWebBadges();
   const waiting = useFacultyWaiting(profile?.email, isFaculty);
 
@@ -236,6 +247,11 @@ export default function DesktopHome() {
     ? slots.filter((x) => toMinutes(x.startTime) < toMinutes(hero.endTime) && toMinutes(x.endTime) > toMinutes(hero.startTime) && (x === hero || toMinutes(x.startTime) === toMinutes(hero.startTime)))
     : [];
   const parallel = heroGroup.length > 1;
+  const heroChange =
+    hero && !parallel
+      ? findClassChange(classChanges, hero, isoDate(now), isFaculty ? { branch: hero.branch, section: hero.section } : { branch: profile?.branch, section: profile?.section })
+      : null;
+  const heroRoom = heroChange?.type === "room" ? heroChange.newRoom : hero?.room;
   const groupName = (x: Slot, i: number) => (x.group ? x.group.replace(/^group\s*/i, "Group ") : `Group ${i + 1}`);
 
   const freeRooms = useMemo(() => {
@@ -370,7 +386,9 @@ export default function DesktopHome() {
             ) : hero ? (
               <>
                 <View style={s.heroTop}>
-                  <Text style={s.heroKicker}>{current ? "HAPPENING NOW" : "UP NEXT"}</Text>
+                  <Text style={s.heroKicker}>
+                    {heroChange?.type === "cancelled" ? "CANCELLED" : heroChange?.type === "room" ? "ROOM CHANGED" : current ? "HAPPENING NOW" : "UP NEXT"}
+                  </Text>
                   <View style={s.heroPill}>
                     <Text style={s.heroPillText}>
                       {current
@@ -400,11 +418,13 @@ export default function DesktopHome() {
                   </>
                 ) : (
                   <>
-                    <Text style={s.heroTitle} numberOfLines={2}>
+                    <Text style={[s.heroTitle, heroChange?.type === "cancelled" && { textDecorationLine: "line-through", opacity: 0.8 }]} numberOfLines={2}>
                       {hero.subjectName}
                     </Text>
                     <Text style={s.heroSub}>
-                      {[hero.room, who(hero), `${to12h(hero.startTime)} – ${to12h(hero.endTime)}`].filter(Boolean).join("  ·  ")}
+                      {heroChange?.type === "cancelled"
+                        ? `No class at ${to12h(hero.startTime)} today${heroChange.facultyName ? ` · ${heroChange.facultyName}` : ""}`
+                        : [heroRoom, who(hero), `${to12h(hero.startTime)} – ${to12h(hero.endTime)}`].filter(Boolean).join("  ·  ")}
                     </Text>
                   </>
                 )}
@@ -605,7 +625,7 @@ export default function DesktopHome() {
             {notices.length === 0 ? (
               <Text style={s.muted}>No notices yet.</Text>
             ) : (
-              notices.slice(0, 4).map((n) => {
+              [...notices].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned)).slice(0, 4).map((n) => {
                 const isUnread = (n.createdAt?.toMillis?.() ?? 0) > seenAt;
                 return (
                   <Pressable key={n.id} onPress={() => go("Notices")} style={[s.noticeRow, pointer]}>

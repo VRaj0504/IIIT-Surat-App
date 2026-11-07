@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -17,15 +17,32 @@ import {
   typography,
   clayShadowSoft,
 } from "../theme/theme";
-import {
-  placementHighlights,
-  branchStats,
-  BranchStat,
-} from "../data/placement";
+import { BranchStat } from "../data/placement";
+import { subscribeToPlacementStats, DEFAULT_PLACEMENT_STATS, PlacementStats } from "../firebase/placementStatsService";
+import { subscribeToNotices, Notice } from "../firebase/noticesService";
+import { useAuth } from "../context/AuthContext";
+import { useNavigation } from "@react-navigation/native";
 
 export default function PlacementsScreen() {
+  const { profile } = useAuth();
+  const navigation = useNavigation<any>();
+  const [stats, setStats] = useState<PlacementStats>(DEFAULT_PLACEMENT_STATS);
+  useEffect(() => subscribeToPlacementStats(setStats), []);
+  const placementHighlights = stats.highlights;
+  const branchStats = stats.branches;
+
+  const [drives, setDrives] = useState<Notice[] | null>(null);
+  useEffect(() => {
+    const viewer =
+      profile?.role === "student"
+        ? { branch: profile.branch, section: profile.section, admissionYear: profile.admissionYear, specialization: profile.specialization }
+        : undefined;
+    return subscribeToNotices((list) => setDrives(list.filter((n) => n.category === "Placement").slice(0, 5)), viewer);
+  }, [profile?.role, profile?.branch, profile?.section, profile?.admissionYear, profile?.specialization]);
+
+  const openNotices = () => navigation.navigate("Tabs", { screen: "Notices", params: { filter: "Placement" } });
   const openTnp = () => {
-    Linking.openURL("https://tnp.iiitsurat.ac.in").catch(() => {});
+    if (stats.link) Linking.openURL(stats.link).catch(() => {});
   };
   return (
     <LinearGradient
@@ -61,6 +78,31 @@ export default function PlacementsScreen() {
             />
           </View>
 
+          <View style={styles.drivesHead}>
+            <Text style={[styles.sectionTitle, { marginTop: 0, marginBottom: 0 }]}>Open drives</Text>
+            {!!drives?.length && (
+              <TouchableOpacity onPress={openNotices} hitSlop={8}>
+                <Text style={styles.seeAll}>See all</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          {drives === null ? null : drives.length === 0 ? (
+            <Text style={styles.drivesEmpty}>No placement notices in the last 30 days.</Text>
+          ) : (
+            drives.map((n) => (
+              <TouchableOpacity key={n.id} style={styles.driveCard} onPress={openNotices} activeOpacity={0.8}>
+                <View style={styles.driveIcon}>
+                  <Ionicons name="briefcase-outline" size={18} color={colors.tile.mint.fg} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.driveTitle} numberOfLines={2}>{n.title}</Text>
+                  {!!n.description && <Text style={styles.driveSub} numberOfLines={1}>{n.description}</Text>}
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
+            ))
+          )}
+
           <Text style={styles.sectionTitle}>Branch-wise Breakdown</Text>
           {branchStats.map((row: BranchStat) => (
             <View key={row.branch} style={[styles.branchCard, row.branch === "Total" && styles.branchCardTotal]}>
@@ -86,10 +128,12 @@ export default function PlacementsScreen() {
               </View>
             </View>
           ))}
-          <TouchableOpacity style={styles.linkButton} onPress={openTnp}>
-            <Text style={styles.linkButtonText}>View full placement data</Text>
-            <Ionicons name="open-outline" size={16} color={colors.primary} />
-          </TouchableOpacity>
+          {!!stats.link && (
+            <TouchableOpacity style={styles.linkButton} onPress={openTnp}>
+              <Text style={styles.linkButtonText}>View full placement data</Text>
+              <Ionicons name="open-outline" size={16} color={colors.primary} />
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>
@@ -115,6 +159,13 @@ function HighlightCard({ icon, label, value }: HighlightCardProps) {
 }
 
 const styles = StyleSheet.create({
+  drivesHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.md, marginBottom: spacing.sm },
+  seeAll: { fontSize: 13, fontWeight: "800", color: colors.primary },
+  drivesEmpty: { ...typography.caption, color: colors.textSecondary },
+  driveCard: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: colors.surface, borderRadius: 16, padding: 12, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  driveIcon: { width: 34, height: 34, borderRadius: 11, backgroundColor: colors.tile.mint.bg, alignItems: "center", justifyContent: "center" },
+  driveTitle: { fontSize: 14.5, fontWeight: "700", color: colors.textPrimary },
+  driveSub: { fontSize: 12.5, color: colors.textSecondary, marginTop: 2 },
   branchCard: { backgroundColor: colors.surface, borderRadius: 20, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
   branchCardTotal: { backgroundColor: colors.primary, borderColor: colors.primary },
   branchHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },

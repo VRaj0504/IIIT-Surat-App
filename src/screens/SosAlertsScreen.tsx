@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, Linking, Alert } fr
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors, spacing } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
-import { subscribeToActiveSos, setSosStatus, mapsUrl, SosAlert } from "../firebase/sosService";
+import { subscribeToActiveSos, subscribeToRecentClosedSos, setSosStatus, mapsUrl, SosAlert } from "../firebase/sosService";
 import LoadingSpinner from "../components/LoadingSpinner";
 
 const RED = "#DC2626";
@@ -12,6 +12,34 @@ const TYPE: Record<string, { label: string; icon: keyof typeof Ionicons.glyphMap
   safety: { label: "Safety", icon: "shield" },
   other: { label: "Emergency", icon: "alert-circle" },
 };
+
+function mins(ms: number) {
+  const m = Math.max(1, Math.round(ms / 60000));
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} hr ${m % 60} min`;
+}
+
+function ClosedRow({ a }: { a: SosAlert }) {
+  const t = TYPE[a.type] ?? TYPE.other;
+  const start = a.createdAt?.toMillis?.() ?? null;
+  const when = start ? new Date(start).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "";
+  const lines: string[] = [];
+  if (a.status === "cancelled") lines.push("Closed by the student (safe)");
+  if (a.ackBy && start) lines.push(`${a.ackBy.name} responded in ${mins(a.ackBy.at - start)}`);
+  if (a.resolvedBy && start) lines.push(`Resolved by ${a.resolvedBy.name} after ${mins(a.resolvedBy.at - start)}`);
+  return (
+    <View style={styles.closed}>
+      <Ionicons name={t.icon} size={16} color={colors.textSecondary} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.closedName}>
+          {a.studentName} <Text style={styles.closedWhen}>· {t.label} · {when}</Text>
+        </Text>
+        {lines.map((l) => (
+          <Text key={l} style={styles.closedLine}>{l}</Text>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 function ago(ms: number) {
   const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
@@ -23,6 +51,8 @@ export default function SosAlertsScreen() {
   const [alerts, setAlerts] = useState<SosAlert[] | null>(null);
   const [denied, setDenied] = useState(false);
   const [, tick] = useState(0);
+  const [closed, setClosed] = useState<SosAlert[]>([]);
+  useEffect(() => subscribeToRecentClosedSos(setClosed, 7), []);
 
   useEffect(() => {
     return subscribeToActiveSos(setAlerts, () => {
@@ -54,6 +84,16 @@ export default function SosAlertsScreen() {
         data={alerts}
         keyExtractor={(a) => a.id}
         contentContainerStyle={styles.list}
+        ListFooterComponent={
+          closed.length > 0 ? (
+            <View style={{ marginTop: spacing.md }}>
+              <Text style={styles.closedHead}>Closed · last 7 days</Text>
+              {closed.map((a) => (
+                <ClosedRow key={a.id} a={a} />
+              ))}
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <View style={styles.empty}>
             <View style={styles.emptyIcon}>
@@ -153,6 +193,11 @@ const styles = StyleSheet.create({
   btnText: { fontSize: 14, fontWeight: "800", color: colors.primary },
   bigBtn: { flex: 1, alignItems: "center", borderRadius: 14, paddingVertical: 13 },
   bigBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" },
+  closedHead: { fontSize: 12, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 },
+  closed: { flexDirection: "row", gap: 10, backgroundColor: colors.surface, borderRadius: 16, padding: 12, marginBottom: 8 },
+  closedName: { fontSize: 14, fontWeight: "800", color: colors.textPrimary },
+  closedWhen: { fontSize: 12, fontWeight: "600", color: colors.textSecondary },
+  closedLine: { fontSize: 12.5, fontWeight: "600", color: colors.textSecondary, marginTop: 2 },
   empty: { alignItems: "center", paddingTop: 70, gap: 6, paddingHorizontal: 20 },
   emptyIcon: {
     width: 60,

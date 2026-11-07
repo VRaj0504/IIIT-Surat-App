@@ -157,10 +157,11 @@ export default function SubmitEventExcusalScreen() {
       <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
         <SafeAreaView style={styles.container} edges={["top"]}>
           <View style={styles.emptyContainer}>
-            <Ionicons name="lock-closed-outline" size={40} color={colors.textSecondary} />
+            <Ionicons name="ribbon-outline" size={40} color={colors.textSecondary} />
+            <Text style={styles.emptyTitle}>Only event coordinators send excusals</Text>
             <Text style={styles.emptyText}>
-              You're not currently designated as an event coordinator. Contact admin if this
-              should change.
+              If you took part in an event, ask its coordinator to add you. Once the faculty coordinator approves it, those classes
+              count as attended in My Attendance automatically.
             </Text>
           </View>
         </SafeAreaView>
@@ -278,6 +279,7 @@ export default function SubmitEventExcusalScreen() {
 }
 
 const styles = StyleSheet.create({
+  emptyTitle: { fontSize: 17, fontWeight: "800", color: colors.textPrimary, textAlign: "center", marginTop: spacing.md },
   container: { flex: 1 },
   header: { ...typography.h2, color: colors.textPrimary, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   helper: { ...typography.caption, color: colors.textSecondary, paddingHorizontal: spacing.lg, marginTop: 4, marginBottom: spacing.md },

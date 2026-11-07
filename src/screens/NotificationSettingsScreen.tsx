@@ -48,7 +48,7 @@ const ROWS: Row[] = [
     key: "timetableUpdates",
     icon: "calendar-outline",
     title: "Timetable Updates",
-    description: "When your section's timetable is created or corrected",
+    description: "When your section's timetable is corrected, or a class is cancelled or moved",
   },
 
   {
@@ -57,6 +57,13 @@ const ROWS: Row[] = [
   title: "Exams & Grades",
   description: "When an exam date sheet is published for your semester, or a grade is posted",
 },
+
+  {
+    key: "attendanceAlerts",
+    icon: "warning-outline",
+    title: "Attendance Alerts",
+    description: "When a subject drops below 75%",
+  },
 
   {
     key: "clubEvents",

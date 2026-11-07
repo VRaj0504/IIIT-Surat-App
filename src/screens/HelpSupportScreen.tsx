@@ -49,11 +49,11 @@ const faqs: { question: string; answer: string }[] = [
   {
     question: "How do I delete my account?",
     answer:
-      "Profile > Privacy & account > Delete account. Your profile, Lost & Found posts, complaints and counselling requests are deleted. Academic records the institute keeps, such as attendance, grades and leave records, stay.",
+      "Profile > Privacy & account > Delete account. Your profile, complaints and counselling requests are deleted. Academic records the institute keeps, such as attendance, grades and leave records, stay.",
   },
   {
-    question: "Is CollegeGo an official IIIT Surat app?",
-    answer: "No. CollegeGo is an independent app built by a student of IIIT Surat for the IIIT Surat community.",
+    question: "Is CollegeGo an official college app?",
+    answer: "No. CollegeGo is an independent app built by a student, for students and faculty.",
   },
 ];
 

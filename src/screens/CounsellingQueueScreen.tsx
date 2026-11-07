@@ -11,6 +11,7 @@ import {
   updateCounsellingRequest,
 } from "../firebase/counsellingService";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { EmptyState } from "../components/ui";
 import { KeyboardAwareFlatList } from "../components/KeyboardAware";
 
 function RequestCard({
@@ -113,10 +114,11 @@ export default function CounsellingQueueScreen() {
     return (
       <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
         <SafeAreaView style={styles.container} edges={["top"]}>
-          <Text style={styles.emptyText}>
-            You're not on the counselling team's list, so there's nothing to show here. If that's wrong, ask an
-            admin to add your email to the `counsellors` collection.
-          </Text>
+          <EmptyState
+            icon="people-outline"
+            title="Only for the counselling team"
+            hint="You're not on the counselling team, so there's nothing here. If you should be, ask the admin to add you."
+          />
         </SafeAreaView>
       </LinearGradient>
     );
@@ -151,7 +153,7 @@ export default function CounsellingQueueScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: spacing.lg },
+  container: { flex: 1, padding: spacing.md },
   header: { ...typography.h2, color: colors.textPrimary, marginBottom: spacing.md },
   emptyText: { ...typography.body, color: colors.textSecondary, marginTop: spacing.lg },
   listContent: { paddingBottom: spacing.xl },

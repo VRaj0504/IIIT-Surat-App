@@ -101,7 +101,7 @@ export default function MarksScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
+  content: { padding: spacing.md, paddingBottom: spacing.xl * 2 },
   subtitle: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.md },
   empty: { alignItems: "center", gap: spacing.sm, marginTop: spacing.xl },
   emptyText: { ...typography.body, color: colors.textSecondary },

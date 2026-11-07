@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Linking,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -37,7 +38,6 @@ const HOSTEL_CONTACTS: Contact[] = [
 
 const MEDICAL_CONTACTS: Contact[] = [
   { role: "Medical Officer", name: "Dr. Paresh Chhotala", phone: "+919824270476" },
-  { role: "Medical Emergency (Ambulance)", name: "Dial 108", phone: "108" },
   {
     role: "Empanelled Hospital",
     name: "Dinbandhu Charitable Hospital",
@@ -52,58 +52,99 @@ const MEDICAL_CONTACTS: Contact[] = [
   },
 ];
 
+const EMERGENCY_CONTACTS: Contact[] = [
+  { role: "All emergencies", name: "Dial 112", phone: "112" },
+  { role: "Ambulance", name: "Dial 108", phone: "108" },
+  { role: "Police", name: "Dial 100", phone: "100" },
+  { role: "Fire", name: "Dial 101", phone: "101" },
+  { role: "Women helpline", name: "Dial 1091", phone: "1091" },
+];
+
+type Group = "emergency" | "medical" | "hostel";
+const GROUPS: { id: Group; label: string; title: string; list: Contact[] }[] = [
+  { id: "emergency", label: "Emergency", title: "Emergency numbers", list: EMERGENCY_CONTACTS },
+  { id: "medical", label: "Medical", title: "Medical", list: MEDICAL_CONTACTS },
+  { id: "hostel", label: "Hostel", title: "Hostel committee", list: HOSTEL_CONTACTS },
+];
+
+function RoundBtn({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={styles.round} onPress={onPress} accessibilityLabel={label} hitSlop={6}>
+      <Ionicons name={icon} size={18} color={colors.primary} />
+    </TouchableOpacity>
+  );
+}
+
 function ContactCard({ contact }: { contact: Contact }) {
   return (
     <View style={styles.card}>
-      <Text style={styles.role}>{contact.role}</Text>
-      <Text style={styles.name}>{contact.name}</Text>
-      {contact.address && <Text style={styles.address}>{contact.address}</Text>}
+      <View style={{ flex: 1 }}>
+        <Text style={styles.role}>{contact.role}</Text>
+        <Text style={styles.name}>{contact.name}</Text>
+        {contact.address ? <Text style={styles.address}>{contact.address}</Text> : null}
+        {contact.phone && contact.phone.length > 5 ? <Text style={styles.sub}>{contact.phone}</Text> : null}
+        {contact.email ? <Text style={styles.sub} numberOfLines={1}>{contact.email}</Text> : null}
+      </View>
       <View style={styles.actions}>
-        {contact.phone && (
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => Linking.openURL(`tel:${contact.phone}`).catch(() => {})}
-          >
-            <Ionicons name="call-outline" size={16} color={colors.primary} />
-            <Text style={styles.actionText}>{contact.phone}</Text>
-          </TouchableOpacity>
-        )}
-        {contact.email && (
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => Linking.openURL(`mailto:${contact.email}`).catch(() => {})}
-          >
-            <Ionicons name="mail-outline" size={16} color={colors.primary} />
-            <Text style={styles.actionText}>{contact.email}</Text>
-          </TouchableOpacity>
-        )}
+        {contact.phone ? <RoundBtn icon="call" label={`Call ${contact.name}`} onPress={() => Linking.openURL(`tel:${contact.phone}`).catch(() => {})} /> : null}
+        {contact.email ? <RoundBtn icon="mail" label={`Email ${contact.name}`} onPress={() => Linking.openURL(`mailto:${contact.email}`).catch(() => {})} /> : null}
+        {contact.address ? (
+          <RoundBtn
+            icon="navigate"
+            label={`Directions to ${contact.name}`}
+            onPress={() => Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(`${contact.name}, ${contact.address}`)}`).catch(() => {})}
+          />
+        ) : null}
       </View>
     </View>
   );
 }
 
 export default function ImportantContactsScreen() {
+  const [group, setGroup] = useState<Group | "all">("all");
+  const [q, setQ] = useState("");
+  const term = q.trim().toLowerCase();
+  const shown = GROUPS.filter((g) => group === "all" || g.id === group)
+    .map((g) => ({
+      ...g,
+      list: g.list.filter((c) => !term || `${c.role} ${c.name} ${c.email ?? ""} ${c.phone ?? ""}`.toLowerCase().includes(term)),
+    }))
+    .filter((g) => g.list.length > 0);
+
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.subtitle}>Hostel administration and campus support</Text>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <View style={styles.search}>
+            <Ionicons name="search" size={16} color={colors.textSecondary} />
+            <TextInput
+              value={q}
+              onChangeText={setQ}
+              placeholder="Search name, role or number"
+              placeholderTextColor={colors.textSecondary}
+              style={styles.searchInput}
+              autoCorrect={false}
+            />
+          </View>
+          <View style={styles.chips}>
+            {[{ id: "all" as const, label: "All" }, ...GROUPS].map((g) => (
+              <TouchableOpacity key={g.id} style={[styles.chip, group === g.id && styles.chipOn]} onPress={() => setGroup(g.id)}>
+                <Text style={[styles.chipText, group === g.id && styles.chipTextOn]}>{g.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
-          <Text style={styles.sectionTitle}>Hostel Committee</Text>
-          {HOSTEL_CONTACTS.map((c, i) => (
-            <ContactCard key={i} contact={c} />
-          ))}
-
-          <Text style={styles.sectionTitle}>Medical Authority</Text>
-          {MEDICAL_CONTACTS.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyText}>
-                Not added yet — send over the medical officer / health centre
-                contact and it'll go here.
-              </Text>
-            </View>
+          {shown.length === 0 ? (
+            <Text style={styles.emptyText}>No contact matches “{q}”.</Text>
           ) : (
-            MEDICAL_CONTACTS.map((c, i) => <ContactCard key={i} contact={c} />)
+            shown.map((g) => (
+              <View key={g.id}>
+                <Text style={styles.sectionTitle}>{g.title}</Text>
+                {g.list.map((c, i) => (
+                  <ContactCard key={`${g.id}-${i}`} contact={c} />
+                ))}
+              </View>
+            ))
           )}
         </ScrollView>
       </SafeAreaView>
@@ -113,7 +154,16 @@ export default function ImportantContactsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: spacing.lg, paddingBottom: spacing.xl },
+  content: { padding: spacing.md, paddingBottom: spacing.xl },
+  search: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.surface, borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical: 10 },
+  searchInput: { flex: 1, fontSize: 14, color: colors.textPrimary, padding: 0 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: spacing.sm },
+  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: radius.full, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  chipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },
+  chipTextOn: { color: colors.onPrimary },
+  round: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" },
+  sub: { fontSize: 12.5, color: colors.textSecondary, marginTop: 1 },
   title: { ...typography.h1, color: colors.textPrimary },
   subtitle: {
     ...typography.body,
@@ -128,6 +178,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   card: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     padding: spacing.md,
@@ -147,7 +200,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.xs,
   },
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
+  actions: { flexDirection: "row", gap: 8 },
   actionBtn: { flexDirection: "row", alignItems: "center", gap: 6 },
   actionText: { ...typography.caption, color: colors.primary, fontWeight: "600" },
   emptyCard: {

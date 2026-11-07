@@ -11,6 +11,8 @@ import {
   getDocs,
   serverTimestamp,
   Timestamp,
+  arrayUnion,
+  arrayRemove,
 } from 'firebase/firestore';
 import { db } from './firestore';
 import { persisted } from './liveCache';
@@ -68,10 +70,14 @@ export type ClubEvent = {
   description: string;
   dateTime: Timestamp;
   link?: string;
+  venue?: string | null;
+  category?: string | null;
   createdBy: string;
   createdByName: string;
   createdAt: Timestamp | null;
 };
+
+export const EVENT_CATEGORIES = ["Workshop", "Talk / Seminar", "Competition", "Hackathon", "Cultural", "Sports", "Meetup", "Other"] as const;
 
 const CLUBS_COLLECTION = 'clubs';
 const EVENTS_COLLECTION = 'clubEvents';
@@ -169,7 +175,8 @@ export async function createEvent(
   dateTime: Date,
   link: string,
   createdBy: string,
-  createdByName: string
+  createdByName: string,
+  extra: { venue?: string | null; category?: string | null } = {}
 ): Promise<void> {
   await addDoc(collection(db, EVENTS_COLLECTION), {
     clubId,
@@ -178,6 +185,8 @@ export async function createEvent(
     description,
     dateTime: Timestamp.fromDate(dateTime),
     ...(link ? { link } : {}),
+    venue: extra.venue || null,
+    category: extra.category || null,
     createdBy,
     createdByName,
     createdAt: serverTimestamp(),
@@ -189,12 +198,15 @@ export async function updateEvent(
   title: string,
   description: string,
   dateTime: Date,
-  link: string
+  link: string,
+  extra: { venue?: string | null; category?: string | null } = {}
 ): Promise<void> {
   await updateDoc(doc(db, EVENTS_COLLECTION, eventId), {
     title,
     description,
     dateTime: Timestamp.fromDate(dateTime),
+    venue: extra.venue || null,
+    category: extra.category || null,
     ...(link && link.trim() ? { link: link.trim() } : { link: null }),
   });
 }
@@ -233,4 +245,31 @@ export function subscribeToAllUpcomingEvents(onUpdate: (events: ClubEvent[]) => 
     }));
     onUpdate(events);
   }, () => fail([])), onUpdate);
+}
+/** Events from the last `days` days (newest first), for the Past tab. */
+export function subscribeToRecentPastEvents(onUpdate: (events: ClubEvent[]) => void, days = 30): () => void {
+  const now = new Date();
+  const q = query(
+    collection(db, EVENTS_COLLECTION),
+    where('dateTime', '>=', Timestamp.fromDate(new Date(now.getTime() - days * 86400000))),
+    where('dateTime', '<', Timestamp.fromDate(now)),
+    orderBy('dateTime', 'desc')
+  );
+  return onSnapshot(
+    q,
+    (snapshot) => onUpdate(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ClubEvent, 'id'>) }))),
+    () => onUpdate([])
+  );
+}
+
+// Clubs a student follows (stored on users/{uid}.followedClubs). Followers get a push 1 hour before each event.
+const followOverride = new Map<string, boolean>();
+
+export function isFollowingClub(saved: string[] | undefined, clubId: string): boolean {
+  return followOverride.has(clubId) ? followOverride.get(clubId)! : !!saved?.includes(clubId);
+}
+
+export async function setFollowClub(uid: string, clubId: string, follow: boolean): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), { followedClubs: follow ? arrayUnion(clubId) : arrayRemove(clubId) });
+  followOverride.set(clubId, follow);
 }

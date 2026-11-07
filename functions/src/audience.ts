@@ -7,6 +7,7 @@ export type PrefKey =
   | "timetableUpdates"
   | "clubEvents"
   | "examsAndGrades"
+  | "attendanceAlerts"
   | "classReminders";
 
 export type UserDoc = {

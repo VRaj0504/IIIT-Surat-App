@@ -8,9 +8,9 @@ type BaseExamType = (typeof BASE_EXAM_TYPES)[number];
 export const EXAM_TYPE_LABELS: Record<string, string> = {
   "quiz": "Quiz / Internal",
   "midsem": "Mid Semester",
-  "midsem-repeaters": "Mid Semester (Repeaters)",
+  "midsem-repeaters": "Make-up (Mid Sem)",
   "endsem": "End Semester",
-  "endsem-repeaters": "End Semester (Repeaters)",
+  "endsem-repeaters": "Repeaters (End Sem)",
   "supplementary": "Supplementary / Re-exam",
 };
 

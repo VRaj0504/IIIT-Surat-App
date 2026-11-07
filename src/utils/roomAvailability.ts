@@ -138,3 +138,37 @@ export function pickCurrentSlot(slots: string[], nowMinutes: number): SlotPick {
   if (next) return { slot: next, phase: "between" };
   return { slot: latest, phase: "after" };
 }
+
+export function getRoomDaySchedule(timetables: Timetable[], day: string, room: string): RoomOccupant[] {
+  const key = roomKey(room);
+  const seen = new Set<string>();
+  const out: RoomOccupant[] = [];
+  for (const tt of timetables) {
+    for (const dayEntry of tt.days ?? []) {
+      if (!sameDay(dayEntry.day, day)) continue;
+      for (const slot of dayEntry.slots ?? []) {
+        const range = slotRange(slot);
+        if (!range || !splitRooms(slot.room).some((r) => roomKey(r) === key)) continue;
+        const id = `${range.start}|${tt.branch}|${tt.semester}|${tt.section}|${slot.subjectName}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push({
+          branch: tt.branch,
+          semester: tt.semester,
+          section: tt.section,
+          subjectName: slot.subjectName,
+          faculty: slot.faculty,
+          startTime: fromMinutes(range.start),
+          endTime: fromMinutes(range.end),
+        });
+      }
+    }
+  }
+  return out.sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+}
+
+export function freeUntil(timetables: Timetable[], day: string, room: string, time: string): string | null {
+  const t = toMinutes(time);
+  const next = getRoomDaySchedule(timetables, day, room).find((b) => toMinutes(b.startTime) > t);
+  return next ? next.startTime : null;
+}

@@ -29,6 +29,9 @@ import {
   IssueType,
 } from "../firebase/complaintService";
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
+import * as ImagePicker from "expo-image-picker";
+import { Image } from "react-native";
+import ComplaintPhotos from "../components/ComplaintPhotos";
 
 const statusColors: Record<Complaint["status"], string> = {
   pending: colors.warning,
@@ -50,6 +53,7 @@ export default function SubmitComplaintScreen() {
   const [selectedFaculty, setSelectedFaculty] = useState<FacultyMember | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [description, setDescription] = useState("");
+  const [photos, setPhotos] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   const [myComplaints, setMyComplaints] = useState<Complaint[]>([]);
@@ -82,6 +86,22 @@ export default function SubmitComplaintScreen() {
   };
 
   const clearFaculty = () => setSelectedFaculty(null);
+
+  const photosAllowed = type === "complaint" && category !== "Harassment";
+
+  const addPhoto = async (camera: boolean) => {
+    if (photos.length >= 2) return;
+    if (camera) {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert("Camera access needed", "Allow camera access in Settings, or pick a photo from your gallery.");
+        return;
+      }
+    }
+    const opts = { quality: 0.6, mediaTypes: ["images"] as ImagePicker.MediaType[] };
+    const result = camera ? await ImagePicker.launchCameraAsync(opts) : await ImagePicker.launchImageLibraryAsync(opts);
+    if (!result.canceled && result.assets?.[0]?.uri) setPhotos((p) => [...p, result.assets[0].uri].slice(0, 2));
+  };
 
   const handleSubmit = async () => {
     if (!profile) return;
@@ -116,9 +136,11 @@ export default function SubmitComplaintScreen() {
           : {}),
         subject: subjectTrimmed,
         description: descriptionTrimmed,
+        photoUris: photosAllowed ? photos : [],
       });
       setSubject("");
       setDescription("");
+      setPhotos([]);
       clearFaculty();
       const noun = type === "complaint" ? "complaint" : "doubt";
       Alert.alert(
@@ -260,8 +282,8 @@ export default function SubmitComplaintScreen() {
             onChangeText={setSubject}
             placeholder={
               type === "complaint"
-                ? 'Short summary, e.g. "Broken AC in Room 204"'
-                : 'Short summary, e.g. "Doubt in DBMS normalization"'
+                ? 'e.g. Broken AC in C-201'
+                : 'e.g. DBMS normalization doubt'
             }
             placeholderTextColor={colors.textSecondary}
           />
@@ -279,6 +301,38 @@ export default function SubmitComplaintScreen() {
             placeholderTextColor={colors.textSecondary}
             multiline
           />
+
+          {photosAllowed && (
+            <>
+              <Text style={styles.label}>Photos (optional, up to 2)</Text>
+              <View style={styles.photoRow}>
+                {photos.map((uri) => (
+                  <View key={uri}>
+                    <Image source={{ uri }} style={styles.photoThumb} />
+                    <TouchableOpacity
+                      style={styles.photoRemove}
+                      onPress={() => setPhotos((p) => p.filter((x) => x !== uri))}
+                      accessibilityLabel="Remove photo"
+                    >
+                      <Ionicons name="close" size={14} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                {photos.length < 2 && (
+                  <>
+                    <TouchableOpacity style={styles.photoAdd} onPress={() => addPhoto(true)}>
+                      <Ionicons name="camera-outline" size={22} color={colors.primary} />
+                      <Text style={styles.photoAddText}>Camera</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.photoAdd} onPress={() => addPhoto(false)}>
+                      <Ionicons name="images-outline" size={22} color={colors.primary} />
+                      <Text style={styles.photoAddText}>Gallery</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            </>
+          )}
 
           <TouchableOpacity
             style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
@@ -313,6 +367,7 @@ export default function SubmitComplaintScreen() {
                   {c.facultyName ? ` · To ${c.facultyName}` : ""}
                 </Text>
                 <Text style={styles.historyReason}>{c.description}</Text>
+                <ComplaintPhotos paths={c.photoPaths} />
                 {c.facultyRemark && (
                   <Text style={styles.historyRemark}>Remark: {c.facultyRemark}</Text>
                 )}
@@ -326,6 +381,11 @@ export default function SubmitComplaintScreen() {
 }
 
 const styles = StyleSheet.create({
+  photoRow: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
+  photoThumb: { width: 76, height: 76, borderRadius: 14, backgroundColor: colors.surfaceAlt },
+  photoRemove: { position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: 11, backgroundColor: colors.danger, alignItems: "center", justifyContent: "center" },
+  photoAdd: { width: 76, height: 76, borderRadius: 14, borderWidth: 1.5, borderStyle: "dashed", borderColor: colors.primary + "66", alignItems: "center", justifyContent: "center", gap: 2 },
+  photoAddText: { fontSize: 11, fontWeight: "700", color: colors.primary },
   container: { flex: 1 },
   scrollContent: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
   header: { ...typography.h2, color: colors.textPrimary, marginBottom: spacing.xs },

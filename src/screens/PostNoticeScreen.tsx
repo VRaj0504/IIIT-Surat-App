@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  Switch,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -56,6 +57,8 @@ export default function PostNoticeScreen() {
     editingNotice?.description ?? "",
   );
   const [link, setLink] = useState(editingNotice?.link ?? "");
+  const canPin = profile?.role === "faculty" || !!profile?.isAdmin;
+  const [pinned, setPinned] = useState(!!editingNotice?.pinned);
   const [category, setCategory] = useState<Notice["category"]>(
     editingNotice?.category ?? (isClubNotice ? "Club" : "General"),
   );
@@ -138,6 +141,7 @@ export default function PostNoticeScreen() {
           description.trim(),
           link.trim(),
           targeting,
+          canPin ? pinned : undefined,
         );
       } else {
         await createNotice(
@@ -149,6 +153,7 @@ export default function PostNoticeScreen() {
           isClubNotice ? { id: clubId!, name: clubName! } : undefined,
           link.trim() || undefined,
           targeting,
+          canPin && pinned,
         );
       }
       navigation.goBack();
@@ -186,12 +191,9 @@ export default function PostNoticeScreen() {
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={styles.title}>
-              {isEditing ? "Edit Notice" : "Post Notice"}
-            </Text>
-            <Text style={styles.subtitle}>
-              {isClubNotice ? clubName : "Campus-wide"}
-            </Text>
+            <View style={styles.scopePill}>
+              <Text style={styles.scopeText}>{isClubNotice ? clubName : "Campus-wide notice"}</Text>
+            </View>
 
             {error && <Text style={styles.error}>{error}</Text>}
 
@@ -374,6 +376,21 @@ export default function PostNoticeScreen() {
               onChangeText={setLink}
             />
 
+            {canPin && (
+              <View style={styles.pinRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.pinTitle}>Pin to top</Text>
+                  <Text style={styles.pinSub}>Stays above newer notices until you unpin it</Text>
+                </View>
+                <Switch
+                  value={pinned}
+                  onValueChange={setPinned}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#fff"
+                />
+              </View>
+            )}
+
             <TouchableOpacity
               style={styles.primaryBtn}
               onPress={handlePost}
@@ -409,15 +426,13 @@ export default function PostNoticeScreen() {
 }
 
 const styles = StyleSheet.create({
+  pinRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md, borderWidth: 1, borderColor: colors.border },
+  pinTitle: { fontSize: 15, fontWeight: "700", color: colors.textPrimary },
+  pinSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
   container: { flex: 1 },
-  scrollContent: { flexGrow: 1, padding: spacing.lg },
-  title: { ...typography.h1, color: colors.textPrimary },
-  subtitle: {
-    ...typography.body,
-    color: colors.primary,
-    fontWeight: "600",
-    marginBottom: spacing.lg,
-  },
+  scrollContent: { flexGrow: 1, padding: spacing.md },
+  scopePill: { alignSelf: "flex-start", backgroundColor: colors.badge.blue.bg, borderRadius: radius.full, paddingHorizontal: 12, paddingVertical: 6, marginBottom: spacing.sm },
+  scopeText: { color: colors.badge.blue.fg, fontWeight: "700", fontSize: 13 },
   error: {
     color: colors.danger,
     backgroundColor: colors.dangerBg,
@@ -429,8 +444,9 @@ const styles = StyleSheet.create({
   label: {
     ...typography.caption,
     color: colors.textSecondary,
-    marginBottom: spacing.xs,
-    marginTop: spacing.sm,
+    fontWeight: "600",
+    marginBottom: 6,
+    marginTop: spacing.md,
   },
   input: {
     backgroundColor: colors.surface,

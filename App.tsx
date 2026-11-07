@@ -14,6 +14,7 @@ import { linking, formatDocumentTitle } from './src/navigation/linking';
 import LoadingSpinner from "./src/components/LoadingSpinner";
 import { PortalHost } from './src/components/Portal';
 import Constants from 'expo-constants';
+import { pushTarget } from './src/utils/pushRoute';
 import * as SplashScreen from 'expo-splash-screen';
 
 if (Platform.OS !== 'web') {
@@ -105,17 +106,17 @@ export default function App() {
     if (Platform.OS === 'web' || Constants.executionEnvironment === 'storeClient') return;
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Notifications = require('expo-notifications');
-    const open = (data: any) => {
-      const screen = data?.screen;
-      if (typeof screen !== 'string') return;
-      const go = () => navigationRef.navigate(screen as never);
+    const open = (content: any) => {
+      const target = pushTarget(content?.title, content?.data ?? null, false);
+      if (!target) return;
+      const go = () => (navigationRef as any).navigate(target.name, target.params);
       if (navigationRef.isReady()) go();
       else setTimeout(go, 800);
     };
     Notifications.getLastNotificationResponseAsync()
-      .then((r: any) => r && open(r.notification.request.content.data))
+      .then((r: any) => r && open(r.notification.request.content))
       .catch(() => {});
-    const sub = Notifications.addNotificationResponseReceivedListener((r: any) => open(r.notification.request.content.data));
+    const sub = Notifications.addNotificationResponseReceivedListener((r: any) => open(r.notification.request.content));
     return () => sub.remove();
   }, []);
 

@@ -102,7 +102,7 @@ export default function LoginScreen({ onNavigateToSignUp, onNavigateToForgotPass
             <AuthSpacer min={24} />
 
             <Reveal delay={120} style={{ gap: 18 }}>
-              <Heading icon="log-in-outline" title="Sign in" subtitle="Classes, attendance, notices and the mess — everything for your day at IIIT Surat." />
+              <Heading icon="log-in-outline" title="Sign in" subtitle="Classes, attendance, notices and the mess — everything for your day on campus." />
               <HintRow text="New to CollegeGo?" link="Create an account" onPress={onNavigateToSignUp} />
             </Reveal>
 

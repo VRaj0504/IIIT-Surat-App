@@ -7,6 +7,7 @@ import { useAuth } from "../context/AuthContext";
 import { subscribeToAssignedExcusals, respondToExcusal, EventExcusal } from "../firebase/eventExcusalService";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { KeyboardAwareFlatList } from "../components/KeyboardAware";
+import { EmptyState } from "../components/ui";
 
 export default function EventExcusalRequestsScreen() {
   const { profile } = useAuth();
@@ -49,7 +50,7 @@ export default function EventExcusalRequestsScreen() {
         {loading ? (
           <LoadingSpinner style={{ marginTop: spacing.xl }} />
         ) : excusals.length === 0 ? (
-          <Text style={styles.emptyNote}>No requests assigned to you.</Text>
+          <EmptyState icon="checkmark-done-outline" title="All caught up" hint="Event excusal requests sent to you will show up here." />
         ) : (
           <KeyboardAwareFlatList
             data={[...pending, ...resolved]}
@@ -108,10 +109,10 @@ export default function EventExcusalRequestsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { ...typography.h2, color: colors.textPrimary, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  helper: { ...typography.caption, color: colors.textSecondary, paddingHorizontal: spacing.lg, marginTop: 4, marginBottom: spacing.md },
+  header: { ...typography.h2, color: colors.textPrimary, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
+  helper: { ...typography.caption, color: colors.textSecondary, paddingHorizontal: spacing.md, marginTop: spacing.sm, marginBottom: spacing.sm, lineHeight: 18 },
   emptyNote: { ...typography.body, color: colors.textSecondary, textAlign: "center", marginTop: spacing.xl },
-  listContent: { padding: spacing.lg, gap: spacing.md },
+  listContent: { padding: spacing.md, gap: spacing.md },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,

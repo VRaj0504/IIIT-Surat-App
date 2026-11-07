@@ -10,6 +10,7 @@ export type NotificationPreferences = {
   timetableUpdates: boolean;
   clubEvents: boolean;
   examsAndGrades: boolean;
+  attendanceAlerts: boolean;
 };
 
 const DEFAULTS: NotificationPreferences = {
@@ -21,6 +22,7 @@ const DEFAULTS: NotificationPreferences = {
   timetableUpdates: true,
   clubEvents: true,
   examsAndGrades: true,
+  attendanceAlerts: true,
 };
 
 export async function getNotificationPreferences(uid: string): Promise<NotificationPreferences> {

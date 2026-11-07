@@ -156,3 +156,19 @@ export async function loadEmergencyContacts(uid: string, legacy?: EmergencyConta
 }
 
 export const mapsUrl = (l: SosLocation) => `https://maps.google.com/?q=${l.lat},${l.lng}`;
+
+/** Alerts from the last `days` days that are closed (resolved or cancelled), newest first. Responders only. */
+export function subscribeToRecentClosedSos(onUpdate: (alerts: SosAlert[]) => void, days = 7): () => void {
+  const q = query(collection(db, "sosAlerts"), where("createdAt", ">=", Timestamp.fromMillis(Date.now() - days * 86400000)));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as Omit<SosAlert, "id">) }))
+        .filter((a) => a.status === "resolved" || a.status === "cancelled");
+      list.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+      onUpdate(list);
+    },
+    () => onUpdate([]),
+  );
+}

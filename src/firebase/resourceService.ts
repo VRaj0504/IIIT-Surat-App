@@ -15,10 +15,12 @@ export type Resource = {
   section?: string | null;
   type: 'Notes' | 'PYQ' | 'Slides' | 'Assignment';
   examYear?: number | null;
+  unit?: number | null;
+  isLink?: boolean;
 
   academicYear?: string | null;
   fileUrl: string;
-  storagePath: string;
+  storagePath: string | null;
   uploadedBy: string;
   uploadedByName: string;
   createdAt: Timestamp | null;
@@ -101,10 +103,12 @@ export function subscribeToResources(
 }
 
 export async function deleteResource(resource: Resource): Promise<void> {
-  try {
-    await deleteObject(ref(storage, resource.storagePath));
-  } catch (err: any) {
-    throw new Error(`Could not delete file: ${err.message}`);
+  if (resource.storagePath) {
+    try {
+      await deleteObject(ref(storage, resource.storagePath));
+    } catch (err: any) {
+      if (err?.code !== 'storage/object-not-found') throw new Error(`Could not delete file: ${err.message}`);
+    }
   }
   await deleteDoc(doc(db, RESOURCES_COLLECTION, resource.id));
 }

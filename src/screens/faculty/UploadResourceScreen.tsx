@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -28,6 +28,9 @@ import {
   CurriculumSubject,
 } from "../../firebase/curriculumService";
 import { KeyboardAwareScrollView } from "../../components/KeyboardAware";
+import { SelectField, SheetPicker } from "../../components/ui";
+import { subscribeToFacultyTimetable } from "../../firebase/timetableService";
+import { getClassOptionsForYear } from "../../firebase/announcementsService";
 
 const BRANCHES = ["CSE", "ECE", "MNC"] as const;
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
@@ -54,11 +57,64 @@ export default function UploadResourceScreen() {
   const [uploading, setUploading] = useState(false);
 
   const [subjectOptions, setSubjectOptions] = useState<CurriculumSubject[]>([]);
+  const [sectionOptions, setSectionOptions] = useState<string[]>([]);
+  const [sectionOpen, setSectionOpen] = useState(false);
+  const prefillSubject = useRef<string | null>(null);
+  const triedPrefill = useRef(false);
+
+  // Start on the class this faculty member teaches most (from the timetable).
+  useEffect(() => {
+    if (!profile?.name) return;
+    const unsub = subscribeToFacultyTimetable(profile.name, (entries) => {
+      if (triedPrefill.current || entries.length === 0) return;
+      triedPrefill.current = true;
+      const count = new Map<string, { n: number; e: (typeof entries)[number] }>();
+      entries.forEach((e) => {
+        const k = `${e.branch}|${e.semester}|${e.subjectCode}`;
+        count.set(k, { n: (count.get(k)?.n ?? 0) + 1, e });
+      });
+      const top = [...count.values()].sort((x, y) => y.n - x.n)[0]?.e;
+      const b = String(top?.branch ?? "").toUpperCase() as (typeof BRANCHES)[number];
+      const sem = Number(top?.semester) as (typeof SEMESTERS)[number];
+      if (!top || !BRANCHES.includes(b) || !SEMESTERS.includes(sem)) return;
+      prefillSubject.current = top.subjectCode;
+      setBranch(b);
+      setSemester(sem);
+    });
+    return () => unsub();
+  }, [profile?.name]);
+
+  // Sections that exist for this branch in the batch now in this semester.
+  useEffect(() => {
+    let alive = true;
+    const now = new Date();
+    const ayStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+    const admission = ayStart - Math.ceil(semester / 2) + 1;
+    getClassOptionsForYear(admission)
+      .then((opts) => {
+        if (!alive) return;
+        const list = opts
+          .filter((o) => o.branch.toUpperCase() === branch && o.section)
+          .map((o) => String(o.section));
+        setSectionOptions([...new Set(list)].sort());
+      })
+      .catch(() => alive && setSectionOptions([]));
+    setSection("");
+    return () => {
+      alive = false;
+    };
+  }, [branch, semester]);
 
   useEffect(() => {
     const unsubscribe = subscribeToCurriculum(branch, semester, (subjects) => {
       setSubjectOptions(subjects);
-      if (subjects.length > 0 && !subjects.some((s) => s.name === subject)) {
+      const want = prefillSubject.current
+        ? subjects.find((x) => x.code.replace(/\s/g, "").toUpperCase() === prefillSubject.current!.replace(/\s/g, "").toUpperCase())
+        : null;
+      if (want) {
+        prefillSubject.current = null;
+        setSubject(want.name);
+      } else if (subjects.length > 0 && !subjects.some((s) => s.name === subject)) {
         setSubject(subjects[0].name);
       } else if (subjects.length === 0) {
         setSubject("");
@@ -185,14 +241,22 @@ export default function UploadResourceScreen() {
             ))}
           </View>
 
-          <Text style={styles.label}>Section (optional)</Text>
-          <TextInput
-           style={styles.input}
-            value={section}
-            onChangeText={setSection}
-            placeholder="e.g. B or CSE2 — leave blank for all sections"
-            placeholderTextColor={colors.textSecondary}
-            autoCapitalize="characters"
+          <SelectField
+            label="Section"
+            value={section ? section : `All ${branch} sections`}
+            placeholder="All sections"
+            icon="people-outline"
+            onPress={() => setSectionOpen(true)}
+          />
+          <SheetPicker
+            visible={sectionOpen}
+            title="Section"
+            items={["", ...sectionOptions]}
+            keyOf={(x) => x || "__ALL__"}
+            labelOf={(x) => x || `All ${branch} sections`}
+            selectedKey={section || "__ALL__"}
+            onPick={(x) => setSection(x)}
+            onClose={() => setSectionOpen(false)}
           />
 
           <Text style={styles.label}>Subject</Text>

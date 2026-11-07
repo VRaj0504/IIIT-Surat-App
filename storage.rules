@@ -45,7 +45,7 @@ service firebase.storage {
     }
 
     function isStaff() {
-      return signedIn() && (userRole() == 'faculty' || userRole() == 'admin');
+      return signedIn() && (userRole() == 'faculty' || userRole() == 'admin' || userDoc().get('isAdmin', false) == true);
     }
 
     function smallImage(maxMb) {
@@ -59,16 +59,26 @@ service firebase.storage {
 
     match /resources/{allPaths=**} {
       allow read: if isMember();
-      allow create, update: if isFaculty() && underMb(50);
-      allow delete: if isFaculty();
+      allow create, update: if isStaff() && underMb(50);
+      allow delete: if isStaff();
     }
 
-    match /lostFound/{allPaths=**} {
-      allow read: if isMember();
+    // Photos are visible to the student, admins, the faculty the complaint went to, and the complaints committee.
+    function complaintDoc(id) {
+      return firestore.get(/databases/(default)/documents/complaints/$(id)).data;
     }
-    match /lostFound/{uid}/{allPaths=**} {
-      allow create, update: if isMember() && request.auth.uid == uid && smallImage(5);
-      allow delete: if isMember() && (request.auth.uid == uid || isStaff());
+    function inComplaintCommittee() {
+      return myEmail() in firestore.get(/databases/(default)/documents/config/complaints).data.get('committeeEmails', []);
+    }
+    match /complaints/{uid}/{complaintId}/{file} {
+      allow read: if isMember() && (
+        request.auth.uid == uid ||
+        isAdmin() ||
+        complaintDoc(complaintId).get('facultyEmail', null) == myEmail() ||
+        inComplaintCommittee()
+      );
+      allow create: if isMember() && request.auth.uid == uid && smallImage(5);
+      allow delete: if isMember() && (request.auth.uid == uid || isAdmin());
     }
 
     match /posterScans/{uid}/{allPaths=**} {

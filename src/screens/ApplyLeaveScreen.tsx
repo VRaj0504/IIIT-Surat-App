@@ -183,7 +183,7 @@ export default function ApplyLeaveScreen() {
                 {(
                   [
                     { v: "casual", icon: "calendar-outline", title: "Casual", sub: "Goes to one teacher" },
-                    { v: "medical", icon: "medkit-outline", title: "Medical", sub: "Official IIIT Surat form" },
+                    { v: "medical", icon: "medkit-outline", title: "Medical", sub: "Official college form" },
                   ] as const
                 ).map((o) => {
                   const active = type === o.v;

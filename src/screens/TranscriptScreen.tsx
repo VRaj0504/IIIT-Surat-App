@@ -92,7 +92,7 @@ export default function TranscriptScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
+  content: { padding: spacing.md, paddingBottom: spacing.xl * 2 },
   header: { ...typography.h2, color: colors.textPrimary },
   subtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2, marginBottom: spacing.md },
   emptyContainer: { alignItems: "center", gap: spacing.sm, marginTop: spacing.xl },

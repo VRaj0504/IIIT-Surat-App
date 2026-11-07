@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, ScrollView } from "react-native";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing, typography } from "../theme/theme";
@@ -59,6 +59,13 @@ function NoticeCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const openMenu = () => {
+    const buttons: { text: string; style?: "cancel" | "destructive"; onPress?: () => void }[] = [];
+    if (canEdit) buttons.push({ text: "Edit", onPress: onEdit });
+    if (canDelete) buttons.push({ text: "Delete", style: "destructive", onPress: onDelete });
+    buttons.push({ text: "Close", style: "cancel" });
+    Alert.alert(item.title, undefined, buttons);
+  };
   const [open, setOpen] = useState(false);
   const tone = colors.tile[TONE[item.category] ?? "blue"];
   const created = item.createdAt ? item.createdAt.toMillis() : 0;
@@ -84,10 +91,16 @@ function NoticeCard({
             {item.createdByName ? ` · ${item.createdByName}` : ""}
           </Text>
         </View>
+        {item.pinned && <Ionicons name="pin" size={16} color={colors.primary} />}
         {isNew && (
           <View style={styles.newPill}>
             <Text style={styles.newText}>NEW</Text>
           </View>
+        )}
+        {(canEdit || canDelete) && (
+          <TouchableOpacity onPress={openMenu} hitSlop={10} accessibilityLabel="Notice options" style={styles.menuBtn}>
+            <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
         )}
       </View>
 
@@ -99,26 +112,12 @@ function NoticeCard({
       )}
       {long && <Text style={styles.more}>{open ? "Show less" : "Read more"}</Text>}
 
-      {(item.link || canEdit || canDelete) && (
+      {!!item.link && (
         <View style={styles.actions}>
-          {item.link ? (
-            <TouchableOpacity style={styles.attach} onPress={() => openSafeUrl(item.link!).catch(() => {})}>
-              <Ionicons name="document-attach-outline" size={16} color={colors.primary} />
-              <Text style={styles.attachText}>Open attachment</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={{ flex: 1 }} />
-          )}
-          {canEdit && (
-            <TouchableOpacity style={styles.iconBtn} onPress={onEdit} accessibilityLabel="Edit notice">
-              <Ionicons name="pencil-outline" size={17} color={colors.textSecondary} />
-            </TouchableOpacity>
-          )}
-          {canDelete && (
-            <TouchableOpacity style={styles.iconBtn} onPress={onDelete} accessibilityLabel="Delete notice">
-              <Ionicons name="trash-outline" size={17} color={colors.danger} />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity style={styles.attach} onPress={() => openSafeUrl(item.link!).catch(() => {})}>
+            <Ionicons name="document-attach-outline" size={16} color={colors.primary} />
+            <Text style={styles.attachText}>Open attachment</Text>
+          </TouchableOpacity>
         </View>
       )}
     </TapCard>
@@ -127,7 +126,9 @@ function NoticeCard({
 
 export default function NoticesScreen() {
   const navigation = useNavigation<NavProp>();
+  const route = useRoute<any>();
   const { user, profile } = useAuth();
+  const [search, setSearch] = useState("");
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("All");
@@ -159,7 +160,20 @@ export default function NoticesScreen() {
   };
 
   const filters = useMemo(() => FILTERS.filter((f) => f === "All" || notices.some((n) => n.category === f)), [notices]);
-  const shown = filter === "All" ? notices : notices.filter((n) => n.category === filter);
+  useEffect(() => {
+    const f = route.params?.filter as Filter | undefined;
+    if (f && FILTERS.includes(f)) setFilter(f);
+  }, [route.params?.filter]);
+
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = notices.filter(
+      (n) =>
+        (filter === "All" || n.category === filter) &&
+        (!q || n.title.toLowerCase().includes(q) || (n.description ?? "").toLowerCase().includes(q)),
+    );
+    return [...list.filter((n) => n.pinned), ...list.filter((n) => !n.pinned)];
+  }, [notices, filter, search]);
   const newCount = notices.filter((n) => n.createdAt && now - n.createdAt.toMillis() < 24 * 60 * 60 * 1000).length;
   const isFaculty = profile?.role === "faculty";
 
@@ -183,8 +197,26 @@ export default function NoticesScreen() {
           )}
         </View>
 
+        <View style={styles.searchBox}>
+          <Ionicons name="search" size={16} color={colors.textSecondary} />
+          <TextInput
+            style={styles.searchInput}
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search notices"
+            placeholderTextColor={colors.textSecondary}
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+          {!!search && (
+            <TouchableOpacity onPress={() => setSearch("")} hitSlop={8}>
+              <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          )}
+        </View>
+
         {filters.length > 2 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsWrap} contentContainerStyle={styles.chips}>
+          <View style={styles.chips}>
             {filters.map((f) => {
               const active = f === filter;
               return (
@@ -198,7 +230,7 @@ export default function NoticesScreen() {
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
+          </View>
         )}
 
         {loading ? (
@@ -209,13 +241,17 @@ export default function NoticesScreen() {
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.list}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             ListEmptyComponent={
               <View style={styles.empty}>
                 <View style={styles.emptyIcon}>
                   <Ionicons name="notifications-off-outline" size={26} color={colors.textSecondary} />
                 </View>
-                <Text style={styles.emptyTitle}>No notices{filter !== "All" ? ` in ${filter}` : ""} yet</Text>
-                <Text style={styles.emptySub}>New ones show up here and on your phone.</Text>
+                <Text style={styles.emptyTitle}>
+                  {search.trim() ? "No notices match your search" : `No notices${filter !== "All" ? ` in ${filter}` : ""} yet`}
+                </Text>
+                {!search.trim() && <Text style={styles.emptySub}>New ones show up here and on your phone.</Text>}
               </View>
             }
             renderItem={({ item }) => (
@@ -223,7 +259,7 @@ export default function NoticesScreen() {
                 item={item}
                 now={now}
                 canEdit={user?.uid === item.createdBy}
-                canDelete={user?.uid === item.createdBy || isFaculty}
+                canDelete={user?.uid === item.createdBy || !!profile?.isAdmin}
                 onEdit={() => navigation.navigate("PostNotice", { editingNotice: item })}
                 onDelete={() => handleDelete(item)}
               />
@@ -253,11 +289,12 @@ const styles = StyleSheet.create({
   },
   addText: { color: colors.onPrimary, fontWeight: "800", fontSize: 13 },
 
-  chipsWrap: { marginBottom: 12, flexGrow: 0, flexShrink: 0 },
-  chips: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingRight: 16 },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.surface },
+  searchBox: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.surface, borderRadius: 14, paddingHorizontal: 12, height: 42, marginBottom: 10 },
+  searchInput: { flex: 1, fontSize: 14, color: colors.textPrimary, paddingVertical: 0 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 },
+  chip: { paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.surface },
   chipActive: { backgroundColor: colors.ink },
-  chipText: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },
+  chipText: { fontSize: 12.5, fontWeight: "700", color: colors.textPrimary },
   chipTextActive: { color: colors.onInk },
 
   list: { paddingBottom: 110, gap: 10 },
@@ -267,6 +304,7 @@ const styles = StyleSheet.create({
   catText: { fontSize: 13, fontWeight: "800" },
   targetText: { color: colors.textSecondary, fontWeight: "700" },
   when: { fontSize: 12, fontWeight: "600", color: colors.textSecondary, marginTop: 1 },
+  menuBtn: { padding: 2, marginLeft: 2 },
   newPill: { backgroundColor: colors.accent, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
   newText: { color: "#FFFFFF", fontSize: 10, fontWeight: "800", letterSpacing: 0.6 },
   title: { fontSize: 17, fontWeight: "800", letterSpacing: -0.3, color: colors.textPrimary, lineHeight: 22 },

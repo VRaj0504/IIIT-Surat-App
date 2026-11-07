@@ -131,6 +131,21 @@ function Actions({ member }: { member: FacultyMember }) {
   );
 }
 
+function QuickActions({ member }: { member: FacultyMember }) {
+  return (
+    <View style={styles.quickCol}>
+      <TouchableOpacity style={styles.quickBtn} onPress={() => open(`mailto:${member.email}`)} accessibilityLabel={`Email ${member.name}`} hitSlop={6}>
+        <Ionicons name="mail-outline" size={18} color={colors.primary} />
+      </TouchableOpacity>
+      {member.phone ? (
+        <TouchableOpacity style={styles.quickBtn} onPress={() => open(`tel:${member.phone}`)} accessibilityLabel={`Call ${member.name}`} hitSlop={6}>
+          <Ionicons name="call-outline" size={18} color={colors.primary} />
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
 const FacultyCard = memo(function FacultyCard({ member, onOpen }: { member: FacultyMember; onOpen: (m: FacultyMember) => void }) {
   const badge = roleBadge(member);
   return (
@@ -170,8 +185,8 @@ const FacultyCard = memo(function FacultyCard({ member, onOpen }: { member: Facu
             </View>
           ) : null}
         </View>
+        <QuickActions member={member} />
       </View>
-      <Actions member={member} />
     </TouchableOpacity>
   );
 });
@@ -337,7 +352,7 @@ export default function FacultyDirectoryScreen() {
         ) : null}
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={styles.chips}>
+      <View style={styles.chips}>
         <TouchableOpacity
           style={[styles.chip, styles.cabinChip, cabinOnly && styles.cabinChipOn]}
           onPress={() => setCabinOnly((v) => !v)}
@@ -358,7 +373,7 @@ export default function FacultyDirectoryScreen() {
             <Text style={[styles.chipText, folder === f.id && styles.chipTextOn]}>{f.label}</Text>
           </TouchableOpacity>
         ))}
-      </ScrollView>
+      </View>
 
       <Text style={styles.count}>
         {shown.length} {shown.length === 1 ? "person" : "people"}
@@ -426,7 +441,9 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 15, fontWeight: "500", color: colors.textPrimary, paddingVertical: 12 },
   chipScroll: { flexGrow: 0, flexShrink: 0, marginHorizontal: -spacing.md },
-  chips: { gap: 8, paddingHorizontal: spacing.md },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  quickCol: { gap: 8, marginLeft: spacing.sm },
+  quickBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" },
   chip: {
     height: 38,
     paddingHorizontal: 14,

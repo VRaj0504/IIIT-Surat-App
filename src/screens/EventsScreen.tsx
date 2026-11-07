@@ -7,12 +7,12 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
-import { subscribeToAllUpcomingEvents, ClubEvent } from "../firebase/clubsService";
+import { subscribeToAllUpcomingEvents, subscribeToRecentPastEvents, ClubEvent } from "../firebase/clubsService";
 import { getClubIcon } from "../data/clubIcons";
 import GlassCard from "../components/GlassCard";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
-import { SelectField, SheetPicker } from "../components/ui";
+import { SelectField, SheetPicker, Segmented } from "../components/ui";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -41,6 +41,13 @@ export default function EventsScreen() {
   const [search, setSearch] = useState("");
   const [selectedClub, setSelectedClub] = useState<string | null>(null);
   const [clubPickerOpen, setClubPickerOpen] = useState(false);
+  const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
+  const [past, setPast] = useState<ClubEvent[] | null>(null);
+
+  useEffect(() => {
+    if (tab !== "past" || past !== null) return;
+    return subscribeToRecentPastEvents(setPast, 30);
+  }, [tab, past]);
 
   useEffect(() => {
     const unsubscribe = subscribeToAllUpcomingEvents((data) => {
@@ -50,21 +57,31 @@ export default function EventsScreen() {
     return unsubscribe;
   }, []);
 
+  const shownEvents = tab === "past" ? past ?? [] : events;
   const clubNames = useMemo(
-    () => Array.from(new Set(events.map((e) => e.clubName))).sort((a, b) => a.localeCompare(b)),
-    [events],
+    () => Array.from(new Set(shownEvents.map((e) => e.clubName))).sort((a, b) => a.localeCompare(b)),
+    [shownEvents],
   );
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return events.filter((e) => {
+    return shownEvents.filter((e) => {
       if (selectedClub && e.clubName !== selectedClub) return false;
       if (!term) return true;
       return e.title.toLowerCase().includes(term) || e.description.toLowerCase().includes(term);
     });
-  }, [events, search, selectedClub]);
+  }, [shownEvents, search, selectedClub]);
 
   const sections = useMemo(() => {
+    if (tab === "past") {
+      const byMonth = new Map<string, ClubEvent[]>();
+      for (const e of filtered) {
+        const k = e.dateTime.toDate().toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+        if (!byMonth.has(k)) byMonth.set(k, []);
+        byMonth.get(k)!.push(e);
+      }
+      return [...byMonth.entries()].map(([title, data]) => ({ title, data }));
+    }
     const now = new Date();
     const byBucket = new Map<string, ClubEvent[]>();
     for (const event of filtered) {
@@ -74,7 +91,7 @@ export default function EventsScreen() {
     }
 
     return BUCKET_ORDER.filter((b) => byBucket.has(b)).map((title) => ({ title, data: byBucket.get(title)! }));
-  }, [filtered]);
+  }, [filtered, tab]);
 
   const openEvent = (event: ClubEvent) => {
     navigation.navigate("ClubDetail", { clubId: event.clubId, clubName: event.clubName });
@@ -94,6 +111,15 @@ export default function EventsScreen() {
           />
         </View>
 
+        <Segmented
+          options={[
+            { value: "upcoming", label: "Upcoming" },
+            { value: "past", label: "Past 30 days" },
+          ]}
+          value={tab}
+          onChange={setTab}
+          style={{ marginTop: spacing.sm }}
+        />
         {clubNames.length > 0 && (
           <SelectField
             value={selectedClub ?? "All clubs"}
@@ -114,7 +140,7 @@ export default function EventsScreen() {
           searchable={clubNames.length > 8}
         />
 
-        {loading ? (
+        {loading || (tab === "past" && past === null) ? (
           <LoadingSpinner style={{ marginTop: spacing.xl }} />
         ) : (
           <SectionList
@@ -124,14 +150,18 @@ export default function EventsScreen() {
             stickySectionHeadersEnabled={false}
             ListEmptyComponent={
               <Text style={styles.emptyText}>
-                {events.length === 0 ? "No upcoming events yet." : "No events match this search or filter."}
+                {shownEvents.length === 0
+                  ? tab === "past"
+                    ? "No events in the last 30 days."
+                    : "No upcoming events yet."
+                  : "No events match this search or filter."}
               </Text>
             }
             renderSectionHeader={({ section }) => <Text style={styles.sectionTitle}>{section.title}</Text>}
             renderItem={({ item: event }) => {
               const { icon, color } = getClubIcon(event.clubName);
               return (
-                <GlassCard style={styles.eventCard}>
+                <GlassCard style={[styles.eventCard, tab === "past" && { opacity: 0.75 }]}>
                   <TouchableOpacity style={styles.eventCardInner} onPress={() => openEvent(event)} activeOpacity={0.7}>
                     <View style={[styles.eventIconWrap, { backgroundColor: color + "22" }]}>
                       <Ionicons name={icon} size={20} color={color} />
@@ -139,7 +169,11 @@ export default function EventsScreen() {
                     <View style={styles.eventInfo}>
                       <Text style={styles.eventTitle} numberOfLines={2}>{event.title}</Text>
                       <Text style={[styles.eventClub, { color }]} numberOfLines={1}>{event.clubName}</Text>
-                      <Text style={styles.eventWhen}>{formatEventTime(event.dateTime)}</Text>
+                      <Text style={styles.eventWhen}>
+                        {formatEventTime(event.dateTime)}
+                        {event.venue ? ` · ${event.venue}` : ""}
+                      </Text>
+                      {!!event.category && <Text style={styles.eventCat}>{event.category}</Text>}
                     </View>
                     <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
                   </TouchableOpacity>
@@ -189,6 +223,7 @@ const styles = StyleSheet.create({
   },
   eventInfo: { flex: 1 },
   eventWhen: { fontSize: 12, fontWeight: "600", color: colors.textSecondary, marginTop: 2 },
+  eventCat: { alignSelf: "flex-start", marginTop: 4, fontSize: 11, fontWeight: "700", color: colors.textSecondary, backgroundColor: colors.surfaceAlt, borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 2, overflow: "hidden" },
   eventTitle: { ...typography.body, color: colors.textPrimary, fontWeight: "600" },
   eventClub: { ...typography.caption, fontWeight: "600", marginTop: 2 },
   eventTime: { ...typography.caption, color: colors.textSecondary, marginLeft: spacing.sm },

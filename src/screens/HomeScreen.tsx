@@ -30,7 +30,11 @@ import DesktopHome from '../components/web/DesktopHome';
 import { expandFaculty } from '../data/facultyLegend';
 import { subscribeToActiveSos, SosAlert } from '../firebase/sosService';
 import { useAttendanceSummary } from '../hooks/useAttendanceSummary';
+import { useInboxUnread } from '../hooks/useInboxUnread';
 import { ATTENDANCE_TARGET } from '../firebase/attendanceService';
+import { subscribeToLeaveRequestsForFaculty, subscribeToMyTeacherAcks } from '../firebase/leaveService';
+import { subscribeMedicalQueue } from '../firebase/medicalService';
+import { subscribeToClassChanges, findClassChange, isoDate, ClassChange } from '../firebase/classChangesService';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -71,7 +75,6 @@ const studentSections: Section[] = [
     tiles: [
       { label: 'Empty Classrooms', icon: 'business-outline', route: 'RoomAvailability', badge: 'green' },
       { label: 'Announcements', icon: 'notifications-outline', route: 'Announcements', badge: 'purple' },
-      { label: 'Lost & Found', icon: 'search-outline', route: 'LostFound', badge: 'blue' },
       { label: 'Faculty Directory', icon: 'people-outline', route: 'Faculty', badge: 'peach' },
       { label: 'Scan Event Poster', icon: 'scan-outline', route: 'ScanPoster', badge: 'peach' },
       { label: 'Placements', icon: 'briefcase-outline', route: 'Placement', badge: 'purple' },
@@ -119,7 +122,6 @@ const facultySections: Section[] = [
     tiles: [
       { label: 'Empty Classrooms', icon: 'business-outline', route: 'RoomAvailability', badge: 'green' },
       { label: 'Faculty Directory', icon: 'people-outline', route: 'Faculty', badge: 'peach' },
-      { label: 'Lost & Found', icon: 'search-outline', route: 'LostFound', badge: 'blue' },
       { label: 'Scan Event Poster', icon: 'scan-outline', route: 'ScanPoster', badge: 'peach' },
       { label: 'Placements', icon: 'briefcase-outline', route: 'Placement', badge: 'purple' },
       { label: 'Apply for Leave', icon: 'document-text-outline', route: 'ApplyLeave', badge: 'blue' },
@@ -149,21 +151,21 @@ const studentBento: Bento = {
   ],
 
   chips: [
-    { label: 'Lost & Found', icon: 'search-outline', route: 'LostFound', tone: 'blue' },
-    { label: 'Thali Pass', icon: 'qr-code-outline', route: 'ThaliPass', tone: 'peach' },
     { label: 'Exams', icon: 'document-text-outline', route: 'ExamSchedule', tone: 'lilac' },
+    { label: 'Marks', icon: 'stats-chart-outline', route: 'Marks', tone: 'peach' },
     { label: 'Leave', icon: 'mail-outline', route: 'ApplyLeave', tone: 'mint' },
+    { label: 'Thali Pass', icon: 'qr-code-outline', route: 'ThaliPass', tone: 'blue' },
   ],
 };
 const facultyBento: Bento = {
   big: { label: 'Leave requests', sub: 'Medical & casual', icon: 'mail-open-outline', route: 'LeaveRequests', tone: 'mint' },
   small: [
     { label: 'Empty classrooms', sub: 'Find a free classroom', icon: 'business-outline', route: 'RoomAvailability', tone: 'lilac' },
-    { label: 'Scan pass', sub: 'Mess counter', icon: 'scan-circle-outline', route: 'ScanThaliPass', tone: 'peach' },
+    { label: 'Resources', sub: 'Share notes & papers', icon: 'book-outline', route: 'Resources', tone: 'peach' },
   ],
   chips: [
     { label: 'Attendance', icon: 'checkmark-done-outline', route: 'MarkAttendance', tone: 'mint' },
-    { label: 'Lost & Found', icon: 'search-outline', route: 'LostFound', tone: 'blue' },
+    { label: 'Grades', icon: 'school-outline', route: 'GradeEntry', tone: 'blue' },
     { label: 'Announce', icon: 'notifications-outline', route: 'Announcements', tone: 'lilac' },
     { label: 'Complaints', icon: 'alert-circle-outline', route: 'Complaints', tone: 'peach' },
   ],
@@ -205,13 +207,37 @@ export default function HomeScreen() {
   return isDesktop ? <DesktopHome /> : <MobileHome />;
 }
 
+function usePendingLeaves(email: string | null): number | null {
+  const [casual, setCasual] = useState<number | null>(null);
+  const [acks, setAcks] = useState<number | null>(null);
+  const [medical, setMedical] = useState<number | null>(null);
+  useEffect(() => {
+    if (!email) return;
+    const unsubs = [
+      subscribeToLeaveRequestsForFaculty(email, (apps) =>
+        setCasual(apps.filter((a) => a.status === 'pending' && (a.type !== 'medical' || !a.stage)).length),
+      ),
+      subscribeToMyTeacherAcks(email, (list) => setAcks(list.filter((a) => a.status === 'pending').length)),
+      subscribeMedicalQueue(email, (list) => setMedical(list.length), () => setMedical(0)),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, [email]);
+  if (!email || casual === null || acks === null || medical === null) return null;
+  return casual + acks + medical;
+}
+
 function MobileHome() {
   const { isDesktop } = useWebLayout();
   const navigation = useNavigation<NavProp>();
-  const { profile, previewRole, setInCabin } = useAuth();
+  const { profile, previewRole, setInCabin, user } = useAuth();
   const isFaculty = (previewRole ?? profile?.role) === 'faculty';
   const attendance = useAttendanceSummary(profile, !isFaculty);
-  const sections = isFaculty ? facultySections : studentSections;
+  const canScan = !!(profile as { messCounter?: boolean } | null)?.messCounter || !!profile?.isAdmin;
+  const sections = isFaculty
+    ? canScan
+      ? facultySections
+      : facultySections.filter((s) => s.title !== 'Mess Counter')
+    : studentSections;
   const bento = isFaculty ? facultyBento : studentBento;
   const now = useNow();
 
@@ -241,9 +267,9 @@ function MobileHome() {
   const [examSchedules, setExamSchedules] = useState<ExamSchedule[]>([]);
   useEffect(() => {
     if (isFaculty || !profile?.branch || !semester) return;
-    const unsubscribe = subscribeToExamSchedules(profile.branch, semester, setExamSchedules);
+    const unsubscribe = subscribeToExamSchedules(profile.branch, semester, profile.enrollmentNumber, setExamSchedules);
     return () => unsubscribe();
-  }, [isFaculty, profile?.branch, semester]);
+  }, [isFaculty, profile?.branch, semester, profile?.enrollmentNumber]);
 
   const [holidayOverrides, setHolidayOverrides] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -302,6 +328,21 @@ function MobileHome() {
   const total = new Set(todaySlots.map(periodKey)).size;
   const doneCount = new Set(todaySlots.filter((s) => toMinutes(s.endTime) <= nowMin).map(periodKey)).size;
 
+  const [classChanges, setClassChanges] = useState<ClassChange[]>([]);
+  useEffect(() => {
+    if (isFaculty) {
+      if (!user?.uid) return;
+      return subscribeToClassChanges({ createdBy: user.uid }, setClassChanges);
+    }
+    if (!semester) return;
+    return subscribeToClassChanges({ semester }, setClassChanges);
+  }, [isFaculty, user?.uid, semester]);
+  const heroChange =
+    hero && !parallel
+      ? findClassChange(classChanges, hero, isoDate(now), isFaculty ? { branch: hero.branch, section: hero.section } : { branch: profile?.branch, section: profile?.section })
+      : null;
+  const heroRoom = heroChange?.type === 'room' ? heroChange.newRoom : hero?.room;
+
   let heroChip = '';
   if (hero && hero === current) heroChip = `ends in ${minutesLabel(toMinutes(hero.endTime) - nowMin)}`;
   else if (hero) {
@@ -321,6 +362,29 @@ function MobileHome() {
       : expandFaculty(s.faculty ?? '');
 
   const go = (route: keyof RootStackParamList) => navigation.navigate(route as any);
+  const unreadCount = useInboxUnread();
+  const pendingLeaves = usePendingLeaves(isFaculty ? profile?.email ?? null : null);
+
+  const nextWorkingDay = useMemo(() => {
+    if (!dayStatus) return null;
+    for (let i = 1; i <= 21; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i, 8, 0);
+      if (getDayStatus(d, isFaculty ? [] : examSchedules, holidayOverrides)) continue;
+      const name = d.toLocaleDateString('en-US', { weekday: 'long' });
+      const raw: Slot[] = isFaculty
+        ? facultyEntries.filter((e) => e.day === name)
+        : timetable?.days.find((x) => x.day === name)?.slots ?? [];
+      const slots = mergeContiguousSlots(raw)
+        .filter((s) => toMinutes(s.startTime) >= 0)
+        .sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+      if (slots.length) {
+        const label =
+          i === 1 ? 'Tomorrow' : i < 7 ? name : d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+        return { label, first: slots[0] as Slot };
+      }
+    }
+    return null;
+  }, [dayStatus?.label, isFaculty, examSchedules, holidayOverrides, facultyEntries, timetable, now.toDateString()]);
 
   const [openSection, setOpenSection] = useState<Section | null>(null);
 
@@ -360,20 +424,28 @@ function MobileHome() {
               <Text style={styles.greeting} numberOfLines={1}>
                 Hi, {firstName}
               </Text>
-              <Text style={styles.subGreeting}>
-                {weekday} · {classesLabel}
-              </Text>
             </View>
             {!isFaculty && (
               <TapCard style={styles.sosPill} onPress={() => go('SOS')} accessibilityLabel="Emergency SOS">
-                <Ionicons name="alert-circle" size={18} color="#FFFFFF" />
+                <Ionicons name="alert-circle" size={16} color="#FFFFFF" />
                 <Text style={styles.sosPillText}>SOS</Text>
               </TapCard>
             )}
+            <TapCard style={styles.bell} onPress={() => go('Notifications' as any)} accessibilityLabel="Notifications">
+              <Ionicons name="notifications-outline" size={21} color={colors.textPrimary} />
+              {unreadCount > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                </View>
+              )}
+            </TapCard>
             <TapCard style={styles.avatar} onPress={() => go('Profile' as any)} accessibilityLabel="Profile">
               <Text style={styles.avatarText}>{initials || '?'}</Text>
             </TapCard>
           </View>
+          <Text style={styles.subGreeting}>
+            {weekday} · {classesLabel}
+          </Text>
 
           {activeSos.length > 0 && (
             <TapCard style={styles.sosBanner} onPress={() => go('SosAlerts')}>
@@ -423,6 +495,11 @@ function MobileHome() {
                 <Text style={styles.nextKicker}>Today</Text>
                 <Text style={styles.nextTitle}>{dayStatus.label}</Text>
                 <Text style={styles.nextSub}>No regular classes today.</Text>
+                {nextWorkingDay && (
+                  <Text style={styles.nextAfter} numberOfLines={1}>
+                    {nextWorkingDay.label}: {nextWorkingDay.first.subjectName || nextWorkingDay.first.subjectCode}, {to12h(nextWorkingDay.first.startTime)}
+                  </Text>
+                )}
               </>
             ) : hero ? (
               <>
@@ -431,13 +508,15 @@ function MobileHome() {
                     {hero === current ? 'Current class' : 'Next class'} · {to12h(hero.startTime)}
                   </Text>
                   <View style={styles.nextPill}>
-                    <Text style={styles.nextPillText}>{heroChip}</Text>
+                    <Text style={styles.nextPillText}>
+                      {heroChange?.type === 'cancelled' ? 'Cancelled' : heroChange?.type === 'room' ? 'Room changed' : heroChip}
+                    </Text>
                   </View>
                 </View>
                 <Text style={styles.nextTitle} numberOfLines={2}>
                   {parallel
                     ? Array.from(new Set(heroGroup.map((s) => s.subjectName || s.subjectCode))).join(' / ')
-                    : `${hero.subjectName || hero.subjectCode}${hero.room ? ` in ${hero.room}` : ''}`}
+                    : `${hero.subjectName || hero.subjectCode}${heroChange?.type === 'cancelled' ? '' : heroRoom ? ` in ${heroRoom}` : ''}`}
                 </Text>
                 <Text style={styles.nextSub} numberOfLines={2}>
                   {parallel
@@ -506,8 +585,19 @@ function MobileHome() {
                 </View>
               ) : (
                 <View>
+                  {bento.big.route === 'LeaveRequests' && pendingLeaves !== null && (
+                    <Text style={[styles.bentoPct, { color: pendingLeaves > 0 ? colors.warning : colors.tile[bento.big.tone].fg }]}>
+                      {pendingLeaves}
+                    </Text>
+                  )}
                   <Text style={[styles.bentoTitle, { color: colors.tile[bento.big.tone].fg }]}>{bento.big.label}</Text>
-                  <Text style={styles.bentoSub}>{bento.big.sub}</Text>
+                  <Text style={styles.bentoSub}>
+                    {bento.big.route === 'LeaveRequests' && pendingLeaves !== null
+                      ? pendingLeaves === 0
+                        ? 'Nothing waiting for you'
+                        : `${pendingLeaves === 1 ? 'Needs' : 'Need'} your decision`
+                      : bento.big.sub}
+                  </Text>
                 </View>
               )}
             </TapCard>
@@ -692,13 +782,35 @@ const styles = StyleSheet.create({
   scrollContent: { paddingHorizontal: 18, paddingTop: spacing.md, paddingBottom: 110, gap: 12 },
   scrollDesktop: { maxWidth: 960, width: '100%', alignSelf: 'center' },
 
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: 4 },
-  greeting: { fontSize: 28, fontWeight: '800', letterSpacing: -0.7, color: colors.textPrimary },
-  subGreeting: { fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginTop: 2 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
+  greeting: { fontSize: 26, fontWeight: '800', letterSpacing: -0.7, color: colors.textPrimary },
+  subGreeting: { fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginTop: 2, marginBottom: spacing.md },
+  nextAfter: { fontSize: 13.5, fontWeight: '700', color: colors.primary, marginTop: 8 },
+  bell: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bellBadgeText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     backgroundColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
@@ -709,12 +821,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    height: 48,
-    paddingHorizontal: 14,
-    borderRadius: 16,
+    height: 44,
+    paddingHorizontal: 11,
+    borderRadius: 14,
     backgroundColor: '#DC2626',
   },
-  sosPillText: { color: '#FFFFFF', fontWeight: '900', fontSize: 15, letterSpacing: 1 },
+  sosPillText: { color: '#FFFFFF', fontWeight: '900', fontSize: 14, letterSpacing: 0.8 },
   sosBanner: {
     flexDirection: 'row',
     alignItems: 'center',

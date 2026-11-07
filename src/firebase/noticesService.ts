@@ -27,6 +27,7 @@ export type Notice = {
   createdBy: string;
   createdByName: string;
   createdAt: Timestamp | null;
+  pinned?: boolean;
 
   targetBranch?: 'CSE' | 'ECE' | 'MNC' | null;
   targetSection?: string | null;
@@ -46,8 +47,10 @@ export async function createNotice(
   club?: { id: string; name: string },
   link?: string,
   targeting?: { branch?: string | null; section?: string | null; admissionYear?: number | null; specialization?: string | null },
+  pinned = false,
 ): Promise<void> {
   await addDoc(collection(db, NOTICES_COLLECTION), {
+    pinned,
     title,
     description,
     category,
@@ -70,8 +73,10 @@ export async function updateNotice(
   description: string,
   link?: string,
   targeting?: { branch?: string | null; section?: string | null; admissionYear?: number | null; specialization?: string | null },
+  pinned?: boolean,
 ): Promise<void> {
   await updateDoc(doc(db, NOTICES_COLLECTION, noticeId), {
+    ...(pinned === undefined ? {} : { pinned }),
     title,
     description,
     ...(link && link.trim() ? { link: link.trim() } : { link: null }),
@@ -106,16 +111,34 @@ export function subscribeToNotices(
           orderBy('createdAt', 'desc'),
         )
       : query(collection(db, NOTICES_COLLECTION), orderBy('createdAt', 'desc'), fsLimit(NOTICE_STAFF_VIEW_LIMIT));
-  return persisted(`notices:${viewer === undefined ? 'staff' : JSON.stringify(viewer)}`, (onUpdate, fail) => onSnapshot(q, (snapshot) => {
-    const notices: Notice[] = snapshot.docs
-      .map((docSnap) => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<Notice, 'id'>),
-      }))
-      .filter((n) => {
-        if (viewer === undefined) return true;
-        return isForViewer(n, viewer);
-      });
-    onUpdate(notices);
-  }, () => fail([])), onUpdate);
+  const toNotices = (docs: { id: string; data: () => unknown }[]): Notice[] =>
+    docs
+      .map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as Omit<Notice, 'id'>) }))
+      .filter((n) => viewer === undefined || isForViewer(n, viewer));
+  return persisted(`notices:${viewer === undefined ? 'staff' : JSON.stringify(viewer)}`, (onUpdate, fail) => {
+    // Students only load the last 30 days, so pinned notices are fetched separately and kept on top until unpinned.
+    let recent: Notice[] | null = null;
+    let pinned: Notice[] = [];
+    const emit = () => {
+      if (recent === null) return;
+      const seen = new Set(recent.map((n) => n.id));
+      const extra = pinned.filter((n) => !seen.has(n.id));
+      onUpdate([...recent, ...extra].sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0)));
+    };
+    const unsubRecent = onSnapshot(q, (snapshot) => {
+      recent = toNotices(snapshot.docs);
+      emit();
+    }, () => fail([]));
+    const unsubPinned =
+      viewer !== undefined
+        ? onSnapshot(query(collection(db, NOTICES_COLLECTION), where('pinned', '==', true)), (snapshot) => {
+            pinned = toNotices(snapshot.docs);
+            emit();
+          }, () => undefined)
+        : () => undefined;
+    return () => {
+      unsubRecent();
+      unsubPinned();
+    };
+  }, onUpdate);
 }

@@ -11,8 +11,11 @@ import {
   onSnapshot,
   serverTimestamp,
   Timestamp,
+  setDoc,
 } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db } from "./firestore";
+import { storage } from "./storage";
 
 export type IssueType = "complaint" | "doubt";
 export type ComplaintCategory = "Facilities" | "Harassment" | "Academic" | "Other";
@@ -38,7 +41,12 @@ export type Complaint = {
   resolvedAt: Timestamp | null;
   resolvedBy: string | null;
   resolvedByName: string | null;
+  photoPaths?: string[];
 };
+
+export async function complaintPhotoUrl(path: string): Promise<string> {
+  return getDownloadURL(ref(storage, path));
+}
 
 function withType(id: string, data: Omit<Complaint, "id">): Complaint {
   return { id, ...data, type: data.type ?? "complaint" };
@@ -60,8 +68,18 @@ export async function submitComplaint(params: {
   facultyUid?: string | null;
   subject: string;
   description: string;
+  photoUris?: string[];
 }): Promise<void> {
-  await addDoc(collection(db, COLLECTION), {
+  const docRef = doc(collection(db, COLLECTION));
+  const photoPaths: string[] = [];
+  for (const [i, uri] of (params.photoUris ?? []).slice(0, 2).entries()) {
+    const blob = await (await fetch(uri)).blob();
+    const path = `complaints/${params.studentUid}/${docRef.id}/${i + 1}.jpg`;
+    await uploadBytes(ref(storage, path), blob, { contentType: "image/jpeg" });
+    photoPaths.push(path);
+  }
+  await setDoc(docRef, {
+    ...(photoPaths.length ? { photoPaths } : {}),
     studentUid: params.studentUid,
     studentName: params.studentName,
     ...(params.studentEnrollmentNumber ? { studentEnrollmentNumber: params.studentEnrollmentNumber } : {}),

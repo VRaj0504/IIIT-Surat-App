@@ -34,7 +34,7 @@ import {
 import { evaluateStudent, Backlog, ExamAlert, GRADE_LABELS, Standing } from "../utils/examRules";
 
 const STANDING: Record<Standing, { label: string; sub: string; bg: string; fg: string; icon: keyof typeof Ionicons.glyphMap }> = {
-  "no-results": { label: "No results yet", sub: "Your grades will appear here once they are entered.", bg: colors.surfaceAlt, fg: colors.textSecondary, icon: "time-outline" },
+  "no-results": { label: "No results yet", sub: "Your grades will appear here once they are entered.", bg: colors.surfaceAlt, fg: colors.textPrimary, icon: "time-outline" },
   clear: { label: "All clear", sub: "No backlogs. Keep it up!", bg: colors.successBg, fg: colors.successFg, icon: "checkmark-circle" },
   backlogs: { label: "Backlogs to clear", sub: "Clear them in the next supplementary exam or by repeating the course.", bg: colors.tile.yellow.bg, fg: colors.tile.yellow.fg, icon: "alert-circle" },
   "at-risk": { label: "Action needed", sub: "Read the warnings below and talk to your HOD or the exam office.", bg: colors.dangerBg, fg: colors.danger, icon: "warning" },
@@ -350,7 +350,7 @@ export default function ExamStatusScreen() {
           </View>
 
           <Text style={styles.footnote}>
-            Worked out from the grades recorded in CollegeGo and the IIIT Surat B.Tech Academic Ordinance. The exam office's
+            Worked out from the grades recorded in CollegeGo and your college B.Tech Academic Ordinance. The exam office's
             records are final.
           </Text>
         </ScrollView>
@@ -423,7 +423,7 @@ export default function ExamStatusScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  container: { flex: 1, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
   content: { paddingBottom: spacing.xl * 2 },
   hero: { borderRadius: radius.lg, padding: spacing.md, marginTop: spacing.md },
   heroTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm },

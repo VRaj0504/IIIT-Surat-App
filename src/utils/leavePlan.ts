@@ -9,6 +9,7 @@ export type Projection = {
   missed: number;
   attendBefore: number;
   needAfter: number;
+  spareAfter: number;
 };
 
 export const TARGET = 75;
@@ -98,6 +99,7 @@ export function project(rows: AttendanceRow[], before: Map<string, number>, duri
       missed: m,
       attendBefore: a,
       needAfter,
+      spareAfter: afterPct === null || afterPct < TARGET ? 0 : Math.max(0, Math.floor(present / T - total + 1e-9)),
     };
   });
 }

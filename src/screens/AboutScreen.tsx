@@ -18,7 +18,7 @@ export default function AboutScreen() {
             <Text style={styles.versionText}>Version {APP_VERSION}</Text>
           </View>
           <Text style={styles.paragraph}>
-            Everyday campus life in one place — so getting through the day at IIIT Surat takes less digging around
+            Everyday campus life in one place — so getting through the day on campus takes less digging around
             and fewer scattered links.
           </Text>
         </View>
@@ -29,7 +29,7 @@ export default function AboutScreen() {
           <Text style={styles.creditMeta}>CSE · Batch of 2029</Text>
         </View>
 
-        <Text style={styles.footer}>For the students and faculty of IIIT Surat.</Text>
+        <Text style={styles.footer}>Made for students and faculty.</Text>
       </ScrollView>
     </View>
   );

@@ -18,8 +18,6 @@ export type RootStackParamList = {
   ThaliPass: undefined;
   ScanThaliPass: undefined;
 
-  LostFound: undefined;
-  PostLostFound: { type?: "lost" | "found" } | undefined;
   ApplyLeave: undefined;
   LeaveRequests: undefined;
   SubmitComplaint: undefined;
@@ -53,6 +51,7 @@ Complaints: undefined;
     { clubId?: string; clubName?: string; editingNotice?: Notice } | undefined;
   EditProfile: undefined;
   NotificationSettings: undefined;
+  Notifications: undefined;
   HelpSupport: undefined;
   ImportantContacts: undefined;
   MyDownloads: undefined;

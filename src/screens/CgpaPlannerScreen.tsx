@@ -11,6 +11,8 @@ import LoadingSpinner from "../components/LoadingSpinner";
 import PlusGate from "../components/PlusGate";
 
 const TARGETS = Array.from({ length: 17 }, (_, i) => 6 + i * 0.25);
+const CGPA_CHOICES = Array.from({ length: 101 }, (_, i) => Math.round((10 - i * 0.05) * 100) / 100);
+const CREDIT_CHOICES = Array.from({ length: 191 }, (_, i) => 10 + i);
 const norm = (c: string) => String(c ?? "").replace(/\s+/g, "").toUpperCase();
 
 function Planner() {
@@ -23,6 +25,9 @@ function Planner() {
   const [picks, setPicks] = useState<Record<string, string>>({});
   const [target, setTarget] = useState(8);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [manualCgpa, setManualCgpa] = useState<number | null>(null);
+  const [manualCredits, setManualCredits] = useState<number | null>(null);
+  const [manualSheet, setManualSheet] = useState<null | "cgpa" | "credits">(null);
 
   useEffect(() => {
     if (!profile?.enrollmentNumber) {
@@ -45,7 +50,15 @@ function Planner() {
     };
   }, [profile?.branch, semester]);
 
-  const past = useMemo(() => pastTotals(grades ?? []), [grades]);
+  const fromGrades = useMemo(() => pastTotals(grades ?? []), [grades]);
+  const noGrades = fromGrades.credits === 0 && (semester ?? 1) > 1;
+  const past = useMemo(
+    () =>
+      noGrades && manualCgpa !== null && manualCredits
+        ? { points: manualCgpa * manualCredits, credits: manualCredits }
+        : fromGrades,
+    [noGrades, manualCgpa, manualCredits, fromGrades],
+  );
   const cgpaNow = past.credits ? Math.round((past.points / past.credits) * 100) / 100 : null;
 
   const current = useMemo(() => {
@@ -79,6 +92,44 @@ function Planner() {
           </View>
         </View>
       </View>
+
+      {noGrades && (
+        <View style={styles.card}>
+          <Text style={styles.answerSub}>
+            Your earlier grades aren't in the app yet. Pick your current CGPA and credits done (from your last result) so the planner can work.
+          </Text>
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+            <View style={{ flex: 1 }}>
+              <SelectField label="Current CGPA" value={manualCgpa?.toFixed(2) ?? null} placeholder="Pick" onPress={() => setManualSheet("cgpa")} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <SelectField label="Credits done" value={manualCredits ? String(manualCredits) : null} placeholder="Pick" onPress={() => setManualSheet("credits")} />
+            </View>
+          </View>
+          <SheetPicker
+            visible={manualSheet === "cgpa"}
+            title="Current CGPA"
+            items={CGPA_CHOICES}
+            keyOf={(x) => x.toFixed(2)}
+            labelOf={(x) => x.toFixed(2)}
+            selectedKey={manualCgpa?.toFixed(2) ?? null}
+            onPick={setManualCgpa}
+            onClose={() => setManualSheet(null)}
+            searchable
+          />
+          <SheetPicker
+            visible={manualSheet === "credits"}
+            title="Credits done"
+            items={CREDIT_CHOICES}
+            keyOf={(x) => String(x)}
+            labelOf={(x) => `${x} credits`}
+            selectedKey={manualCredits ? String(manualCredits) : null}
+            onPick={setManualCredits}
+            onClose={() => setManualSheet(null)}
+            searchable
+          />
+        </View>
+      )}
 
       <Segmented
         options={[

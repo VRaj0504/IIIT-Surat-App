@@ -72,7 +72,7 @@ service cloud.firestore {
 
     function validGradeShape() {
       return request.resource.data.enteredBy == request.auth.uid &&
-        request.resource.data.grade in ['AA', 'AB', 'BB', 'BC', 'CC', 'CD', 'DD', 'FF', 'II', 'NA', 'XX', 'WW', 'SS', 'ZZ'] &&
+        request.resource.data.grade in ['AA', 'AB', 'BB', 'BC', 'CC', 'CD', 'DD', 'FF', 'II', 'NA', 'XX', 'WW', 'SS', 'ZZ', 'MPC'] &&
         request.resource.data.credits is number &&
         request.resource.data.credits >= 0 &&
         request.resource.data.studentEnrollmentNumber is string &&
@@ -159,13 +159,20 @@ service cloud.firestore {
           'name', 'phone', 'photoUrl', 'inCabin', 'inCabinAt', 'expoPushToken', 'expoPushTokens',
           'notificationPreferences', 'officeLocation', 'officeHours',
           'researchAreas', 'publicationsCount', 'aboutMe', 'department',
-          'designation', 'emergencyContacts'
+          'designation', 'emergencyContacts', 'followedClubs'
         ])
       );
       allow delete: if isAdmin();
 
       match /private/{docId} {
         allow read, write: if signedIn() && request.auth.uid == userId;
+      }
+
+      match /inbox/{itemId} {
+        allow read, delete: if signedIn() && request.auth.uid == userId;
+        allow update: if signedIn() && request.auth.uid == userId &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        allow create: if false;
       }
     }
 
@@ -334,7 +341,8 @@ service cloud.firestore {
         request.resource.data.createdBy == request.auth.uid &&
         (
           isFaculty() ||
-          (request.resource.data.category == 'Club' &&
+          (request.resource.data.get('pinned', false) == false &&
+           request.resource.data.category == 'Club' &&
            request.resource.data.clubId != null &&
            get(/databases/$(database)/documents/clubs/$(request.resource.data.clubId)).data.leadUid == request.auth.uid)
         ));
@@ -343,10 +351,10 @@ service cloud.firestore {
         request.resource.data.createdBy == resource.data.createdBy &&
         request.resource.data.category == resource.data.category &&
         request.resource.data.clubId == resource.data.clubId &&
-        request.resource.data.clubName == resource.data.clubName);
+        request.resource.data.clubName == resource.data.clubName &&
+        (isFaculty() || request.resource.data.get('pinned', false) == resource.data.get('pinned', false)));
 
-      allow delete: if isAdmin() || (request.auth != null &&
-        (resource.data.createdBy == request.auth.uid || isFaculty()));
+      allow delete: if isAdmin() || (request.auth != null && resource.data.createdBy == request.auth.uid);
     }
 
     match /curriculum/{docId} {
@@ -379,8 +387,13 @@ service cloud.firestore {
         request.resource.data.semester is number &&
         request.resource.data.examType is string &&
         request.resource.data.entries is list &&
-        request.resource.data.entries.size() > 0 &&
-        request.resource.data.entries.size() <= 60;
+        request.resource.data.entries.size() <= 60 &&
+        request.resource.data.get('students', []) is list &&
+        request.resource.data.get('students', []).size() <= 3000 &&
+        request.resource.data.get('takers', {}) is map &&
+        (request.resource.data.entries.size() > 0 ||
+          (request.resource.data.get('sourcePdfUrl', '') is string &&
+           request.resource.data.get('sourcePdfUrl', '').matches('^https://firebasestorage[.]googleapis[.]com/.*')));
       allow delete: if isAdmin() || isExamCell();
     }
 
@@ -703,6 +716,7 @@ service cloud.firestore {
 
     match /config/{docId} {
       allow read: if isMember();
+      allow create, update: if docId == 'placementStats' && isAdmin();
       allow update: if docId == 'exams' &&
         (isAdmin() || isExamCell()) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['publishMode']) &&
@@ -759,44 +773,8 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    match /lostFoundItems/{itemId} {
-      allow read: if isMember();
-      allow create: if isMember() &&
-        request.resource.data.postedBy == request.auth.uid &&
-        request.resource.data.status == 'open' &&
-        request.resource.data.title is string && request.resource.data.title.size() > 0 &&
-        request.resource.data.type in ['lost', 'found'];
-      allow update: if isAdmin() || (
-        request.auth != null &&
-        resource.data.postedBy == request.auth.uid &&
-        resource.data.status == 'open' &&
-        request.resource.data.status == 'resolved' &&
-        request.resource.data.title == resource.data.title &&
-        request.resource.data.description == resource.data.description &&
-        request.resource.data.postedBy == resource.data.postedBy
-      );
-
-      allow delete: if isAdmin() || isFaculty() || (request.auth != null && resource.data.postedBy == request.auth.uid);
-    }
-
     match /reports/{reportId} {
-      allow create: if isMember() &&
-        request.resource.data.reporterUid == request.auth.uid &&
-        request.resource.data.status == 'open' &&
-        request.resource.data.reason is string;
-      allow read, update: if isStaff();
-      allow delete: if isAdmin();
-    }
-
-    match /lostFoundContacts/{contactId} {
-      allow read: if isAdmin() ||
-        (request.auth != null && resource.data.contactedByUid == request.auth.uid) ||
-        (request.auth != null && resource.data.posterUid == request.auth.uid);
-      allow create: if isMember() &&
-        request.resource.data.contactedByUid == request.auth.uid &&
-        request.resource.data.method in ['email', 'call', 'whatsapp'];
-      allow update: if false;
-      allow delete: if isAdmin();
+      allow read, delete: if isAdmin();
     }
 
     match /plusConfig/{docId} {
@@ -843,6 +821,18 @@ service cloud.firestore {
           request.resource.data.name is string && request.resource.data.name.size() <= 120;
         allow update, delete: if false;
       }
+    }
+
+    match /classChanges/{changeId} {
+      allow read: if signedIn();
+      allow create: if isFaculty() &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.type in ['cancelled', 'room'];
+      allow update: if isFaculty() &&
+        resource.data.createdBy == request.auth.uid &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.type in ['cancelled', 'room'];
+      allow delete: if isAdmin() || (isFaculty() && resource.data.createdBy == request.auth.uid);
     }
 
     match /attendanceSessions/{docId} {

@@ -5,6 +5,8 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
+  Pressable,
+  Modal,
   ActivityIndicator,
   Alert,
   FlatList,
@@ -18,9 +20,10 @@ import { getAdmissionYears, getClassOptionsForYear, yearOfStudyLabel, ClassOptio
 import { getCurrentSemester } from "../utils/academicInfo";
 import { subscribeToCurriculum, CurriculumSubject } from "../firebase/curriculumService";
 import { getClassRoster, RosterStudent } from "../firebase/gradesService";
-import { markAttendance, getExistingSession } from "../firebase/attendanceService";
+import { markAttendance, getSessionMeta, getClassAttendanceSummary, ClassStanding, ATTENDANCE_TARGET } from "../firebase/attendanceService";
 import LoadingSpinner from "../components/LoadingSpinner";
 import DateField, { todayIso } from "../components/DateField";
+import { SelectField, SheetPicker, FieldLabel } from "../components/ui";
 import { subscribeToFacultyTimetable, FacultyScheduleEntry } from "../firebase/timetableService";
 import { mergeContiguousSlots, toMinutes } from "../utils/timetable";
 import { RollCallCard } from "../components/attendance/RollCall";
@@ -83,19 +86,21 @@ const AttendanceRow = memo(function AttendanceRow({
   onToggle: (enrollmentNumber: string) => void;
 }) {
   return (
-    <TouchableOpacity
-      style={[styles.studentRow, isAbsent && styles.studentRowAbsent]}
+    <Pressable
+      style={({ pressed }) => [styles.studentRow, isAbsent && styles.studentRowAbsent, pressed && { opacity: 0.7 }]}
       onPress={() => onToggle(item.enrollmentNumber)}
     >
+      <View style={[styles.rollBadge, isAbsent && styles.rollBadgeAbsent]}>
+        <Text style={[styles.rollBadgeText, isAbsent && { color: colors.danger }]}>{item.enrollmentNumber.slice(-3)}</Text>
+      </View>
       <View style={{ flex: 1 }}>
-        <Text style={styles.studentName}>{item.name}</Text>
+        <Text style={styles.studentName} numberOfLines={1}>{item.name}</Text>
         <Text style={styles.studentReg}>{item.enrollmentNumber}</Text>
       </View>
       <View style={[styles.statusPill, isAbsent ? styles.statusPillAbsent : styles.statusPillPresent]}>
-        <Ionicons name={isAbsent ? "close-circle" : "checkmark-circle"} size={14} color={colors.surface} />
         <Text style={styles.statusPillText}>{isAbsent ? "Absent" : "Present"}</Text>
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 });
 
@@ -122,7 +127,6 @@ export default function MarkAttendanceScreen() {
   const { profile } = useAuth();
   const [schedule, setSchedule] = useState<FacultyScheduleEntry[]>([]);
   const [pick, setPick] = useState<Pick | null>(null);
-  const [autoPicked, setAutoPicked] = useState(false);
 
   const [years, setYears] = useState<number[]>([]);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
@@ -148,8 +152,16 @@ export default function MarkAttendanceScreen() {
   const [marks, setMarks] = useState<Map<string, "P" | "A">>(new Map());
   const [setupOpen, setSetupOpen] = useState(true);
   const [search, setSearch] = useState("");
+  const [onlyAbsent, setOnlyAbsent] = useState(false);
+  const [sheet, setSheet] = useState<null | "year" | "class" | "spec" | "sem" | "subject">(null);
+  const [standing, setStanding] = useState<ClassStanding[] | null>(null);
+  const [lowOpen, setLowOpen] = useState(false);
+  const [rosterStatus, setRosterStatus] = useState<"idle" | "loading" | "ready" | "error" | "needsSpec">("idle");
+  const [retry, setRetry] = useState(0);
   const [lecture, setLecture] = useState(1);
   const [savedLectures, setSavedLectures] = useState<number[]>([]);
+  const [takenLectures, setTakenLectures] = useState<Record<number, string>>({});
+  const [takenNote, setTakenNote] = useState("");
   const [wasSaved, setWasSaved] = useState(false);
 
   useEffect(() => {
@@ -164,16 +176,19 @@ export default function MarkAttendanceScreen() {
   const nowDate = new Date();
   const nowMin = nowDate.getHours() * 60 + nowDate.getMinutes();
   const todayName = nowDate.toLocaleDateString("en-US", { weekday: "long" });
-  const todays = mergeContiguousSlots(schedule.filter((e) => e.day === todayName))
-    .filter((e) => toMinutes(e.startTime) >= 0)
-    .sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime)) as FacultyScheduleEntry[];
+  const todays = useMemo(
+    () =>
+      mergeContiguousSlots(schedule.filter((e) => e.day === todayName))
+        .filter((e) => toMinutes(e.startTime) >= 0)
+        .sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime)) as FacultyScheduleEntry[],
+    [schedule, todayName],
+  );
   const prefetchKey = todays.map((e) => e.semester).join(",");
   useEffect(() => {
     new Set(prefetchKey.split(",").filter(Boolean).map((x) => admissionYearFor(Number(x)))).forEach((y) => {
       if (y !== null) rosterForYear(y).catch(() => undefined);
     });
   }, [prefetchKey]);
-  const liveOrJustDone = todays.find((e) => toMinutes(e.startTime) <= nowMin && nowMin < toMinutes(e.endTime) + 60) ?? null;
 
   const applyPick = useCallback((e: FacultyScheduleEntry) => {
     const year = admissionYearFor(e.semester);
@@ -182,12 +197,6 @@ export default function MarkAttendanceScreen() {
     setDate(todayDateString());
     setSelectedYear(year);
   }, []);
-
-  useEffect(() => {
-    if (autoPicked || !liveOrJustDone || selectedYear !== null) return;
-    setAutoPicked(true);
-    applyPick(liveOrJustDone);
-  }, [autoPicked, liveOrJustDone, selectedYear, applyPick]);
 
   useEffect(() => {
     if (!pick || classesLoading || optionsYear !== pick.year) return;
@@ -252,11 +261,13 @@ export default function MarkAttendanceScreen() {
       setRoster([]);
       setAbsentSet(new Set());
       setSetupOpen(true);
+      setRosterStatus(needsSpecialization && selectedSubject ? "needsSpec" : "idle");
       return;
     }
     const specFilter = selectedSpecialization === "__ALL__" ? null : selectedSpecialization;
     let live = true;
     setRosterLoading(true);
+    setRosterStatus("loading");
     const key = (branch: string, l: number) => ({
       branch,
       admissionYear: selectedYear,
@@ -265,26 +276,51 @@ export default function MarkAttendanceScreen() {
       date: date.trim(),
       lecture: l,
     });
+    const me = profile?.uid;
+    const isAdm = !!profile?.isAdmin;
+    const lects = Array.from(new Set([1, 2, 3, lecture]));
     Promise.all(
       selectedClass.branches.map(async (branch) => {
-        const [students, l1, l2, other] = await Promise.all([
+        const [students, ...metas] = await Promise.all([
           getClassRoster(selectedYear, branch, selectedClass.section, specFilter),
-          getExistingSession(key(branch, 1)),
-          getExistingSession(key(branch, 2)),
-          lecture > 2 ? getExistingSession(key(branch, lecture)) : Promise.resolve(null),
+          ...lects.map((l) => getSessionMeta(key(branch, l))),
         ]);
-        const absent = lecture === 1 ? l1 : lecture === 2 ? l2 : other;
-        return { students: students.map((st) => ({ ...st, branch })), absent, l1: l1 !== null, l2: l2 !== null };
+        const byLect = new Map(lects.map((l, i) => [l, metas[i]] as const));
+        return { students: students.map((st) => ({ ...st, branch })), byLect };
       }),
     )
       .then((parts) => {
         if (!live) return;
+        const mine = (m: { markedBy: string | null }) => !m.markedBy || m.markedBy === me || isAdm;
+        const ownerAt = (l: number): string | null => {
+          for (const p of parts) {
+            const m = p.byLect.get(l);
+            if (m && !mine(m)) return m.markedByName ?? "another teacher";
+          }
+          return null;
+        };
+        const taken: Record<number, string> = {};
+        [1, 2, 3].forEach((l) => {
+          const o = ownerAt(l);
+          if (o) taken[l] = o;
+        });
+        setTakenLectures(taken);
+        const owner = ownerAt(lecture);
+        if (owner) {
+          let next = 1;
+          while (next <= 3 && ownerAt(next)) next++;
+          setTakenNote(`${owner} already marked class ${lecture} on this date. Showing class ${next}.`);
+          setLecture(next);
+          return;
+        }
+        setTakenNote("");
         const list = parts.flatMap((p) => p.students).sort((a, b) => a.enrollmentNumber.localeCompare(b.enrollmentNumber));
-        const existing = parts.some((p) => p.absent !== null);
-        const abs = new Set(parts.flatMap((p) => p.absent ?? []));
+        const absentParts = parts.map((p) => p.byLect.get(lecture)?.absent ?? null);
+        const existing = absentParts.some((a) => a !== null);
+        const abs = new Set(absentParts.flatMap((a) => a ?? []));
         setRoster(list);
         setAbsentSet(abs);
-        setSavedLectures([parts.some((p) => p.l1) ? 1 : 0, parts.some((p) => p.l2) ? 2 : 0].filter(Boolean));
+        setSavedLectures([1, 2, 3].filter((l) => parts.some((p) => p.byLect.get(l))));
         setWasSaved(existing);
         setSearch("");
         if (existing) {
@@ -298,28 +334,29 @@ export default function MarkAttendanceScreen() {
           setMode("roll");
           setPhase("mark");
         }
-        if (list.length) setSetupOpen(false);
+        setRosterStatus("ready");
       })
-      .catch(() => {
+      .catch((err) => {
         if (!live) return;
+        console.warn("[MarkAttendance] class list failed", err);
         setRoster([]);
         setAbsentSet(new Set());
+        setRosterStatus("error");
       })
       .finally(() => live && setRosterLoading(false));
     return () => {
       live = false;
     };
-  }, [selectedClass, selectedYear, selectedSubject, selectedSpecialization, date, lecture]);
+  }, [selectedClass, selectedYear, selectedSubject, selectedSpecialization, date, lecture, retry]);
 
   const toggleAbsent = useCallback((enrollmentNumber: string) => {
     setAbsentSet((prev) => {
       const next = new Set(prev);
-      const nowAbsent = !next.has(enrollmentNumber);
-      if (nowAbsent) next.add(enrollmentNumber);
-      else next.delete(enrollmentNumber);
-      setMarks((m) => new Map(m).set(enrollmentNumber, nowAbsent ? "A" : "P"));
+      if (next.has(enrollmentNumber)) next.delete(enrollmentNumber);
+      else next.add(enrollmentNumber);
       return next;
     });
+    setMarks((m) => new Map(m).set(enrollmentNumber, m.get(enrollmentNumber) === "A" ? "P" : "A"));
     setPhase((p) => (p === "done" ? "review" : p));
   }, []);
 
@@ -370,12 +407,46 @@ export default function MarkAttendanceScreen() {
 
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return roster;
-    return roster.filter((r) => r.name.toLowerCase().includes(q) || r.enrollmentNumber.toLowerCase().includes(q) || r.enrollmentNumber.slice(-3) === q.padStart(3, "0"));
-  }, [roster, search]);
+    const base = onlyAbsent ? roster.filter((r) => absentSet.has(r.enrollmentNumber)) : roster;
+    if (!q) return base;
+    return base.filter((r) => r.name.toLowerCase().includes(q) || r.enrollmentNumber.toLowerCase().includes(q) || r.enrollmentNumber.slice(-3) === q.padStart(3, "0"));
+  }, [roster, search, onlyAbsent, absentSet]);
 
   const today = todayDateString();
   const dateError = !isValidDate(date) ? "Use the format YYYY-MM-DD." : date.trim() > today ? "That date is in the future." : "";
+
+  const standingKey =
+    !setupOpen && selectedClass && selectedYear !== null && selectedSubject && roster.length
+      ? `${selectedClass.key}|${selectedYear}|${selectedSubject.code}|${selectedSpecialization ?? ""}|${roster.length}|${wasSaved}`
+      : "";
+  useEffect(() => {
+    if (!standingKey || !selectedClass || selectedYear === null || !selectedSubject) {
+      setStanding(null);
+      return;
+    }
+    let live = true;
+    const spec = selectedSpecialization && selectedSpecialization !== "__ALL__" ? selectedSpecialization : null;
+    Promise.all(
+      selectedClass.branches.map((branch) =>
+        getClassAttendanceSummary({
+          branch,
+          admissionYear: selectedYear,
+          section: selectedClass.section,
+          subjectCode: selectedSubject.code,
+          specialization: spec,
+          enrollmentNumbers: roster.filter((r) => r.branch === branch).map((r) => r.enrollmentNumber),
+        }),
+      ),
+    )
+      .then((parts) => live && setStanding(parts.flat().sort((a, b) => a.percentage - b.percentage)))
+      .catch(() => live && setStanding(null));
+    return () => {
+      live = false;
+    };
+  }, [standingKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const lowStudents = (standing ?? []).filter((s) => s.percentage < ATTENDANCE_TARGET);
+  const nameOf = (reg: string) => roster.find((r) => r.enrollmentNumber === reg)?.name ?? reg;
 
   const handleSave = async () => {
     if (!profile || !selectedClass || selectedYear === null || !selectedSubject || dateError) return;
@@ -410,6 +481,13 @@ export default function MarkAttendanceScreen() {
       setSaving(false);
     }
   };
+
+  const renderRow = useCallback(
+    ({ item }: { item: RosterStudent & { branch: string } }) => (
+      <AttendanceRow item={item} isAbsent={absentSet.has(item.enrollmentNumber)} onToggle={toggleAbsent} />
+    ),
+    [absentSet, toggleAbsent],
+  );
 
   const ListHeader = (
     <View>
@@ -482,148 +560,124 @@ export default function MarkAttendanceScreen() {
             <Text style={styles.changeText}>Change</Text>
           </TouchableOpacity>
         </View>
-      ) : (
+      ) : null}
+      {!setupOpen && selectedClass && selectedSubject && standing && standing.length > 0 ? (
+        <TouchableOpacity style={[styles.lowLine, !lowStudents.length && styles.lowLineOk]} onPress={() => lowStudents.length && setLowOpen(true)} activeOpacity={0.8}>
+          <Ionicons name={lowStudents.length ? "warning-outline" : "checkmark-circle-outline"} size={16} color={lowStudents.length ? colors.danger : colors.success} />
+          <Text style={[styles.lowText, { color: lowStudents.length ? colors.danger : colors.success }]}>
+            {lowStudents.length
+              ? `Below ${ATTENDANCE_TARGET}% in this subject: ${lowStudents.length} student${lowStudents.length > 1 ? "s" : ""}`
+              : `Everyone is at ${ATTENDANCE_TARGET}% or above in this subject`}
+          </Text>
+          {lowStudents.length > 0 && <Ionicons name="chevron-forward" size={16} color={colors.danger} />}
+        </TouchableOpacity>
+      ) : null}
+      {!setupOpen && selectedClass && selectedSubject ? null : (
       <View style={styles.pickersArea}>
-        <Text style={styles.label}>{todays.length ? "Or pick any class" : "Year (batch)"}</Text>
-        {years.length === 0 ? <Text style={[styles.emptyNote, { paddingHorizontal: 0 }]}>Loading batches…</Text> : null}
-        <View style={styles.chipRow}>
-          {years.map((y) => (
-            <TouchableOpacity
-              key={y}
-              style={[styles.chip, selectedYear === y && styles.chipActive]}
-              onPress={() => setSelectedYear(y)}
-            >
-              <Text style={[styles.chipText, selectedYear === y && styles.chipTextActive]}>{yearOfStudyLabel(y)}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {selectedYear !== null && (
-          <>
-            <Text style={styles.label}>Class</Text>
-            {classesLoading ? (
+        <View style={styles.formCard}>
+          <Text style={styles.formTitle}>{todays.length ? "Or pick any class" : "Pick the class"}</Text>
+          <View style={styles.formRow}>
+            <View style={{ flex: 1 }}>
+              <SelectField
+                label="Batch"
+                value={selectedYear !== null ? yearOfStudyLabel(selectedYear).replace(/\s*\(\d{4}\)/, "") : null}
+                placeholder={years.length ? "Choose" : "Loading…"}
+                onPress={() => setSheet("year")}
+                disabled={!years.length}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <SelectField
+                label="Class"
+                value={selectedClass?.label}
+                placeholder={classesLoading ? "Loading…" : "Choose"}
+                onPress={() => setSheet("class")}
+                disabled={selectedYear === null || classesLoading}
+              />
+            </View>
+          </View>
+          {selectedClass && selectedClass.specializations.length > 0 && (
+            <SelectField
+              label="Specialization"
+              value={selectedSpecialization === "__ALL__" ? `All of ${selectedClass.label}` : selectedSpecialization}
+              placeholder="Choose"
+              onPress={() => setSheet("spec")}
+            />
+          )}
+          <View style={styles.formRow}>
+            <View style={{ flex: 0.7 }}>
+              <SelectField
+                label="Semester"
+                value={semester !== null ? `Sem ${semester}` : null}
+                placeholder="Choose"
+                onPress={() => setSheet("sem")}
+                disabled={!selectedClass}
+              />
+            </View>
+            <View style={{ flex: 1, marginBottom: spacing.md }}>
+              <FieldLabel>Date</FieldLabel>
+              <DateField value={date} onChange={setDate} max={todayIso()} placeholder="Class date" />
+            </View>
+          </View>
+          <SelectField
+            label="Subject"
+            value={selectedSubject?.name}
+            placeholder={selectedClass && semester !== null && subjects.length === 0 ? "No subjects for this semester" : "Choose"}
+            icon="book-outline"
+            onPress={() => setSheet("subject")}
+            disabled={!selectedClass || semester === null || subjects.length === 0}
+          />
+          {!!dateError && <Text style={[styles.emptyNote, { color: colors.danger, paddingHorizontal: 0 }]}>{dateError}</Text>}
+          {selectedSubject && !dateError && rosterLoading && (
+            <View style={styles.loadingRow}>
               <ActivityIndicator color={colors.primary} />
-            ) : (
-              <View style={styles.chipRow}>
-                {classOptions.map((c) => {
-                  const active = selectedClass?.key === c.key;
-                  return (
-                    <TouchableOpacity
-                      key={c.key}
-                      style={[styles.chip, active && styles.chipActive]}
-                      onPress={() => {
-                        setSelectedClass(c);
-                        setSelectedSpecialization(null);
-                      }}
-                    >
-                      <Text style={[styles.chipText, active && styles.chipTextActive]}>{c.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-          </>
-        )}
-
-        {selectedClass && selectedClass.specializations.length > 0 && (
-          <>
-            <Text style={styles.label}>Specialization ({selectedClass.label} has more than one)</Text>
-            <View style={styles.chipRow}>
-              <TouchableOpacity
-                style={[styles.chip, selectedSpecialization === "__ALL__" && styles.chipActive]}
-                onPress={() => setSelectedSpecialization("__ALL__")}
-              >
-                <Text style={[styles.chipText, selectedSpecialization === "__ALL__" && styles.chipTextActive]}>
-                  All of {selectedClass.label}
-                </Text>
+              <Text style={styles.loadingText}>Loading the class list…</Text>
+            </View>
+          )}
+          {rosterStatus === "needsSpec" && (
+            <Text style={[styles.emptyNote, { paddingHorizontal: 0 }]}>Pick a specialization to load the class list.</Text>
+          )}
+          {rosterStatus === "error" && (
+            <View style={styles.loadingRow}>
+              <Text style={[styles.loadingText, { color: colors.danger, flex: 1 }]}>Couldn't load the class list. Check your internet.</Text>
+              <TouchableOpacity onPress={() => setRetry((n) => n + 1)} hitSlop={8}>
+                <Text style={styles.linkText}>Try again</Text>
               </TouchableOpacity>
-              {selectedClass.specializations.map((spec) => (
-                <TouchableOpacity
-                  key={spec}
-                  style={[styles.chip, selectedSpecialization === spec && styles.chipActive]}
-                  onPress={() => setSelectedSpecialization(spec)}
-                >
-                  <Text style={[styles.chipText, selectedSpecialization === spec && styles.chipTextActive]}>{spec}</Text>
-                </TouchableOpacity>
-              ))}
             </View>
-          </>
-        )}
-
-        {selectedClass && (
-          <>
-            <Text style={styles.label}>Semester</Text>
-            <View style={styles.chipRow}>
-              {SEMESTERS.map((s) => (
-                <TouchableOpacity
-                  key={s}
-                  style={[styles.chip, semester === s && styles.chipActive]}
-                  onPress={() => {
-                    setSemester(s);
-                    setSelectedSubject(null);
-                  }}
-                >
-                  <Text style={[styles.chipText, semester === s && styles.chipTextActive]}>{s}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </>
-        )}
-
-        {semester !== null && selectedClass && (
-          <>
-            <Text style={styles.label}>Subject</Text>
-            {subjects.length === 0 ? (
-              <Text style={styles.emptyNote}>No subjects found for {selectedClass.mainBranch} sem {semester}.</Text>
-            ) : (
-              <View style={styles.chipRow}>
-                {subjects.map((s) => (
-                  <TouchableOpacity
-                    key={s.code}
-                    style={[styles.chip, selectedSubject?.code === s.code && styles.chipActive]}
-                    onPress={() => setSelectedSubject(s)}
-                  >
-                    <Text style={[styles.chipText, selectedSubject?.code === s.code && styles.chipTextActive]}>{s.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </>
-        )}
-
-        {selectedSubject && (
-          <>
-            <Text style={styles.label}>Date</Text>
-            <DateField value={date} onChange={setDate} max={todayIso()} placeholder="Class date" />
-            {!!dateError && <Text style={[styles.emptyNote, { color: colors.danger, paddingHorizontal: 0 }]}>{dateError}</Text>}
-          </>
-        )}
-        {roster.length > 0 && selectedSubject && (
-          <TouchableOpacity style={[styles.saveButton, { marginTop: spacing.md }]} onPress={() => setSetupOpen(false)}>
-            <Text style={styles.saveButtonText}>Start taking attendance</Text>
-          </TouchableOpacity>
-        )}
+          )}
+          {rosterStatus === "ready" && roster.length === 0 && selectedClass && selectedYear !== null && (
+            <Text style={[styles.emptyNote, { paddingHorizontal: 0 }]}>
+              No students in {selectedClass.label} for the {selectedYear} batch. Check that this class is in the student list on the faculty portal.
+            </Text>
+          )}
+        </View>
       </View>
       )}
 
       {selectedSubject && !dateError && !setupOpen && (
-        <View style={{ paddingHorizontal: spacing.lg }}>
+        <View style={{ paddingHorizontal: spacing.md }}>
           {rosterLoading && <LoadingSpinner style={{ marginTop: spacing.lg }} />}
           {!rosterLoading && roster.length === 0 && <Text style={styles.emptyNote}>No students found in this class.</Text>}
           {!rosterLoading && roster.length > 0 && (
             <>
-              {(savedLectures.length > 0 || lecture > 1) && (
+              {(savedLectures.length > 0 || lecture > 1 || Object.keys(takenLectures).length > 0) && (
                 <View style={[styles.chipRow, { marginTop: spacing.md }]}>
-                  {[1, 2].map((l) => (
-                    <TouchableOpacity key={l} style={[styles.chip, lecture === l && styles.chipActive]} onPress={() => setLecture(l)}>
+                  {[1, 2, 3].map((l) => (
+                    <TouchableOpacity
+                      key={l}
+                      style={[styles.chip, lecture === l && styles.chipActive, takenLectures[l] ? { opacity: 0.5 } : null]}
+                      disabled={!!takenLectures[l]}
+                      onPress={() => setLecture(l)}
+                    >
                       <Text style={[styles.chipText, lecture === l && styles.chipTextActive]}>
-                        {l === 1 ? "1st class" : "2nd class"}
-                        {savedLectures.includes(l) ? " · saved" : " · new"}
+                        {l === 1 ? "1st class" : l === 2 ? "2nd class" : "3rd class"}
+                        {takenLectures[l] ? ` · ${takenLectures[l].split(" ")[0]}` : savedLectures.includes(l) ? " · saved" : " · new"}
                       </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
               )}
+              {!!takenNote && <Text style={[styles.helperNote, { paddingHorizontal: 0 }]}>{takenNote}</Text>}
               {wasSaved && phase !== "done" && (
                 <Text style={[styles.helperNote, { paddingHorizontal: 0 }]}>
                   Already saved for this date. Change anyone below and save again to update it.
@@ -658,6 +712,11 @@ export default function MarkAttendanceScreen() {
                     {roster.length - absentSet.size} present · {absentSet.size} absent
                     {lecture > 1 ? ` · 2nd class` : ""}
                   </Text>
+                  {absentSet.size > 0 && (
+                    <Text style={styles.doneAbsent}>
+                      Absent: {roster.filter((r) => absentSet.has(r.enrollmentNumber)).map((r) => r.enrollmentNumber.slice(-3)).join(", ")}
+                    </Text>
+                  )}
                   <Text style={styles.doneSync}>Students see it now, and it's already in the register on the faculty portal.</Text>
                   <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg, alignSelf: "stretch" }}>
                     <TouchableOpacity style={[styles.secondaryBtn, { flex: 1 }]} onPress={() => { setPhase("review"); setMode("list"); }}>
@@ -723,7 +782,14 @@ export default function MarkAttendanceScreen() {
                       placeholderTextColor={colors.textSecondary}
                     />
                   </View>
-                  <Text style={[styles.helperNote, { paddingHorizontal: 0 }]}>Everyone starts present. Tap a name to mark absent.</Text>
+                  <View style={styles.listTools}>
+                    <Text style={[styles.helperNote, { paddingHorizontal: 0, marginTop: 0, flex: 1 }]}>
+                      Everyone starts present. Tap a name to mark absent.
+                    </Text>
+                    <Pressable style={[styles.filterChip, onlyAbsent && styles.filterChipOn]} onPress={() => setOnlyAbsent((v) => !v)}>
+                      <Text style={[styles.filterChipText, onlyAbsent && { color: colors.onPrimary }]}>Absent ({absentSet.size})</Text>
+                    </Pressable>
+                  </View>
                 </>
               )}
             </>
@@ -734,6 +800,7 @@ export default function MarkAttendanceScreen() {
   );
 
   const canSave = selectedSubject && !dateError && !setupOpen && !rosterLoading && roster.length > 0 && phase !== "done" && (mode === "list" || phase === "review");
+  const canStart = setupOpen && !!selectedSubject && !dateError && !rosterLoading && roster.length > 0;
 
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
@@ -741,19 +808,24 @@ export default function MarkAttendanceScreen() {
         <FlatList
           data={selectedSubject && !dateError && !setupOpen && !rosterLoading && mode === "list" && phase !== "done" ? shown : []}
           keyExtractor={(item) => item.enrollmentNumber}
-          contentContainerStyle={[styles.listContent, canSave && { paddingBottom: 110 }]}
+          contentContainerStyle={[styles.listContent, (canSave || canStart) && { paddingBottom: 110 }]}
           ListHeaderComponent={ListHeader}
           keyboardShouldPersistTaps="handled"
           initialNumToRender={12}
           maxToRenderPerBatch={12}
           windowSize={7}
           removeClippedSubviews
-          renderItem={({ item }) => (
-            <View style={{ paddingHorizontal: spacing.lg }}>
-              <AttendanceRow item={item} isAbsent={absentSet.has(item.enrollmentNumber)} onToggle={toggleAbsent} />
-            </View>
-          )}
+          renderItem={renderRow}
+          keyboardDismissMode="on-drag"
         />
+        {canStart ? (
+          <View style={styles.saveBar}>
+            <TouchableOpacity style={[styles.saveButton, styles.startButton]} onPress={() => setSetupOpen(false)}>
+              <Text style={styles.saveButtonText}>Start attendance · {roster.length} students</Text>
+              <Ionicons name="arrow-forward" size={18} color={colors.surface} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
         {canSave ? (
           <View style={styles.saveBar}>
             <TouchableOpacity style={[styles.saveButton, { marginTop: 0 }]} onPress={handleSave} disabled={saving}>
@@ -767,16 +839,116 @@ export default function MarkAttendanceScreen() {
             </TouchableOpacity>
           </View>
         ) : null}
+        <Modal visible={lowOpen} transparent animationType="slide" onRequestClose={() => setLowOpen(false)}>
+          <Pressable style={styles.lowBackdrop} onPress={() => setLowOpen(false)}>
+            <Pressable style={styles.lowSheet} onPress={() => undefined}>
+              <Text style={styles.lowSheetTitle}>Below {ATTENDANCE_TARGET}% in {selectedSubject?.name}</Text>
+              <Text style={styles.lowSheetSub}>Counts every class marked for this subject. Event or medical excusals not recorded on a class aren't included.</Text>
+              <FlatList
+                data={lowStudents}
+                keyExtractor={(s) => s.enrollmentNumber}
+                style={{ maxHeight: 420 }}
+                renderItem={({ item }) => (
+                  <View style={styles.lowRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.studentName} numberOfLines={1}>{nameOf(item.enrollmentNumber)}</Text>
+                      <Text style={styles.studentReg}>{item.enrollmentNumber} · {item.present}/{item.total}</Text>
+                    </View>
+                    <Text style={[styles.lowPct, { color: colors.danger }]}>{item.percentage}%</Text>
+                  </View>
+                )}
+              />
+              <TouchableOpacity style={[styles.secondaryBtn, { marginTop: spacing.md }]} onPress={() => setLowOpen(false)}>
+                <Text style={styles.secondaryText}>Close</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
+        <SheetPicker
+          visible={sheet === "year"}
+          title="Batch"
+          items={years}
+          keyOf={(y) => String(y)}
+          labelOf={(y) => yearOfStudyLabel(y)}
+          selectedKey={selectedYear !== null ? String(selectedYear) : null}
+          onPick={(y) => setSelectedYear(y)}
+          onClose={() => setSheet(null)}
+        />
+        <SheetPicker
+          visible={sheet === "class"}
+          title="Class"
+          items={classOptions}
+          keyOf={(c) => c.key}
+          labelOf={(c) => c.label}
+          selectedKey={selectedClass?.key ?? null}
+          onPick={(c) => {
+            setSelectedClass(c);
+            setSelectedSpecialization(null);
+          }}
+          onClose={() => setSheet(null)}
+          emptyText="No classes found for this batch."
+        />
+        <SheetPicker
+          visible={sheet === "spec"}
+          title="Specialization"
+          items={selectedClass ? ["__ALL__", ...selectedClass.specializations] : []}
+          keyOf={(x) => x}
+          labelOf={(x) => (x === "__ALL__" ? `All of ${selectedClass?.label ?? "the class"}` : x)}
+          selectedKey={selectedSpecialization}
+          onPick={(x) => setSelectedSpecialization(x)}
+          onClose={() => setSheet(null)}
+        />
+        <SheetPicker
+          visible={sheet === "sem"}
+          title="Semester"
+          items={[...SEMESTERS]}
+          keyOf={(x) => String(x)}
+          labelOf={(x) => `Semester ${x}`}
+          selectedKey={semester !== null ? String(semester) : null}
+          onPick={(x) => {
+            setSemester(x);
+            setSelectedSubject(null);
+          }}
+          onClose={() => setSheet(null)}
+        />
+        <SheetPicker
+          visible={sheet === "subject"}
+          title="Subject"
+          items={subjects}
+          keyOf={(x) => x.code}
+          labelOf={(x) => x.name}
+          sublabelOf={(x) => x.code}
+          selectedKey={selectedSubject?.code ?? null}
+          onPick={(x) => setSelectedSubject(x)}
+          onClose={() => setSheet(null)}
+          searchable={subjects.length > 6}
+        />
       </SafeAreaView>
     </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
+  lowLine: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: spacing.md, marginTop: spacing.sm, paddingVertical: 10, paddingHorizontal: spacing.md, borderRadius: 14, backgroundColor: colors.dangerBg },
+  lowLineOk: { backgroundColor: colors.successBg },
+  lowText: { flex: 1, fontSize: 13, fontWeight: "700" },
+  lowBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  lowSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: spacing.lg, paddingBottom: spacing.xl },
+  lowSheetTitle: { fontSize: 17, fontWeight: "800", color: colors.textPrimary },
+  lowSheetSub: { fontSize: 12, color: colors.textSecondary, marginTop: 4, marginBottom: spacing.sm, lineHeight: 17 },
+  lowRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
+  lowPct: { fontSize: 15, fontWeight: "800" },
+  doneAbsent: { fontSize: 13, fontWeight: "700", color: colors.danger, textAlign: "center", marginTop: 6 },
+  formCard: { marginTop: spacing.md, backgroundColor: colors.surface, borderRadius: 20, padding: spacing.md, paddingBottom: spacing.xs, borderWidth: 1.5, borderColor: colors.border },
+  formTitle: { fontSize: 16, fontWeight: "800", color: colors.textPrimary, marginBottom: spacing.sm },
+  formRow: { flexDirection: "row", gap: spacing.sm },
+  loadingRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md },
+  loadingText: { ...typography.caption, color: colors.textSecondary },
+  startButton: { marginTop: 0, flexDirection: "row", justifyContent: "center", gap: spacing.sm },
   container: { flex: 1 },
-  header: { ...typography.h2, color: colors.textPrimary, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  pickersArea: { paddingHorizontal: spacing.lg },
-  quickCard: { marginHorizontal: spacing.lg, marginTop: spacing.md, backgroundColor: colors.surface, borderRadius: 20, padding: spacing.md, borderWidth: 1.5, borderColor: colors.border },
+  header: { ...typography.h2, color: colors.textPrimary, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
+  pickersArea: { paddingHorizontal: spacing.md },
+  quickCard: { marginHorizontal: spacing.md, marginTop: spacing.md, backgroundColor: colors.surface, borderRadius: 20, padding: spacing.md, borderWidth: 1.5, borderColor: colors.border },
   quickTitle: { fontSize: 16, fontWeight: "800", color: colors.textPrimary },
   quickSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
   quickList: { marginTop: spacing.sm, gap: 6 },
@@ -790,8 +962,8 @@ const styles = StyleSheet.create({
   quickTagDone: { color: colors.primary },
   quickTagLater: { color: colors.textSecondary },
   label: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.md, marginBottom: 4, fontWeight: "600" },
-  emptyNote: { ...typography.caption, color: colors.textSecondary, marginVertical: spacing.xs, paddingHorizontal: spacing.lg },
-  helperNote: { ...typography.caption, color: colors.textSecondary, paddingHorizontal: spacing.lg, marginTop: spacing.sm },
+  emptyNote: { ...typography.caption, color: colors.textSecondary, marginVertical: spacing.xs, paddingHorizontal: spacing.md },
+  helperNote: { ...typography.caption, color: colors.textSecondary, paddingHorizontal: spacing.md, marginTop: spacing.sm },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   chip: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.full, backgroundColor: colors.surface },
   chipActive: { backgroundColor: colors.primary },
@@ -806,7 +978,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   listContent: { paddingBottom: spacing.xl, gap: spacing.sm },
-  summaryCard: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginHorizontal: spacing.lg, marginTop: spacing.md, padding: spacing.md, borderRadius: 20, backgroundColor: colors.primary },
+  summaryCard: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginHorizontal: spacing.md, marginTop: spacing.md, padding: spacing.md, borderRadius: 20, backgroundColor: colors.primary },
   summaryTitle: { fontSize: 16, fontWeight: "800", color: colors.onPrimary },
   summaryMeta: { fontSize: 12, color: colors.heroMuted, marginTop: 2 },
   changeBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.full, backgroundColor: "rgba(255,255,255,0.18)" },
@@ -827,7 +999,7 @@ const styles = StyleSheet.create({
   linkText: { fontSize: 14, fontWeight: "700", color: colors.primary },
   searchBox: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: spacing.md, backgroundColor: colors.surface, borderRadius: radius.full, paddingHorizontal: spacing.md, borderWidth: 1, borderColor: colors.border },
   searchInput: { flex: 1, paddingVertical: 10, fontSize: 14, color: colors.textPrimary },
-  saveBar: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.lg, backgroundColor: colors.gradientEnd },
+  saveBar: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: spacing.md, paddingTop: spacing.sm, paddingBottom: spacing.lg, backgroundColor: colors.gradientEnd },
   doneCard: { marginTop: spacing.md, backgroundColor: colors.surface, borderRadius: 24, padding: spacing.lg, alignItems: "center", borderWidth: 1.5, borderColor: colors.border },
   doneIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: colors.success, alignItems: "center", justifyContent: "center" },
   doneTitle: { marginTop: spacing.md, fontSize: 20, fontWeight: "800", color: colors.textPrimary },
@@ -835,12 +1007,20 @@ const styles = StyleSheet.create({
   doneSync: { marginTop: spacing.sm, fontSize: 12, color: colors.textSecondary, textAlign: "center" },
   secondaryBtn: { borderRadius: radius.full, paddingVertical: spacing.md, alignItems: "center", backgroundColor: colors.surfaceAlt },
   secondaryText: { fontWeight: "700", fontSize: 15, color: colors.textPrimary },
+  listTools: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm },
+  filterChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  filterChipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  filterChipText: { fontSize: 12, fontWeight: "700", color: colors.textSecondary },
+  rollBadge: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center", marginRight: spacing.sm },
+  rollBadgeAbsent: { backgroundColor: colors.danger + "20" },
+  rollBadgeText: { fontSize: 13, fontWeight: "800", color: colors.textPrimary },
   studentRow: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     padding: spacing.sm,
+    marginHorizontal: spacing.md,
     marginTop: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
@@ -855,6 +1035,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
     borderRadius: radius.full,
+    minWidth: 68,
+    justifyContent: "center",
   },
   statusPillPresent: { backgroundColor: colors.success },
   statusPillAbsent: { backgroundColor: colors.danger },

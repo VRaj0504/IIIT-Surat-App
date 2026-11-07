@@ -5,7 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors, spacing, radius, typography } from "../theme/theme";
 import { subscribeToAllTimetables, Timetable } from "../firebase/timetableService";
-import { getRoomAvailability, getAllTimeSlots, pickCurrentSlot, RoomStatus } from "../utils/roomAvailability";
+import { getRoomAvailability, getAllTimeSlots, pickCurrentSlot, RoomStatus, getRoomDaySchedule, freeUntil, toMinutes } from "../utils/roomAvailability";
 import LoadingSpinner from "../components/LoadingSpinner";
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -90,6 +90,11 @@ export default function RoomAvailabilityScreen() {
     return getRoomAvailability(timetables, day, time);
   }, [timetables, day, time]);
 
+  const [roomOpen, setRoomOpen] = useState<string | null>(null);
+  const roomSchedule = useMemo(
+    () => (timetables && roomOpen ? getRoomDaySchedule(timetables, day, roomOpen) : []),
+    [timetables, day, roomOpen],
+  );
   const free = statuses.filter((s) => !s.occupant);
   const occupied = statuses.filter((s) => s.occupant);
 
@@ -190,20 +195,26 @@ export default function RoomAvailabilityScreen() {
               Empty on {day} at {time ? formatSlotLabel(time) : ""} ({free.length})
             </Text>
             <View style={styles.roomGrid}>
-              {free.map((s) => (
-                <View key={s.room} style={[styles.roomChip, styles.roomChipFree]}>
-                  <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-                  <Text style={styles.roomChipFreeText} numberOfLines={1} ellipsizeMode="tail">
-                    {s.room}
-                  </Text>
-                </View>
-              ))}
+              {free.map((s) => {
+                const until = timetables && time ? freeUntil(timetables, day, s.room, time) : null;
+                return (
+                  <TouchableOpacity key={s.room} style={[styles.roomChip, styles.roomChipFree]} onPress={() => setRoomOpen(s.room)} activeOpacity={0.8}>
+                    <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+                    <View style={{ flexShrink: 1 }}>
+                      <Text style={styles.roomChipFreeText} numberOfLines={1} ellipsizeMode="tail">
+                        {s.room}
+                      </Text>
+                      <Text style={styles.untilText}>{until ? `till ${formatSlotLabel(until)}` : "rest of day"}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
               {free.length === 0 && <Text style={styles.emptyNote}>Every known room is in use at this day/time.</Text>}
             </View>
 
             <Text style={styles.sectionTitle}>In use ({occupied.length})</Text>
             {occupied.map((s) => (
-              <View key={s.room} style={styles.occupiedCard}>
+              <TouchableOpacity key={s.room} style={styles.occupiedCard} onPress={() => setRoomOpen(s.room)} activeOpacity={0.85}>
                 <Text style={styles.occupiedRoom}>{s.room}</Text>
                 <Text style={styles.occupiedDetail}>
                   {s.occupant!.subjectName} · {s.occupant!.branch} Sem {s.occupant!.semester} {s.occupant!.section}
@@ -211,17 +222,64 @@ export default function RoomAvailabilityScreen() {
                 <Text style={styles.occupiedMeta}>
                   {s.occupant!.faculty} · {formatSlotLabel(s.occupant!.startTime)}–{formatSlotLabel(s.occupant!.endTime)}
                 </Text>
-              </View>
+              </TouchableOpacity>
             ))}
+            <Text style={styles.tapHint}>Tap a room to see its whole day.</Text>
           </ScrollView>
         )}
+        <Modal visible={!!roomOpen} transparent animationType="slide" onRequestClose={() => setRoomOpen(null)}>
+          <Pressable style={styles.rs_sheetBackdrop} onPress={() => setRoomOpen(null)}>
+            <Pressable style={styles.rs_sheet} onPress={() => undefined}>
+              <Text style={styles.rs_sheetTitle}>{roomOpen}</Text>
+              <Text style={styles.rs_sheetSub}>{day}</Text>
+              <ScrollView style={{ maxHeight: 420 }}>
+                {roomSchedule.length === 0 ? (
+                  <Text style={styles.emptyNote}>No classes in this room on {day}.</Text>
+                ) : (
+                  roomSchedule.map((b, i) => {
+                    const now = time ? toMinutes(b.startTime) <= toMinutes(time) && toMinutes(time) < toMinutes(b.endTime) : false;
+                    return (
+                      <View key={`${b.startTime}-${i}`} style={[styles.rs_sheetRow, now && styles.rs_sheetRowNow]}>
+                        <Text style={styles.rs_sheetTime}>
+                          {formatSlotLabel(b.startTime)}–{formatSlotLabel(b.endTime)}
+                        </Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.rs_sheetSubject} numberOfLines={1}>{b.subjectName}</Text>
+                          <Text style={styles.rs_sheetMeta} numberOfLines={1}>
+                            {b.branch} Sem {b.semester} {b.section} · {b.faculty}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+              </ScrollView>
+              <TouchableOpacity style={styles.rs_sheetClose} onPress={() => setRoomOpen(null)}>
+                <Text style={styles.rs_sheetCloseText}>Close</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
       </SafeAreaView>
     </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  untilText: { fontSize: 10.5, fontWeight: "700", color: colors.success, opacity: 0.85 },
+  tapHint: { fontSize: 12, color: colors.textSecondary, textAlign: "center", marginTop: spacing.sm },
+  rs_sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  rs_sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: spacing.lg, paddingBottom: spacing.xl },
+  rs_sheetTitle: { fontSize: 20, fontWeight: "800", color: colors.textPrimary },
+  rs_sheetSub: { fontSize: 13, fontWeight: "600", color: colors.textSecondary, marginBottom: spacing.sm },
+  rs_sheetRow: { flexDirection: "row", gap: spacing.md, paddingVertical: 10, paddingHorizontal: 8, borderRadius: 12, alignItems: "center" },
+  rs_sheetRowNow: { backgroundColor: colors.primary + "14" },
+  rs_sheetTime: { width: 118, fontSize: 12.5, fontWeight: "700", color: colors.textPrimary },
+  rs_sheetSubject: { fontSize: 14, fontWeight: "700", color: colors.textPrimary },
+  rs_sheetMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
+  rs_sheetClose: { alignItems: "center", paddingVertical: spacing.sm, marginTop: spacing.sm },
+  rs_sheetCloseText: { fontSize: 15, fontWeight: "700", color: colors.textSecondary },
+  container: { flex: 1, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
   header: { ...typography.h2, color: colors.textPrimary, marginBottom: spacing.sm },
   pillLabel: {
     ...typography.caption,
@@ -328,5 +386,5 @@ const styles = StyleSheet.create({
   occupiedDetail: { ...typography.caption, color: colors.textPrimary, marginTop: 2 },
   occupiedMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   emptyText: { ...typography.body, color: colors.textSecondary, marginTop: spacing.xl, textAlign: "center" },
-  emptyNote: { ...typography.caption, color: colors.textSecondary, fontStyle: "italic" },
+  emptyNote: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.sm },
 });

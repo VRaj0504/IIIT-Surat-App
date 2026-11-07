@@ -4,6 +4,7 @@ import { colors } from "../../theme/theme";
 import type { TimetableSlot } from "../../firebase/timetableService";
 import { expandFaculty } from "../../data/facultyLegend";
 import { mergeContiguousSlots, toMinutes } from "../../utils/timetable";
+import type { ClassChange } from "../../firebase/classChangesService";
 
 type Slot = TimetableSlot & { branch?: string; semester?: number; section?: string };
 type Day = { day: string; date: Date; slots: Slot[] };
@@ -19,7 +20,45 @@ function clock(m: number) {
   return `${h % 12 === 0 ? 12 : h % 12}:${String(m % 60).padStart(2, "0")}`;
 }
 
-export default function DesktopWeek({ days, todayName, nowMin, isFaculty }: { days: Day[]; todayName: string; nowMin: number; isFaculty: boolean }) {
+function lanes(slots: Slot[]): { lane: number; of: number }[] {
+  const out = slots.map(() => ({ lane: 0, of: 1 }));
+  let group: number[] = [];
+  let groupEnd = -1;
+  const ends: number[] = [];
+  const close = () => {
+    const of = Math.max(1, ...group.map((i) => out[i].lane + 1));
+    group.forEach((i) => (out[i].of = of));
+    group = [];
+    ends.length = 0;
+  };
+  slots.forEach((x, i) => {
+    const a = toMinutes(x.startTime);
+    const b = Math.max(toMinutes(x.endTime), a + 30);
+    if (group.length && a >= groupEnd) close();
+    let lane = ends.findIndex((e) => e <= a);
+    if (lane === -1) lane = ends.length;
+    ends[lane] = b;
+    out[i].lane = lane;
+    group.push(i);
+    groupEnd = Math.max(groupEnd, b);
+  });
+  if (group.length) close();
+  return out;
+}
+
+export default function DesktopWeek({
+  days,
+  todayName,
+  nowMin,
+  isFaculty,
+  changeFor,
+}: {
+  days: Day[];
+  todayName: string;
+  nowMin: number;
+  isFaculty: boolean;
+  changeFor?: (slot: Slot, date: Date) => ClassChange | null;
+}) {
   const prepared = days.map((d) => ({
     ...d,
     slots: mergeContiguousSlots(d.slots)
@@ -73,6 +112,7 @@ export default function DesktopWeek({ days, todayName, nowMin, isFaculty }: { da
           </View>
           {prepared.map((d) => {
             const today = d.day === todayName;
+            const placed = lanes(d.slots);
             return (
               <View key={d.day} style={[s.col, today && s.colToday, { height }]}>
                 {hours.map((m) => (
@@ -89,22 +129,37 @@ export default function DesktopWeek({ days, todayName, nowMin, isFaculty }: { da
                     ? [x.branch, x.semester ? `Sem ${x.semester}` : null, x.section && x.section !== x.branch ? x.section : null].filter(Boolean).join(" ")
                     : expandFaculty(x.faculty ?? "");
                   const tall = b - a >= 50;
+                  const change = changeFor?.(x, d.date) ?? null;
+                  const cancelled = change?.type === "cancelled";
+                  const moved = change?.type === "room";
+                  const room = moved ? change?.newRoom ?? x.room : x.room;
+                  const { lane, of } = placed[i];
+                  const w = 100 / of;
                   return (
                     <View
                       key={`${x.id}-${i}`}
                       style={[
                         s.card,
-                        { top: y(a) + 2, height: y(b) - y(a) - 4, backgroundColor: live ? colors.primary : tone.bg },
+                        { top: y(a) + 2, height: y(b) - y(a) - 4, backgroundColor: cancelled ? colors.surfaceAlt : live ? colors.primary : tone.bg },
+                        cancelled && { borderWidth: 1.5, borderColor: colors.danger, borderStyle: "dashed" },
+                        moved && { borderWidth: 1.5, borderColor: colors.warning },
+                        of > 1 && { left: `${lane * w}%`, width: `${w}%`, right: undefined, borderWidth: 1.5, borderColor: colors.surface, paddingHorizontal: 7 },
                         past && { opacity: 0.45 },
                       ]}
-                      accessibilityLabel={`${x.subjectName} ${clock(a)} to ${clock(b)} in ${x.room}`}
+                      accessibilityLabel={`${x.subjectName} ${clock(a)} to ${clock(b)} in ${room}${cancelled ? ", cancelled" : moved ? ", room changed" : ""}`}
                     >
-                      <Text style={[s.subj, { color: live ? colors.onPrimary : tone.fg }]} numberOfLines={b - a >= 90 ? 2 : 1}>
+                      {cancelled || moved ? (
+                        <Text style={[s.flag, { color: cancelled ? colors.danger : colors.warning }]}>{cancelled ? "CANCELLED" : "ROOM CHANGED"}</Text>
+                      ) : null}
+                      <Text
+                        style={[s.subj, { color: cancelled ? colors.textSecondary : live ? colors.onPrimary : tone.fg }, cancelled && { textDecorationLine: "line-through" }]}
+                        numberOfLines={b - a >= 90 ? 2 : 1}
+                      >
                         {x.subjectName || x.subjectCode}
                         {x.group ? ` · ${x.group}` : ""}
                       </Text>
-                      <Text style={[s.meta, { color: live ? colors.onPrimary : colors.textPrimary }]} numberOfLines={1}>
-                        {[x.room, `${clock(a)}–${clock(b)}`].filter(Boolean).join(" · ")}
+                      <Text style={[s.meta, { color: live ? colors.onPrimary : colors.textPrimary }]} numberOfLines={of > 1 ? 2 : 1}>
+                        {[room, `${clock(a)}–${clock(b)}`].filter(Boolean).join(" · ")}
                       </Text>
                       {tall ? (
                         <Text style={[s.meta2, { color: live ? colors.heroMuted : colors.textSecondary }]} numberOfLines={1}>
@@ -145,6 +200,7 @@ const s = StyleSheet.create({
   line: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: colors.border },
   card: { position: "absolute", left: 3, right: 3, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, overflow: "hidden", gap: 1 },
   subj: { fontSize: 13, fontWeight: "800" },
+  flag: { fontSize: 9.5, fontWeight: "900", letterSpacing: 0.6 },
   meta: { fontSize: 11, fontWeight: "700" },
   meta2: { fontSize: 11, fontWeight: "600" },
   now: { position: "absolute", left: -4, right: 0, height: 2, backgroundColor: colors.danger },

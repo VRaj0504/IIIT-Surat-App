@@ -100,7 +100,7 @@ export function openRazorpay(opts: {
     key: opts.keyId,
     subscription_id: opts.subscriptionId,
     name: "CollegeGo Plus",
-    description: "IIIT Surat",
+    description: "Campus app subscription",
     prefill: { name: opts.name, email: opts.email },
     theme: { color: "#4F46E5" },
     handler: () => opts.onPaid(),

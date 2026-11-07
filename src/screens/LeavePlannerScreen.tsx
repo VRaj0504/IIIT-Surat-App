@@ -26,7 +26,7 @@ const tone = (p: number | null) =>
     : p >= TARGET + 5
       ? { fg: colors.success, bg: colors.successBg }
       : p >= TARGET
-        ? { fg: "#B45309", bg: "#FEF3C7" }
+        ? { fg: colors.warning, bg: colors.warningBg }
         : { fg: colors.danger, bg: colors.dangerBg };
 
 function Planner() {
@@ -178,6 +178,7 @@ function Planner() {
                   <Text style={styles.meta}>
                     {p.missed ? `Misses ${p.missed} class${p.missed === 1 ? "" : "es"}` : "No classes missed"}
                     {p.needAfter ? ` · attend the next ${p.needAfter} after you’re back to reach ${TARGET}%` : ""}
+                    {!p.needAfter && p.afterPct !== null ? ` · can still miss ${p.spareAfter} more after` : ""}
                   </Text>
                 </View>
                 <View style={{ alignItems: "flex-end" }}>

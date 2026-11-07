@@ -253,7 +253,7 @@ const writable = calendars.find(
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
+  content: { padding: spacing.md, paddingBottom: spacing.xl * 2 },
   header: { ...typography.h2, color: colors.textPrimary },
   helper: { ...typography.caption, color: colors.textSecondary, marginTop: 4, marginBottom: spacing.lg },
   sourceRow: { flexDirection: "row", gap: spacing.md },

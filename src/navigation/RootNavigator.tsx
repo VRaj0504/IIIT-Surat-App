@@ -12,8 +12,6 @@ import MessMenuScreen from "../screens/MessMenuScreen";
 import ThaliPassScreen from "../screens/ThaliPassScreen";
 import ScanThaliPassScreen from "../screens/ScanThaliPassScreen";
 import ResourcesScreen from "../screens/ResourcesScreen";
-import LostFoundScreen from "../screens/LostFoundScreen";
-import PostLostFoundScreen from "../screens/PostLostFoundScreen";
 import FacultyDirectoryScreen from "../screens/FacultyDirectoryScreen";
 import ApplyLeaveScreen from "../screens/ApplyLeaveScreen";
 import LeaveRequestsScreen from "../screens/LeaveRequestsScreen";
@@ -42,6 +40,7 @@ import PlacementsScreen from "../screens/PlacementsScreen";
 import UploadResourceScreen from "../screens/faculty/UploadResourceScreen";
 import EditProfileScreen from "../screens/EditProfileScreen";
 import NotificationSettingsScreen from "../screens/NotificationSettingsScreen";
+import NotificationsScreen from "../screens/NotificationsScreen";
 import HelpSupportScreen from "../screens/HelpSupportScreen";
 import ImportantContactsScreen from "../screens/ImportantContactsScreen";
 import MyDownloadsScreen from "../screens/MyDownloadsScreen";
@@ -107,16 +106,6 @@ export default function RootNavigator() {
         name="ScanThaliPass"
         component={ScanThaliPassScreen}
         options={{ title: "Scan Thali Pass" }}
-      />
-      <Stack.Screen
-        name="LostFound"
-        component={LostFoundScreen}
-        options={{ title: "Lost & Found" }}
-      />
-      <Stack.Screen
-        name="PostLostFound"
-        component={PostLostFoundScreen}
-        options={{ title: "Post an Item" }}
       />
       <Stack.Screen
         name="Resources"
@@ -270,6 +259,11 @@ export default function RootNavigator() {
         name="EditProfile"
         component={EditProfileScreen}
         options={{ title: "Edit Profile" }}
+      />
+      <Stack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ title: "Notifications" }}
       />
       <Stack.Screen
         name="NotificationSettings"

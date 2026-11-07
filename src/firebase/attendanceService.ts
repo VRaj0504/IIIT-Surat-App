@@ -1,4 +1,4 @@
-import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, getDoc, getDocs, collection, query, where, serverTimestamp } from "firebase/firestore";
 import { db } from "./firestore";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "./functionsClient";
@@ -101,6 +101,22 @@ export async function getExistingSession(params: {
   return (snap.data() as AttendanceSession).absentEnrollmentNumbers;
 }
 
+export type SessionMeta = { absent: string[]; markedBy: string | null; markedByName: string | null };
+
+export async function getSessionMeta(params: {
+  branch: string;
+  admissionYear: number;
+  section: string | null;
+  subjectCode: string;
+  date: string;
+  lecture?: number;
+}): Promise<SessionMeta | null> {
+  const snap = await getDoc(doc(db, COLLECTION, sessionDocId(params)));
+  if (!snap.exists()) return null;
+  const d = snap.data() as AttendanceSession & { markedByName?: string | null };
+  return { absent: d.absentEnrollmentNumbers ?? [], markedBy: d.markedBy ?? null, markedByName: d.markedByName ?? null };
+}
+
 export type SubjectAttendance = {
   subjectCode: string;
   subjectName: string;
@@ -111,6 +127,14 @@ export type SubjectAttendance = {
   canMiss: number;
   needToAttend: number;
   lastClass: string | null;
+  history?: AttendanceDay[];
+};
+
+export type AttendanceDay = {
+  date: string;
+  lecture: number;
+  hours: number;
+  status: "present" | "absent" | "excused";
 };
 
 export const ATTENDANCE_TARGET = 75;
@@ -167,7 +191,7 @@ export async function getMyAttendance(params: {
   const norm = (c: string) => String(c ?? "").replace(/\s+/g, "").toUpperCase();
   const semCodes = new Map(params.subjects.map((s) => [norm(s.code), s]));
 
-  const bySubject = new Map<string, { code: string; name: string; total: number; present: number; last: string | null }>();
+  const bySubject = new Map<string, { code: string; name: string; total: number; present: number; last: string | null; days: AttendanceDay[] }>();
   snap.forEach((d) => {
     const key = norm(d.subjectCode);
     const thisSem = d.semester !== undefined ? d.semester === params.semester : semCodes.has(key);
@@ -183,6 +207,7 @@ export async function getMyAttendance(params: {
       total: 0,
       present: 0,
       last: null,
+      days: [],
     };
     entry.total += w;
     const absent = d.absentEnrollmentNumbers.includes(params.enrollmentNumber);
@@ -192,6 +217,7 @@ export async function getMyAttendance(params: {
       params.medicalExcusedSessions?.has(`${d.subjectCode}|${d.date}`) ||
       params.medicalExcusedSessions?.has(`*|${d.date}`);
     if (!absent || excused) entry.present += w;
+    entry.days.push({ date: d.date, lecture: d.lecture ?? 1, hours: w, status: !absent ? "present" : excused ? "excused" : "absent" });
     if (!entry.last || d.date > entry.last) entry.last = d.date;
     bySubject.set(key, entry);
   });
@@ -204,7 +230,90 @@ export async function getMyAttendance(params: {
       presentCount: e.present,
       percentage: Math.round((e.present / e.total) * 1000) / 10,
       lastClass: e.last,
+      history: e.days.sort((a, b) => b.date.localeCompare(a.date) || b.lecture - a.lecture),
       ...slack(e.present, e.total),
     }))
     .sort((a, b) => a.percentage - b.percentage || a.subjectCode.localeCompare(b.subjectCode));
+}
+
+export type ClassStanding = { enrollmentNumber: string; present: number; total: number; percentage: number };
+
+/** Approved event excusals and medical leave for these students, so the class list matches what each student sees. */
+async function classExcusals(regs: string[]): Promise<Map<string, { ranges: { from: string; to: string }[]; sessions: Set<string> }>> {
+  const want = new Set(regs);
+  const out = new Map<string, { ranges: { from: string; to: string }[]; sessions: Set<string> }>();
+  const entry = (reg: string) => {
+    let e = out.get(reg);
+    if (!e) {
+      e = { ranges: [], sessions: new Set() };
+      out.set(reg, e);
+    }
+    return e;
+  };
+  const [events, medical] = await Promise.all([
+    getDocs(query(collection(db, "eventExcusals"), where("status", "==", "approved"))).catch(() => null),
+    getDocs(collection(db, "medicalExcusals")).catch(() => null),
+  ]);
+  events?.docs.forEach((d) => {
+    const x = d.data() as { studentEnrollmentNumbers?: string[]; fromDate?: string; toDate?: string };
+    if (!x.fromDate || !x.toDate) return;
+    (x.studentEnrollmentNumbers ?? []).forEach((r) => want.has(r) && entry(r).ranges.push({ from: x.fromDate!, to: x.toDate! }));
+  });
+  medical?.docs.forEach((d) => {
+    const x = d.data() as { enrollmentNumber?: string | null; fromDate?: string | null; toDate?: string | null; sessions?: string[]; allDates?: boolean };
+    const reg = x.enrollmentNumber ?? "";
+    if (!want.has(reg)) return;
+    const e = entry(reg);
+    (x.sessions ?? []).forEach((k) => e.sessions.add(k));
+    if (x.allDates && x.fromDate && x.toDate) e.ranges.push({ from: x.fromDate, to: x.toDate });
+  });
+  return out;
+}
+
+export async function getClassAttendanceSummary(params: {
+  branch: string;
+  admissionYear: number;
+  section: string | null;
+  subjectCode: string;
+  specialization?: string | null;
+  enrollmentNumbers: string[];
+}): Promise<ClassStanding[]> {
+  const snap = await getDocs(
+    query(
+      collection(db, COLLECTION),
+      where("branch", "==", params.branch),
+      where("admissionYear", "==", params.admissionYear),
+      where("subjectCode", "==", params.subjectCode),
+    ),
+  );
+  const tally = new Map(params.enrollmentNumbers.map((r) => [r, { present: 0, total: 0 }]));
+  const ex = await classExcusals(params.enrollmentNumbers);
+  const isExcused = (reg: string, subjectCode: string, date: string) => {
+    const e = ex.get(reg);
+    if (!e) return false;
+    return e.ranges.some((r) => date >= r.from && date <= r.to) || e.sessions.has(`${subjectCode}|${date}`) || e.sessions.has(`*|${date}`);
+  };
+  snap.docs.forEach((d) => {
+    const s = d.data() as AttendanceSession;
+    if ((s.section || null) !== (params.section || null)) return;
+    if (params.specialization && s.specialization && s.specialization !== params.specialization) return;
+    const w = Math.max(1, Math.round(s.hours ?? 1));
+    const absent = new Set(s.absentEnrollmentNumbers ?? []);
+    const excused = new Set(s.excusedEnrollmentNumbers ?? []);
+    const only = s.onlyEnrollmentNumbers?.length ? new Set(s.onlyEnrollmentNumbers) : null;
+    tally.forEach((t, reg) => {
+      if (only && !only.has(reg)) return;
+      t.total += w;
+      if (!absent.has(reg) || excused.has(reg) || isExcused(reg, s.subjectCode, s.date)) t.present += w;
+    });
+  });
+  return Array.from(tally.entries())
+    .filter(([, t]) => t.total > 0)
+    .map(([enrollmentNumber, t]) => ({
+      enrollmentNumber,
+      present: t.present,
+      total: t.total,
+      percentage: Math.round((t.present / t.total) * 1000) / 10,
+    }))
+    .sort((a, b) => a.percentage - b.percentage);
 }

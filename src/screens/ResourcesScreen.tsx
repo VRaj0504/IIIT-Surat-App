@@ -11,7 +11,8 @@ import {
   ActivityIndicator,
   Platform,
 } from "react-native";
-import { File } from "expo-file-system";
+import { Directory, File, Paths } from "expo-file-system";
+import { openLocalFile } from "../utils/openLocalFile";
 import { getDownloadsDir } from "../utils/downloadsDir";
 import { addToWebDownloadHistory } from "../utils/webDownloadHistory";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -71,21 +72,25 @@ const ResourceRow = memo(function ResourceRow({
   item,
   canDelete,
   downloading,
+  opening,
   onOpen,
+  onView,
   onDownload,
   onDelete,
 }: {
   item: Resource;
   canDelete: boolean;
   downloading: boolean;
+  opening: boolean;
   onOpen: (url: string) => void;
+  onView: (item: Resource) => void;
   onDownload: (item: Resource) => void;
   onDelete: (item: Resource) => void;
 }) {
   return (
     <TouchableOpacity
       style={styles.itemCard}
-      onPress={() => onOpen(item.fileUrl)}
+      onPress={() => (item.isLink ? onOpen(item.fileUrl) : onView(item))}
     >
       <View
         style={[
@@ -102,12 +107,23 @@ const ResourceRow = memo(function ResourceRow({
       <View style={styles.itemInfo}>
         <Text style={styles.itemTitle}>{item.title}</Text>
         <Text style={[styles.itemType, { color: typeColors[item.type] }]}>
-          {item.type === "PYQ" && item.examYear ? `PYQ ${item.examYear}` : item.type} · {item.branch} · Sem {item.semester}
+          {item.isLink ? "Link · " : ""}{item.type === "PYQ" && item.examYear ? `PYQ ${item.examYear}` : item.type} · {item.branch} · Sem {item.semester}
         </Text>
       </View>
 
-      <TouchableOpacity onPress={() => onDownload(item)} hitSlop={8} disabled={downloading}>
-        {downloading ? (
+      {!item.isLink && (
+        <TouchableOpacity onPress={() => onView(item)} hitSlop={8} disabled={opening} accessibilityLabel="Open">
+          {opening ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Ionicons name="eye-outline" size={18} color={colors.primary} />
+          )}
+        </TouchableOpacity>
+      )}
+      <TouchableOpacity onPress={() => (item.isLink ? onOpen(item.fileUrl) : onDownload(item))} hitSlop={8} disabled={downloading} accessibilityLabel={item.isLink ? "Open link" : "Download"}>
+        {item.isLink ? (
+          <Ionicons name="open-outline" size={18} color={colors.primary} />
+        ) : downloading ? (
           <ActivityIndicator size="small" color={colors.primary} />
         ) : (
           <Ionicons name="download-outline" size={18} color={colors.primary} />
@@ -211,6 +227,29 @@ export default function ResourcesScreen() {
   }, []);
 
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
+  const [openingId, setOpeningId] = useState<string | null>(null);
+
+  const handleView = useCallback(async (item: Resource) => {
+    if (Platform.OS === "web") {
+      window.open(item.fileUrl, "_blank");
+      return;
+    }
+    setOpeningId(item.id);
+    try {
+      const extMatch = decodeURIComponent(item.fileUrl).match(/\.([a-zA-Z0-9]{2,5})(?:\?|$)/);
+      const ext = extMatch ? `.${extMatch[1].toLowerCase()}` : "";
+      const safeName = item.title.replace(/[^a-zA-Z0-9 _-]/g, "").trim().replace(/\s+/g, "_") || "resource";
+      const dir = new Directory(Paths.cache, "viewing");
+      if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
+      const target = new File(dir, `${item.id}-${safeName}${ext}`);
+      const local = target.exists ? target : await File.downloadFileAsync(item.fileUrl, target, { idempotent: true });
+      await openLocalFile(local.uri, `${safeName}${ext}`, (uri, name) => navigation.navigate("FileViewer", { uri, name }));
+    } catch (err: any) {
+      Alert.alert("Couldn't open", err?.message ?? "Check your connection and try again.");
+    } finally {
+      setOpeningId(null);
+    }
+  }, [navigation]);
 
   const handleDownload = useCallback(async (item: Resource) => {
     setDownloadingIds((prev) => new Set(prev).add(item.id));
@@ -357,7 +396,7 @@ export default function ResourcesScreen() {
       return { icon: typeIcons[type], color: typeColors[type] };
     }
     const type = loc.path.type as ResourceType;
-    return { icon: "calendar-outline", color: typeColors[type] };
+    return { icon: /^U\d+$/.test(folder.key) ? "folder-open-outline" : "calendar-outline", color: typeColors[type] };
   };
 
   const emptyText =
@@ -411,6 +450,8 @@ export default function ResourcesScreen() {
                 canDelete={profile?.uid === item.uploadedBy}
                 downloading={downloadingIds.has(item.id)}
                 onOpen={openLink}
+                onView={handleView}
+                opening={openingId === item.id}
                 onDownload={handleDownload}
                 onDelete={handleDelete}
               />

@@ -64,6 +64,7 @@ export type UserProfile = {
   photoUrl?: string;
 
   emergencyContacts?: { name: string; phone: string }[];
+  followedClubs?: string[];
 
   isAdmin?: boolean;
   enrollmentNumber?: string;
@@ -286,7 +287,9 @@ function authCode(e: any, fallback: string) {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const DEV_PREVIEW_EMAIL = 'ug25cse114@iiitsurat.ac.in';
+export function canPreviewRoles(p: UserProfile | null | undefined): boolean {
+  return !!p && (p.isAdmin === true || (p as { previewTester?: boolean }).previewTester === true);
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -300,10 +303,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const setPreviewRole = useCallback(
     (role: Role | null) => {
-      if (profile?.email !== DEV_PREVIEW_EMAIL) return;
+      if (!canPreviewRoles(profile)) return;
       setPreviewRoleState(role);
     },
-    [profile?.email],
+    [profile],
   );
 
   const [needsEmailVerification, setNeedsEmailVerification] = useState(false);

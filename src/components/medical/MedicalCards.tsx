@@ -106,7 +106,7 @@ export function MedicalReviewCard({ r, me }: { r: MedicalRequest; me: { uid: str
   const isOffice = r.stage === "office" && r.officeEmail === email;
   const roles = rolesFor(r, email);
   const canAct = isOffice || roles.length > 0;
-  const [open, setOpen] = useState(canAct);
+  const [open, setOpen] = useState(false);
   const [role, setRole] = useState<MedicalSignRole | null>(roles[0] ?? null);
   const [note, setNote] = useState("");
   const [comment, setComment] = useState("");
@@ -211,15 +211,13 @@ export function MedicalReviewCard({ r, me }: { r: MedicalRequest; me: { uid: str
     <Card style={s.card}>
       <Head r={r} title={`${r.studentName}`} sub={`${r.refNo ?? ""} · ${dateRange(r.fromDate, r.toDate)}`} />
       <Flags r={r} />
-      <Text style={s.reason}>{r.reason}</Text>
-      <FormSummary r={r} />
-      <View style={{ marginTop: spacing.sm }}>
-        <Attachments r={r} />
-      </View>
-      <Downloads r={r} />
-      <Toggle open={open} onPress={() => setOpen((v) => !v)} label={open ? "Hide signatures and history" : "Signatures and history"} />
+      <Text style={s.reason} numberOfLines={open ? undefined : 2}>{r.reason}</Text>
+      <Toggle open={open} onPress={() => setOpen((v) => !v)} label={open ? "Hide details" : "View details: form, documents, signatures"} />
       {open ? (
         <View style={{ gap: spacing.md }}>
+          <FormSummary r={r} />
+          <Attachments r={r} />
+          <Downloads r={r} />
           <SignBlocks r={r} />
           <History leaveId={r.id} />
         </View>
@@ -297,7 +295,7 @@ export function MedicalReviewCard({ r, me }: { r: MedicalRequest; me: { uid: str
           </View>
           <View style={s.row}>
             <PrimaryButton tone="danger" label="Not approve" icon="close" onPress={() => sign("not_approved")} loading={busy === "not_approved"} style={{ flex: 1 }} />
-            <PrimaryButton tone="success" label="Approve & sign" icon="checkmark" onPress={() => sign("approved")} loading={busy === "approved"} style={{ flex: 1.4 }} />
+            <PrimaryButton tone="success" label="Approve & sign" icon="checkmark" onPress={() => sign("approved")} loading={busy === "approved"} style={{ flex: 1 }} />
           </View>
           {role === "medical" ? (
             <TouchableOpacity
