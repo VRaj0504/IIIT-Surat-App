@@ -63,7 +63,10 @@ function PostEventScreenInner() {
   );
   const [dateText, setDateText] = useState(
     editingEvent
-      ? editingEvent.dateTime.toDate().toISOString().slice(0, 10)
+      ? (() => {
+          const d = editingEvent.dateTime.toDate();
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        })()
       : "",
   );
   const [timeText, setTimeText] = useState(

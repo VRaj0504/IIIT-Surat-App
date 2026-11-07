@@ -72,6 +72,31 @@ function istWeekdayAndTimePlusMinutes(minutesAhead: number): {weekday: string; t
   return {weekday, time: `${hour}:${minute}`, dateIso: `${year}-${month}-${day}`};
 }
 
+type ClassChange = {
+  date: string;
+  branch: string;
+  section: string | null;
+  subjectCode: string;
+  startTime: string;
+  type: "cancelled" | "room";
+  newRoom: string | null;
+};
+
+const squashKey = (x: unknown) => String(x ?? "").toUpperCase().replace(/[\s_\-.]+/g, "");
+
+// A class cancelled or moved from the app (classChanges) for this timetable slot on this date.
+function changeFor(changes: ClassChange[], tt: Timetable, slot: TimetableSlot, dateIso: string): ClassChange | null {
+  return (
+    changes.find((c) => {
+      if (c.date !== dateIso) return false;
+      if (squashKey(c.subjectCode) !== squashKey(slot.subjectCode)) return false;
+      if (toMinutes(c.startTime) !== toMinutes(slot.startTime)) return false;
+      if (squashKey(c.branch) !== squashKey(tt.branch)) return false;
+      return !c.section || sameSection(tt.branch, c.section, tt.section);
+    }) ?? null
+  );
+}
+
 type TimetableSlot = {
   startTime: string;
   subjectCode: string;
@@ -294,6 +319,8 @@ export const sendClassReminderPush = onSchedule(
     }
     const {timetablesSnap, examDocs, facultyUsers, studentCache} = warm!;
     const holidayOverrides = await loadHolidayOverrides(db);
+    const todayIso = istWeekdayAndTimePlusMinutes(0).dateIso;
+    const changes = (await db.collection("classChanges").where("date", "==", todayIso).get()).docs.map((d) => d.data() as ClassChange);
     const facultyQueue = new Map<string, FacultyQueueEntry>();
     const tasks: Promise<void>[] = [];
 
@@ -310,9 +337,12 @@ export const sendClassReminderPush = onSchedule(
         if (!todayEntry) return;
         mergeContiguousSessions(todayEntry.slots ?? [])
           .filter((slot) => toMinutes(slot.startTime) === reminderMinutes)
-          .forEach((slot) =>
-            tasks.push(notifyForSlot(db, timetable, slot, offsetMinutes, facultyUsers, studentCache, facultyQueue)),
-          );
+          .forEach((slot) => {
+            const change = changeFor(changes, timetable, slot, dateIso);
+            if (change?.type === "cancelled") return;
+            const live = change?.type === "room" && change.newRoom ? {...slot, room: `${change.newRoom} (changed)`} : slot;
+            tasks.push(notifyForSlot(db, timetable, live, offsetMinutes, facultyUsers, studentCache, facultyQueue));
+          });
       });
     }
 

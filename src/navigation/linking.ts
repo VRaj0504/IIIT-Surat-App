@@ -58,6 +58,8 @@ export const linking: LinkingOptions<any> | undefined =
       MyDownloads: 'my-downloads',
       FileViewer: 'file-viewer',
       About: 'about',
+      SOS: 'sos',
+      SosAlerts: 'sos-alerts',
       ...(PLUS_ENABLED ? { Plus: 'plus', LeavePlanner: 'leave-planner', CgpaPlanner: 'cgpa-planner' } : {}),
           },
         },

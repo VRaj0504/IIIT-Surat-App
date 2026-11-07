@@ -97,6 +97,17 @@ export default function GradeEntryScreen() {
   const [prefilled, setPrefilled] = useState(false);
   const pending = useRef<{ branch: string; section: string; semester: number; subjectCode: string } | null>(null);
   const triedPrefill = useRef(false);
+  const candidates = useRef<{ branch: string; section: string; semester: number; subjectCode: string }[]>([]);
+  const admissionFor = (semester: number) => {
+    const now = new Date();
+    const ayStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+    return ayStart - Math.ceil(semester / 2) + 1;
+  };
+  const tryNextCandidate = () => {
+    const next = candidates.current.shift() ?? null;
+    pending.current = next;
+    if (next) setSelectedYear(admissionFor(next.semester));
+  };
 
   // Open on the faculty member's most-taught class from the timetable (they can change any field).
   useEffect(() => {
@@ -110,33 +121,39 @@ export default function GradeEntryScreen() {
         const c = count.get(k);
         count.set(k, { n: (c?.n ?? 0) + 1, e });
       });
-      const top = [...count.values()].sort((x, y) => y.n - x.n)[0]?.e;
-      if (!top?.semester) return;
-      const now = new Date();
-      const ayStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
-      const admission = ayStart - Math.ceil(Number(top.semester) / 2) + 1;
-      pending.current = { branch: top.branch, section: top.section, semester: Number(top.semester), subjectCode: top.subjectCode };
-      setSelectedYear((cur) => cur ?? admission);
+      candidates.current = [...count.values()]
+        .sort((x, y) => y.n - x.n)
+        .map((c) => c.e)
+        .filter((e) => !!e.semester)
+        .map((e) => ({ branch: e.branch, section: e.section, semester: Number(e.semester), subjectCode: e.subjectCode }));
+      tryNextCandidate();
     });
     return () => unsub();
   }, [profile?.name]);
 
   useEffect(() => {
-    const p = pending.current;
-    if (!p || selectedClass || classOptions.length === 0) return;
+    if (!pending.current || selectedClass || classOptions.length === 0) return;
     const sq = (x: unknown) => String(x ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
     const sec = (b: string, x: unknown) => sq(x).replace(/^(SECTION|SEC)/, "").replace(new RegExp(`^${sq(b)}`), "");
-    const match =
-      classOptions.find((c) => sq(c.branch) === sq(p.branch) && sec(c.branch, c.section) === sec(p.branch, p.section)) ??
-      classOptions.find((c) => sq(c.branch) === sq(p.branch));
-    if (!match) {
-      pending.current = null;
-      return;
+    // Walk this faculty's classes (most-taught first) until one has students in the loaded batch.
+    while (pending.current) {
+      const p = pending.current;
+      if (admissionFor(p.semester) !== selectedYear) {
+        setSelectedYear(admissionFor(p.semester));
+        return;
+      }
+      const match =
+        classOptions.find((c) => sq(c.branch) === sq(p.branch) && sec(c.branch, c.section) === sec(p.branch, p.section)) ??
+        classOptions.find((c) => sq(c.branch) === sq(p.branch));
+      if (match) {
+        setSelectedClass(match);
+        if (match.specializations.length > 0) setSelectedSpecialization("__ALL__");
+        setSemester(p.semester as (typeof SEMESTERS)[number]);
+        return;
+      }
+      pending.current = candidates.current.shift() ?? null;
     }
-    setSelectedClass(match);
-    if (match.specializations.length > 0) setSelectedSpecialization("__ALL__");
-    setSemester(p.semester as (typeof SEMESTERS)[number]);
-  }, [classOptions, selectedClass]);
+  }, [classOptions, selectedClass, selectedYear]);
 
   useEffect(() => {
     const p = pending.current;
@@ -160,10 +177,15 @@ export default function GradeEntryScreen() {
     }
     setClassesLoading(true);
     setSelectedClass(null);
+    setClassOptions([]);
+    let alive = true;
     getClassOptionsForYear(selectedYear)
-      .then(setClassOptions)
-      .catch(() => setClassOptions([]))
-      .finally(() => setClassesLoading(false));
+      .then((o) => alive && setClassOptions(o))
+      .catch(() => alive && setClassOptions([]))
+      .finally(() => alive && setClassesLoading(false));
+    return () => {
+      alive = false;
+    };
   }, [selectedYear]);
 
   useEffect(() => {

@@ -53,8 +53,17 @@ function normalize(name: string): string {
 }
 
 export function getClubIcon(clubName: string): ClubIconEntry {
-  const match = CLUB_ICON_MAP[normalize(clubName)];
+  const n = normalize(clubName);
+  const match = CLUB_ICON_MAP[n];
   if (match) return match;
+  // Names are often written differently ("LCS — Learn Code Solve", "E-Cell"): match on shared words or a short name.
+  const words = new Set(n.split(' ').filter((w) => w.length >= 3 || /^[a-z]{2,}$/.test(w)));
+  const short = n.replace(/\s+/g, '');
+  for (const [key, entry] of Object.entries(CLUB_ICON_MAP)) {
+    const kw = key.split(' ');
+    const shared = kw.filter((w) => words.has(w) && !['club', 'iiit', 'surat', 'and', 'the', 'of'].includes(w));
+    if (shared.length >= 2 || (shared.length === 1 && shared[0].length >= 3 && kw.length <= 3) || key.replace(/\s+/g, '').includes(short)) return entry;
+  }
 
   console.warn(`[clubIcons] No icon mapped for "${clubName}" (normalized: "${normalize(clubName)}") — using fallback.`);
 

@@ -18,6 +18,7 @@ export {sendTimetableUpdatePush} from "./sendTimetableUpdatePush";
 export {sendClassChangePush} from "./sendClassChangePush";
 export {sendLowAttendancePush} from "./sendLowAttendancePush";
 export {sendEventReminderPush} from "./sendEventReminderPush";
+export {sendEventChangePush} from "./sendEventChangePush";
 export {sendClubEventPush} from "./sendClubEventPush";
 export {sendLeaveResolutionPush} from "./sendLeaveResolutionPush";
 export {medicalLeaveWorkflow, medicalLeaveTeacherConfirmed} from "./medicalLeaveWorkflow";
