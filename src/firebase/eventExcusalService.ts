@@ -57,6 +57,8 @@ export type EventExcusal = {
   approverEmails?: string[];
   stage?: ExcusalStage;
   currentApproverEmail?: string | null;
+  /** Everyone who can sign the current step (a club can have several FICs; any one signs). */
+  currentApproverEmails?: string[];
   signatures?: Partial<Record<SignStep, ExcusalSign>>;
   history?: ExcusalEvent[];
   rejectedReason?: string | null;
@@ -75,6 +77,13 @@ const toList = (snap: { docs: { id: string; data: () => unknown }[] }) =>
   snap.docs
     .map((d) => ({ id: d.id, ...(d.data() as Omit<EventExcusal, "id">) }))
     .sort((a, b) => (b.createdAt?.toMillis?.() ?? Date.now()) - (a.createdAt?.toMillis?.() ?? Date.now()));
+
+export function canSignNow(x: EventExcusal, email: string): boolean {
+  if (x.status !== "pending") return false;
+  const e = email.toLowerCase();
+  const list = x.currentApproverEmails?.length ? x.currentApproverEmails : x.currentApproverEmail ? [x.currentApproverEmail] : [];
+  return list.map((v) => v.toLowerCase()).includes(e);
+}
 
 /** Clubs this person leads (any club or sub-club). */
 export function clubsLedBy(clubs: Club[], uid: string, email: string): Club[] {

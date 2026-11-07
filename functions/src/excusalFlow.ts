@@ -22,7 +22,14 @@ const STEP_TITLE: Record<"fic" | "dsw" | "dean", string> = {
 };
 
 type Person = {name: string; email: string};
-type Cfg = {dsw?: Person; dean?: Person; fic?: Record<string, Person>};
+type Cfg = {dsw?: Person; dean?: Person; fic?: Record<string, Person | Person[]>};
+
+/** A club can have more than one FIC; any one of them can sign. */
+function ficsOf(cfg: Cfg, clubId: string): Person[] {
+  const v = cfg.fic?.[clubId];
+  const list = Array.isArray(v) ? v : v ? [v] : [];
+  return list.filter((p) => p?.email).map((p) => ({name: p.name, email: norm(p.email)}));
+}
 type Caller = {uid: string; email: string; name: string; admin: boolean};
 type Sig = {w: number; h: number; paths: string[]; png?: string};
 type Student = {regNo: string; name: string; branch: string; section: string | null; admissionYear: number | null; classKey: string | null};
@@ -159,8 +166,8 @@ export const excusalSubmit = onCall({region: REGION, timeoutSeconds: 120}, async
   const parentName = String((parentSnap.data() ?? {}).name ?? club.name);
 
   const cfg = await loadCfg();
-  const fic = cfg.fic?.[parentId];
-  const missing = [!fic?.email && `FIC for ${parentName}`, !cfg.dsw?.email && "Dean, Student Welfare", !cfg.dean?.email && "Dean, Academics"].filter(Boolean);
+  const fics = ficsOf(cfg, parentId);
+  const missing = [!fics.length && `FIC for ${parentName}`, !cfg.dsw?.email && "Dean, Student Welfare", !cfg.dean?.email && "Dean, Academics"].filter(Boolean);
   if (missing.length) throw new HttpsError("failed-precondition", `Event excusal isn't set up yet (${missing.join(", ")} missing). Ask the admin to fill it in the faculty portal.`);
 
   const eventName = txt(d.eventName, 120);
@@ -198,7 +205,7 @@ export const excusalSubmit = onCall({region: REGION, timeoutSeconds: 120}, async
   const sessionsByClass = fullDay ? null : await sessionsFor(students, fromDate, toDate, fromTime as string, toTime as string);
 
   const approvers = {
-    fic: {name: fic!.name, email: norm(fic!.email)},
+    fic: {name: fics.map((f) => f.name).join(" / "), email: fics[0].email},
     dsw: {name: cfg.dsw!.name, email: norm(cfg.dsw!.email)},
     dean: {name: cfg.dean!.name, email: norm(cfg.dean!.email)},
   };
@@ -239,10 +246,12 @@ export const excusalSubmit = onCall({region: REGION, timeoutSeconds: 120}, async
     submittedByName: c.name,
     submittedByEmail: c.email,
     approvers,
-    approverEmails: [approvers.fic.email, approvers.dsw.email, approvers.dean.email],
+    ficEmails: fics.map((f) => f.email),
+    approverEmails: Array.from(new Set([...fics.map((f) => f.email), approvers.dsw.email, approvers.dean.email])),
     stage: "fic",
     status: "pending",
     currentApproverEmail: approvers.fic.email,
+    currentApproverEmails: fics.map((f) => f.email),
     signatures: {},
     history: [...oldHistory, event],
     rejectedReason: null,
@@ -258,7 +267,7 @@ export const excusalSubmit = onCall({region: REGION, timeoutSeconds: 120}, async
   }, {merge: false});
 
   await sendExpoPush(
-    await tokensForEmail(approvers.fic.email),
+    (await Promise.all(fics.map((f) => tokensForEmail(f.email)))).flat(),
     "Event excusal to sign",
     `${eventName} · ${parentName} · ${students.length} students · ${when(fromDate, toDate)}`,
     "excusalSubmit",
@@ -283,15 +292,16 @@ export const excusalAct = onCall({region: REGION}, async (req) => {
   const result = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) throw new HttpsError("not-found", "This request no longer exists.");
-    const r = snap.data() as {flow?: number; stage: Stage; currentApproverEmail?: string; approvers: Record<string, Person>};
+    const r = snap.data() as {flow?: number; stage: Stage; currentApproverEmail?: string; currentApproverEmails?: string[]; approvers: Record<string, Person>};
     if (r.flow !== 2) throw new HttpsError("failed-precondition", "This request uses the old process.");
     const step = r.stage as "fic" | "dsw" | "dean";
     if (!STEPS.includes(step)) throw new HttpsError("failed-precondition", "This request is already closed.");
-    if (norm(r.currentApproverEmail) !== c.email) throw new HttpsError("permission-denied", "It's not your turn to sign this.");
+    const allowed = (r.currentApproverEmails?.length ? r.currentApproverEmails : [r.currentApproverEmail]).map(norm);
+    if (!allowed.includes(c.email)) throw new HttpsError("permission-denied", "It's not your turn to sign this.");
     const at = Timestamp.now();
     const ev = {at, byName: c.name, byEmail: c.email, action: action === "sign" ? `signed as ${STEP_TITLE[step]}` : `rejected as ${STEP_TITLE[step]}`, remark};
     if (action === "reject") {
-      tx.update(ref, {stage: "rejected", status: "rejected", rejectedReason: remark, facultyRemark: remark, respondedAt: at, currentApproverEmail: null, history: FieldValue.arrayUnion(ev)});
+      tx.update(ref, {stage: "rejected", status: "rejected", rejectedReason: remark, facultyRemark: remark, respondedAt: at, currentApproverEmail: null, currentApproverEmails: [], history: FieldValue.arrayUnion(ev)});
       return {stage: "rejected" as Stage, step};
     }
     const next = STEPS[STEPS.indexOf(step) + 1];
@@ -304,10 +314,12 @@ export const excusalAct = onCall({region: REGION}, async (req) => {
     if (next) {
       upd.stage = next;
       upd.currentApproverEmail = r.approvers[next].email;
+      upd.currentApproverEmails = [r.approvers[next].email];
     } else {
       upd.stage = "approved";
       upd.status = "approved";
       upd.currentApproverEmail = null;
+      upd.currentApproverEmails = [];
       upd.respondedAt = at;
       upd.facultyRemark = remark;
     }
@@ -348,6 +360,7 @@ export const excusalWithdraw = onCall({region: REGION}, async (req) => {
       stage: "withdrawn",
       status: "withdrawn",
       currentApproverEmail: null,
+      currentApproverEmails: [],
       history: FieldValue.arrayUnion({at: Timestamp.now(), byName: c.name, byEmail: c.email, action: "withdrawn", remark: null}),
     });
   });
@@ -361,11 +374,12 @@ export const excusalReminder = onSchedule({schedule: "30 10 * * *", timeZone: "A
   const dayAgo = Date.now() - 24 * 3600 * 1000;
   const byEmail = new Map<string, number>();
   for (const d of snap.docs) {
-    const r = d.data() as {flow?: number; currentApproverEmail?: string; stepAt?: Timestamp; remindedAt?: Timestamp | null};
-    if (r.flow !== 2 || !r.currentApproverEmail || !r.stepAt) continue;
+    const r = d.data() as {flow?: number; currentApproverEmail?: string; currentApproverEmails?: string[]; stepAt?: Timestamp; remindedAt?: Timestamp | null};
+    const who = r.currentApproverEmails?.length ? r.currentApproverEmails : r.currentApproverEmail ? [r.currentApproverEmail] : [];
+    if (r.flow !== 2 || !who.length || !r.stepAt) continue;
     if (r.stepAt.toMillis() > dayAgo) continue;
     if (r.remindedAt && r.remindedAt.toMillis() > dayAgo) continue;
-    byEmail.set(r.currentApproverEmail, (byEmail.get(r.currentApproverEmail) ?? 0) + 1);
+    who.forEach((e) => byEmail.set(e, (byEmail.get(e) ?? 0) + 1));
     await d.ref.update({remindedAt: FieldValue.serverTimestamp()});
   }
   for (const [email, n] of byEmail) {

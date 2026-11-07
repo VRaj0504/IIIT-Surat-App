@@ -8,6 +8,7 @@ import {
   respondToExcusal,
   subscribeToAssignedExcusals,
   subscribeToSignerExcusals,
+  canSignNow,
   EventExcusal,
   SIGN_STEPS,
   STEP_TITLE,
@@ -196,7 +197,7 @@ export default function EventExcusalRequestsScreen() {
   }, [profile?.uid]);
 
   const all = useMemo(() => [...(v2 ?? []), ...v1], [v2, v1]);
-  const mineNow = (x: EventExcusal) => (x.flow === 2 ? x.status === "pending" && (x.currentApproverEmail ?? "") === email : x.status === "pending");
+  const mineNow = (x: EventExcusal) => (x.flow === 2 ? canSignNow(x, email) : x.status === "pending");
   const waiting = all.filter(mineNow);
   const done = all.filter((x) => !mineNow(x));
   const shown = tab === "waiting" ? waiting : done;
