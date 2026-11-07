@@ -116,7 +116,7 @@ const CLUBS = {
   "Athletics": { category: "Sports", description: "Athletics team under Indominous Club.", parent: "Indominous Club", leadName: "Jadav Siddu" },
   "Badminton": { category: "Sports", description: "Badminton team under Indominous Club.", parent: "Indominous Club", leadName: "Mayank Sachdev" },
   "PR": { category: "Sports", description: "Public relations team for Indominous Club.", parent: "Indominous Club", leadName: "Parth Mahajan", extraLeads: [{ name: "Mayank Sachdev" }] },
-  "Design": { category: "Cultural", description: "Design club under Imagine.", parent: "Imagine", leadName: "Om Sahoo" },
+  "Design": { category: "Cultural", description: "Design club under Imagine.", parent: "Imagine", leadName: "Divya", leadEmail: "ui24ec45@iiitsurat.ac.in" },
   "Content": { category: "Sports", description: "Content team for Indominous Club.", parent: "Indominous Club", leadName: "Yuvi" },
   "Media": { category: "Sports", description: "Media team for Indominous Club.", parent: "Indominous Club", leadName: "Raman Gupta", extraLeads: [{ name: "Divyanshu Meena" }] },
   "Girls Coordination": { category: "Sports", description: "Girls' coordination team for Indominous Club.", parent: "Indominous Club", leadName: "Aashi Rajput", extraLeads: [{ name: "Akshita Shukla" }, { name: "Tanisha Rathore" }] },

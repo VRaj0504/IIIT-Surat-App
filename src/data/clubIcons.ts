@@ -14,7 +14,6 @@ const CLUB_ICON_MAP: Record<string, ClubIconEntry> = {
   imagine: {
     icon: 'aperture',
     color: '#111111',
-    image: require('../../assets/clubs/imagine-mark.png'),
     logo: require('../../assets/clubs/imagine-logo.png'),
   },
   'abstract art and design club': { icon: 'color-palette', color: '#F97316' },
