@@ -73,16 +73,27 @@ describe('profiles', () => {
 
 describe('event excusals', () => {
   const base = { eventName: 'Fest', fromDate: '2026-11-01', toDate: '2026-11-02', studentEnrollmentNumbers: [STUDENT.reg], submittedBy: STUDENT.uid, status: 'pending' };
-  it("a student can't name themselves as coordinator", async () => {
-    await assertFails(setDoc(doc(as(STUDENT), 'eventExcusals', 'e1'), { ...base, facultyCoordinatorUid: STUDENT.uid }));
+  // Requests are created by the excusalSubmit function, so tests put them in place with rules off.
+  const put = (id, extra) =>
+    env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'eventExcusals', id), { ...base, ...extra }));
+
+  it('nobody can create an excusal from the app; only the server function can', async () => {
+    await assertFails(setDoc(doc(as(STUDENT), 'eventExcusals', 'e1'), { ...base, facultyCoordinatorUid: FACULTY.uid }));
+    await assertFails(setDoc(doc(as(FACULTY), 'eventExcusals', 'e2'), { ...base, submittedBy: FACULTY.uid }));
   });
-  it("a student can't name another student as coordinator", async () => {
-    await assertFails(setDoc(doc(as(STUDENT), 'eventExcusals', 'e1'), { ...base, facultyCoordinatorUid: OTHER.uid }));
-  });
-  it('only the named faculty coordinator can approve', async () => {
-    await assertSucceeds(setDoc(doc(as(STUDENT), 'eventExcusals', 'e1'), { ...base, facultyCoordinatorUid: FACULTY.uid }));
+  it("a student can't approve their own request", async () => {
+    await put('e1', { facultyCoordinatorUid: FACULTY.uid });
     await assertFails(updateDoc(doc(as(STUDENT), 'eventExcusals', 'e1'), { status: 'approved' }));
+  });
+  it('an old one-faculty request can be finished only by that faculty member', async () => {
+    await put('e1', { facultyCoordinatorUid: FACULTY.uid });
+    await assertFails(updateDoc(doc(as(COMMITTEE), 'eventExcusals', 'e1'), { status: 'approved' }));
     await assertSucceeds(updateDoc(doc(as(FACULTY), 'eventExcusals', 'e1'), { status: 'approved' }));
+  });
+  it("a 3-signature request can't be changed from the app, even by one of its signers", async () => {
+    await put('e2', { flow: 2, stage: 'fic', facultyCoordinatorUid: FACULTY.uid, approverEmails: [FACULTY.email] });
+    await assertSucceeds(getDoc(doc(as(FACULTY), 'eventExcusals', 'e2')));
+    await assertFails(updateDoc(doc(as(FACULTY), 'eventExcusals', 'e2'), { status: 'approved' }));
   });
 });
 
@@ -214,5 +225,43 @@ describe('quizzes and mess items', () => {
     await assertSucceeds(setDoc(doc(as(FACULTY), 'messAlwaysAvailable', 'm1'), { name: 'Idli', price: 30, order: 0 }));
     await assertFails(setDoc(doc(as(STUDENT), 'messAlwaysAvailable', 'm2'), { name: 'Idli', price: 1, order: 0 }));
     await assertSucceeds(getDoc(doc(as(STUDENT), 'messAlwaysAvailable', 'm1')));
+  });
+});
+
+describe('app health', () => {
+  const crash = (uid) => ({ message: 'boom', stack: 'at Home', where: 'render', screen: 'Home', platform: 'android', appVersion: '1.0.0', uid, at: new Date(), expireAt: new Date() });
+  const usage = { screens: { Home: 1 }, opens: 1, updatedAt: new Date() };
+
+  it('a signed-in user can report a crash, and only an admin can read it', async () => {
+    await assertSucceeds(setDoc(doc(as(STUDENT), 'clientErrors', 'c1'), crash(STUDENT.uid)));
+    await assertFails(getDoc(doc(as(STUDENT), 'clientErrors', 'c1')));
+    await assertSucceeds(getDoc(doc(as(ADMIN), 'clientErrors', 'c1')));
+  });
+  it("a crash report can't carry extra fields or someone else's id", async () => {
+    await assertFails(setDoc(doc(as(STUDENT), 'clientErrors', 'c2'), { ...crash(STUDENT.uid), extra: 1 }));
+    await assertFails(setDoc(doc(as(STUDENT), 'clientErrors', 'c3'), crash(OTHER.uid)));
+  });
+  it('members add to the daily usage count, and only an admin can read it', async () => {
+    await assertSucceeds(setDoc(doc(as(STUDENT), 'usageDaily', '2026-11-10'), usage));
+    await assertFails(setDoc(doc(as(STRANGER), 'usageDaily', '2026-11-11'), usage));
+    await assertFails(setDoc(doc(as(STUDENT), 'usageDaily', 'today'), usage));
+    await assertFails(getDoc(doc(as(STUDENT), 'usageDaily', '2026-11-10')));
+    await assertSucceeds(getDoc(doc(as(ADMIN), 'usageDaily', '2026-11-10')));
+  });
+});
+
+describe('mess menu and class changes', () => {
+  const menu = { days: [{ day: 'Monday', lunch: ['Dal', 'Rice'] }], updatedAt: new Date(), updatedBy: ADMIN.email };
+
+  it('only an admin can save the weekly mess menu; every member can read it', async () => {
+    await assertFails(setDoc(doc(as(FACULTY), 'config', 'messMenu'), menu));
+    await assertSucceeds(setDoc(doc(as(ADMIN), 'config', 'messMenu'), menu));
+    await assertSucceeds(getDoc(doc(as(STUDENT), 'config', 'messMenu')));
+  });
+  it('class changes are read by members only and never written from the app', async () => {
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'classChanges', 'c1'), { date: '2026-11-10', type: 'cancelled' }));
+    await assertSucceeds(getDoc(doc(as(STUDENT), 'classChanges', 'c1')));
+    await assertFails(getDoc(doc(as(STRANGER), 'classChanges', 'c1')));
+    await assertFails(setDoc(doc(as(FACULTY), 'classChanges', 'c2'), { date: '2026-11-10', type: 'cancelled' }));
   });
 });
