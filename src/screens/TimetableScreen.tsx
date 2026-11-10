@@ -359,7 +359,7 @@ export default function TimetableScreen() {
                   }
                   return (
                     <View key={`c-${row.slot.id}-${i}`} style={styles.row}>
-                      <Text style={[styles.timeCol, row.state === "past" && { opacity: 0.5 }]}>
+                      <Text style={[styles.timeCol, row.state === "past" && { opacity: 0.72 }]}>
                         {row.showTime ? fmt(toMinutes(row.slot.startTime)) : ""}
                       </Text>
                       <ClassCard
@@ -496,7 +496,7 @@ function ClassCard({
       style={[
         styles.card,
         { backgroundColor: live ? colors.primary : tone.bg },
-        state === "past" && { opacity: 0.5 },
+        state === "past" && { opacity: 0.72 },
       ]}
     >
       <View style={styles.cardTop}>

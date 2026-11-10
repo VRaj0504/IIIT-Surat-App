@@ -231,12 +231,12 @@ export default function ApplyLeaveScreen() {
                       setFromDate(d);
                       if (!toDate || toDate < d) setToDate(d);
                     }}
-                    placeholder="Pick"
+                    placeholder="Select date"
                   />
                 </View>
                 <View style={{ flex: 1 }}>
                   <FieldLabel>Last day</FieldLabel>
-                  <DateField value={toDate} onChange={setToDate} min={fromDate || undefined} placeholder="Pick" />
+                  <DateField value={toDate} onChange={setToDate} min={fromDate || undefined} placeholder="Select date" />
                 </View>
               </View>
               {fromDate && toDate ? <Text style={styles.daysNote}>{dateRange(fromDate, toDate)}</Text> : null}
@@ -264,7 +264,13 @@ export default function ApplyLeaveScreen() {
               <Text style={styles.counter}>{reason.trim().length}/500</Text>
             </Section>
 
-            <PrimaryButton label="Send request" icon="send" onPress={handleSubmit} loading={submitting} />
+            <PrimaryButton
+              label="Send request"
+              icon="send"
+              onPress={handleSubmit}
+              loading={submitting}
+              style={!(selectedFaculty && fromDate.trim() && toDate.trim() && reason.trim().length >= 10) && { opacity: 0.5 }}
+            />
               </>
             )}
     </>

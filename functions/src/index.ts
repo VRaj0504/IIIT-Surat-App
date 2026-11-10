@@ -53,7 +53,7 @@ export {createAccount} from "./createAccount";
 export {createPlusSubscription, cancelPlusSubscription, razorpayWebhook} from "./plus";
 export {sendMeetingPush} from "./sendMeetingPush";
 export {getDirectorOverview} from "./getDirectorOverview";
-export {archiveDatabase} from "./archiveDatabase";
+export {archiveDatabase, archiveDatabaseDaily} from "./archiveDatabase";
 export {excusalSubmit, excusalAct, excusalWithdraw, excusalReminder} from "./excusalFlow";
 export {classChangeSet} from "./classChange";
 export {sendExamEvePush, sendWeeklyAttendancePush, sendAttendanceNudgePush} from "./scheduledNudges";

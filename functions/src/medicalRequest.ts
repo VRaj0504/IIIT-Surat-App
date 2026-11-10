@@ -8,6 +8,7 @@ import * as nodemailer from "nodemailer";
 import {sendExpoPush} from "./expoPush";
 import {semesterOn} from "./medicalLeaveTeachers";
 import {AuditRow, clean, daysBetween, fmtIso, renderBundle, renderMedicalForm} from "./medicalPdf";
+import {rateLimit} from "./rateLimit";
 import {
   LATE_LIMIT_DAYS,
   MedicalAttachment,
@@ -320,6 +321,7 @@ const OPTS = {region: REGION, secrets: [smtpUser, smtpPass], timeoutSeconds: 120
 
 export const medicalSubmit = onCall(OPTS, async (req) => {
   const c = await caller(req);
+  await rateLimit(`medicalSubmit:${c.uid}`, 15, 60 * 60 * 1000);
   if (c.role !== "student") throw new HttpsError("permission-denied", "Only students can apply for medical leave.");
   const d = (req.data ?? {}) as Record<string, unknown>;
   const leaveId = String(d.leaveId ?? "");
@@ -513,6 +515,7 @@ type ActInput = {
 
 export const medicalAct = onCall(OPTS, async (req) => {
   const c = await caller(req);
+  await rateLimit(`medicalAct:${c.uid}`, 200, 60 * 60 * 1000);
   const d = (req.data ?? {}) as ActInput;
   const leaveId = String(d.leaveId ?? "");
   if (!/^[A-Za-z0-9]{16,40}$/.test(leaveId)) throw new HttpsError("invalid-argument", "Invalid request id.");

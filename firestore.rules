@@ -838,6 +838,17 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // App crash reports. Any signed-in user can add one (never read or change it); only an admin can read.
+    match /clientErrors/{id} {
+      allow read, delete: if isAdmin();
+      allow create: if signedIn() &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.keys().hasOnly(['message', 'stack', 'where', 'screen', 'platform', 'appVersion', 'uid', 'at', 'expireAt']) &&
+        request.resource.data.message is string && request.resource.data.message.size() <= 300 &&
+        request.resource.data.stack is string && request.resource.data.stack.size() <= 1500;
+      allow update: if false;
+    }
+
     // One document per day with screen-open counts. The app only adds to it; only an admin can read it.
     match /usageDaily/{day} {
       allow read: if isAdmin();

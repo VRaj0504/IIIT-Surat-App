@@ -70,7 +70,8 @@ export default function HomeToday({
           <View style={styles.body}>
             <Text style={styles.kicker}>Today's lunch</Text>
             <Text style={styles.title} numberOfLines={2}>
-              {lunch.join(" · ")}
+              {lunch.slice(0, 3).join(" · ")}
+              {lunch.length > 3 ? <Text style={styles.more}>{`  +${lunch.length - 3} more`}</Text> : null}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
@@ -102,7 +103,7 @@ export default function HomeToday({
 }
 
 const styles = StyleSheet.create({
-  wrap: { gap: spacing.sm, marginTop: spacing.md },
+  wrap: { gap: spacing.sm, marginBottom: spacing.sm },
   card: {
     flexDirection: "row",
     alignItems: "center",
@@ -118,5 +119,6 @@ const styles = StyleSheet.create({
   body: { flex: 1 },
   kicker: { fontSize: 12, fontWeight: "700", color: colors.textSecondary, marginBottom: 2 },
   title: { fontSize: 15, fontWeight: "700", color: colors.textPrimary },
+  more: { fontSize: 13, fontWeight: "600", color: colors.textSecondary },
   sub: { fontSize: 13, color: colors.textSecondary, marginTop: 1 },
 });

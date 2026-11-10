@@ -493,32 +493,6 @@ function MobileHome() {
             </View>
           )}
 
-          <HomeMeetings onOpenAll={() => go('Meetings' as any)} />
-
-          {!isFaculty && (
-            <HomeToday
-              onOpenMess={() => go('MessMenu')}
-              onOpenClub={(clubId, clubName) => navigation.navigate('ClubDetail', { clubId, clubName })}
-            />
-          )}
-
-          {isFaculty && (
-            <TouchableOpacity
-              style={[styles.cabinToggle, inCabinNow && { backgroundColor: colors.tile.mint.bg }]}
-              onPress={handleToggleCabin}
-              disabled={cabinBusy}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.cabinDot, { backgroundColor: inCabinNow ? colors.success : colors.textSecondary }]} />
-              <Text style={[styles.cabinText, inCabinNow && { color: colors.tile.mint.fg }]}>
-                {inCabinNow
-                  ? `In cabin since ${cabinSince(profile?.inCabinAt) ?? 'now'}. Students see this in the directory`
-                  : 'Mark yourself as in cabin'}
-              </Text>
-              <Text style={[styles.cabinAction, inCabinNow && { color: colors.tile.mint.fg }]}>{inCabinNow ? 'Leave' : 'Mark'}</Text>
-            </TouchableOpacity>
-          )}
-
           <TapCard style={styles.next} onPress={goTimetable}>
             {dayStatus ? (
               <>
@@ -580,6 +554,32 @@ function MobileHome() {
               </>
             )}
           </TapCard>
+
+          <HomeMeetings onOpenAll={() => go('Meetings' as any)} />
+
+          {!isFaculty && (
+            <HomeToday
+              onOpenMess={() => go('MessMenu')}
+              onOpenClub={(clubId, clubName) => navigation.navigate('ClubDetail', { clubId, clubName })}
+            />
+          )}
+
+          {isFaculty && (
+            <TouchableOpacity
+              style={[styles.cabinToggle, inCabinNow && { backgroundColor: colors.tile.mint.bg }]}
+              onPress={handleToggleCabin}
+              disabled={cabinBusy}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.cabinDot, { backgroundColor: inCabinNow ? colors.success : colors.textSecondary }]} />
+              <Text style={[styles.cabinText, inCabinNow && { color: colors.tile.mint.fg }]}>
+                {inCabinNow
+                  ? `In cabin since ${cabinSince(profile?.inCabinAt) ?? 'now'}. Students see this in the directory`
+                  : 'Mark yourself as in cabin'}
+              </Text>
+              <Text style={[styles.cabinAction, inCabinNow && { color: colors.tile.mint.fg }]}>{inCabinNow ? 'Leave' : 'Mark'}</Text>
+            </TouchableOpacity>
+          )}
 
           <View style={styles.bentoRow}>
             <TapCard

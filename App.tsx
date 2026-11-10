@@ -18,6 +18,9 @@ import { pushTarget } from './src/utils/pushRoute';
 import * as SplashScreen from 'expo-splash-screen';
 import OfflineBanner from './src/components/OfflineBanner';
 import { trackScreen } from './src/utils/usage';
+import { installGlobalErrorHandlers, setErrorScreen } from './src/utils/errorReport';
+
+installGlobalErrorHandlers();
 
 if (Platform.OS !== 'web') {
   SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -105,6 +108,7 @@ export default function App() {
   const syncRoute = () => {
     const name = navigationRef.getCurrentRoute()?.name;
     setCurrentRoute(name);
+    setErrorScreen(name);
     if (name !== lastTracked.current) {
       lastTracked.current = name;
       trackScreen(name);

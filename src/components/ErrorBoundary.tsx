@@ -1,6 +1,7 @@
 import React from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme/theme";
+import { reportError } from "../utils/errorReport";
 
 type Props = { children: React.ReactNode };
 type State = { failed: boolean; attempt: number };
@@ -18,6 +19,7 @@ export default class ErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: unknown) {
     console.warn("[ErrorBoundary] screen crashed:", error);
+    reportError(error, "render");
   }
 
   retry = () => this.setState((s) => ({ failed: false, attempt: s.attempt + 1 }));

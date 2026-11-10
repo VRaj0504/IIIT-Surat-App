@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, StyleSheet, Animated, PanResponder, Platform } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Animated, PanResponder, Platform } from 'react-native';
 import { createBottomTabNavigator, BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { BlurView } from 'expo-blur';
@@ -27,8 +27,8 @@ const iconMap: Record<keyof RootTabParamList, keyof typeof Ionicons.glyphMap> = 
 export const TAB_BAR_SPACE = 110;
 
 const BAR_HEIGHT = 64;
-const ITEM_W = 52;
-const LENS_W = 58;
+const ITEM_W = 54;
+const LENS_W = 62;
 const LENS_H = 48;
 const LENS_OFFSET = (LENS_W - ITEM_W) / 2;
 
@@ -186,9 +186,12 @@ function AppTabBar({ state, navigation }: BottomTabBarProps) {
               >
                 <Ionicons
                   name={focused ? iconMap[name] : (`${iconMap[name]}-outline` as keyof typeof Ionicons.glyphMap)}
-                  size={23}
+                  size={20}
                   color={focused ? colors.ink : colors.inkMuted}
                 />
+                <Text style={[styles.label, { color: focused ? colors.ink : colors.inkMuted }]} numberOfLines={1} allowFontScaling={false}>
+                  {route.name}
+                </Text>
               </Pressable>
             );
           })}
@@ -251,5 +254,6 @@ const styles = StyleSheet.create({
     borderRadius: LENS_H / 2,
     backgroundColor: colors.onInk,
   },
-  item: { width: ITEM_W, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  item: { width: ITEM_W, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', gap: 1 },
+  label: { fontSize: 9.5, fontWeight: '700', letterSpacing: 0.1 },
 });

@@ -2,6 +2,7 @@ import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {slotTaughtBy} from "./facultyLegend";
 import {sameSection} from "./audience";
+import {rateLimit} from "./rateLimit";
 
 // Cancel a class or move it to another room. Only the faculty who teaches that slot (per the timetable) or an admin may.
 
@@ -39,6 +40,7 @@ function changeId(p: {date: string; branch: string; semester: number; section: s
 
 export const classChangeSet = onCall({region: "asia-south1"}, async (req) => {
   if (!req.auth) throw new HttpsError("unauthenticated", "Sign in first.");
+  await rateLimit(`classChange:${req.auth.uid}`, 60, 60 * 60 * 1000);
   const db = getFirestore();
   const me = (await db.collection("users").doc(req.auth.uid).get()).data() as {role?: string; isAdmin?: boolean; name?: string} | undefined;
   const isAdmin = me?.role === "admin" || me?.isAdmin === true;

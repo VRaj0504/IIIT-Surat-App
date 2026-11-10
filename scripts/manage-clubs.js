@@ -99,27 +99,27 @@ const CLUBS = {
     leadName: "TBD", leadEmail: "test-astra@iiitsurat.ac.in",
   },
 
-  "Indominous Club": {
+  "Indominus Club": {
     category: "Sports", description: "Sports club of IIIT Surat.",
     leadName: "Akash Kumar", leadEmail: "ui24ec04@iiitsurat.ac.in",
     extraLeads: [{ name: "Jatin Gajraj", email: "ui24ec30@iiitsurat.ac.in" }],
   },
 
-  "Cricket": { category: "Sports", description: "Cricket team under Indominous Club.", parent: "Indominous Club", leadName: "Avanish Kumar", extraLeads: [{ name: "Abhishek" }] },
-  "Volleyball": { category: "Sports", description: "Volleyball team under Indominous Club.", parent: "Indominous Club", leadName: "Vikash Pooniya", extraLeads: [{ name: "Nanda Kishore" }] },
-  "Kabaddi": { category: "Sports", description: "Kabaddi team under Indominous Club.", parent: "Indominous Club", leadName: "Vivek" },
-  "Football": { category: "Sports", description: "Football team under Indominous Club.", parent: "Indominous Club", leadName: "Pragyan Sharma" },
-  "eSports": { category: "Sports", description: "eSports team under Indominous Club.", parent: "Indominous Club", leadName: "Annan", extraLeads: [{ name: "Harshit Dwivedi" }] },
-  "Indoor Games": { category: "Sports", description: "Indoor games team under Indominous Club.", parent: "Indominous Club", leadName: "Shrimal Patel", extraLeads: [{ name: "Dhruvraj Singh" }] },
-  "Kho-Kho": { category: "Sports", description: "Kho-Kho team under Indominous Club.", parent: "Indominous Club", leadName: "Prakashsevada", extraLeads: [{ name: "Badrinath" }] },
-  "Basketball": { category: "Sports", description: "Basketball team under Indominous Club.", parent: "Indominous Club", leadName: "Abhinav Prakash" },
-  "Athletics": { category: "Sports", description: "Athletics team under Indominous Club.", parent: "Indominous Club", leadName: "Jadav Siddu" },
-  "Badminton": { category: "Sports", description: "Badminton team under Indominous Club.", parent: "Indominous Club", leadName: "Mayank Sachdev" },
-  "PR": { category: "Sports", description: "Public relations team for Indominous Club.", parent: "Indominous Club", leadName: "Parth Mahajan", extraLeads: [{ name: "Mayank Sachdev" }] },
+  "Cricket": { category: "Sports", description: "Cricket team under Indominus Club.", parent: "Indominus Club", leadName: "Avanish Kumar", extraLeads: [{ name: "Abhishek" }] },
+  "Volleyball": { category: "Sports", description: "Volleyball team under Indominus Club.", parent: "Indominus Club", leadName: "Vikash Pooniya", extraLeads: [{ name: "Nanda Kishore" }] },
+  "Kabaddi": { category: "Sports", description: "Kabaddi team under Indominus Club.", parent: "Indominus Club", leadName: "Vivek" },
+  "Football": { category: "Sports", description: "Football team under Indominus Club.", parent: "Indominus Club", leadName: "Pragyan Sharma" },
+  "eSports": { category: "Sports", description: "eSports team under Indominus Club.", parent: "Indominus Club", leadName: "Annan", extraLeads: [{ name: "Harshit Dwivedi" }] },
+  "Indoor Games": { category: "Sports", description: "Indoor games team under Indominus Club.", parent: "Indominus Club", leadName: "Shrimal Patel", extraLeads: [{ name: "Dhruvraj Singh" }] },
+  "Kho-Kho": { category: "Sports", description: "Kho-Kho team under Indominus Club.", parent: "Indominus Club", leadName: "Prakashsevada", extraLeads: [{ name: "Badrinath" }] },
+  "Basketball": { category: "Sports", description: "Basketball team under Indominus Club.", parent: "Indominus Club", leadName: "Abhinav Prakash" },
+  "Athletics": { category: "Sports", description: "Athletics team under Indominus Club.", parent: "Indominus Club", leadName: "Jadav Siddu" },
+  "Badminton": { category: "Sports", description: "Badminton team under Indominus Club.", parent: "Indominus Club", leadName: "Mayank Sachdev" },
+  "PR": { category: "Sports", description: "Public relations team for Indominus Club.", parent: "Indominus Club", leadName: "Parth Mahajan", extraLeads: [{ name: "Mayank Sachdev" }] },
   "Design": { category: "Cultural", description: "Design club under Imagine.", parent: "Imagine", leadName: "Divya", leadEmail: "ui24ec45@iiitsurat.ac.in" },
-  "Content": { category: "Sports", description: "Content team for Indominous Club.", parent: "Indominous Club", leadName: "Yuvi" },
-  "Media": { category: "Sports", description: "Media team for Indominous Club.", parent: "Indominous Club", leadName: "Raman Gupta", extraLeads: [{ name: "Divyanshu Meena" }] },
-  "Girls Coordination": { category: "Sports", description: "Girls' coordination team for Indominous Club.", parent: "Indominous Club", leadName: "Aashi Rajput", extraLeads: [{ name: "Akshita Shukla" }, { name: "Tanisha Rathore" }] },
+  "Content": { category: "Sports", description: "Content team for Indominus Club.", parent: "Indominus Club", leadName: "Yuvi" },
+  "Media": { category: "Sports", description: "Media team for Indominus Club.", parent: "Indominus Club", leadName: "Raman Gupta", extraLeads: [{ name: "Divyanshu Meena" }] },
+  "Girls Coordination": { category: "Sports", description: "Girls' coordination team for Indominus Club.", parent: "Indominus Club", leadName: "Aashi Rajput", extraLeads: [{ name: "Akshita Shukla" }, { name: "Tanisha Rathore" }] },
 };
 
 async function findByName(name) {

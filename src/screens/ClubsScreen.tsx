@@ -150,7 +150,7 @@ export default function ClubsScreen() {
         )}
       </View>
       {categories.length > 2 && (
-        <View style={[styles.chipsWrap, styles.chips]}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsWrap} contentContainerStyle={styles.chips}>
           {categories.map((c) => (
             <TouchableOpacity
               key={c}
@@ -161,7 +161,7 @@ export default function ClubsScreen() {
               <Text style={[styles.chipText, c === category && styles.chipTextActive]}>{c}</Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
       )}
       {loadingClubs && <LoadingSpinner style={{ marginTop: spacing.lg }} />}
       {!loadingClubs && shown.length === 0 && (
@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.textPrimary, paddingVertical: 0 },
   chipsWrap: { marginTop: 10, flexGrow: 0, flexShrink: 0 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+  chips: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingRight: 16 },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.surface },
   chipActive: { backgroundColor: colors.ink },
   chipText: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },

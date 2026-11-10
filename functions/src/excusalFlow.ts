@@ -2,6 +2,7 @@ import {onCall, HttpsError, CallableRequest} from "firebase-functions/v2/https";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
 import {sendExpoPush} from "./expoPush";
+import {rateLimit} from "./rateLimit";
 import {currentSemester, sameSection, tokensOf, type UserDoc} from "./audience";
 
 // Event excusal: a club lead sends the list -> FIC of the parent club signs -> Dean of Student Welfare signs
@@ -153,6 +154,7 @@ const when = (from: string, to: string) => (from === to ? from : `${from} to ${t
 
 export const excusalSubmit = onCall({region: REGION, timeoutSeconds: 120}, async (req) => {
   const c = await caller(req);
+  await rateLimit(`excusalSubmit:${c.uid}`, 15, 60 * 60 * 1000);
   const d = (req.data ?? {}) as Record<string, unknown>;
   const db = getFirestore();
 
@@ -279,6 +281,7 @@ export const excusalSubmit = onCall({region: REGION, timeoutSeconds: 120}, async
 
 export const excusalAct = onCall({region: REGION}, async (req) => {
   const c = await caller(req);
+  await rateLimit(`excusalAct:${c.uid}`, 200, 60 * 60 * 1000);
   const d = (req.data ?? {}) as Record<string, unknown>;
   const db = getFirestore();
   const id = txt(d.excusalId, 60);
@@ -349,6 +352,7 @@ export const excusalAct = onCall({region: REGION}, async (req) => {
 
 export const excusalWithdraw = onCall({region: REGION}, async (req) => {
   const c = await caller(req);
+  await rateLimit(`excusalWithdraw:${c.uid}`, 30, 60 * 60 * 1000);
   const id = txt((req.data ?? {}).excusalId, 60);
   const ref = getFirestore().collection(COLLECTION).doc(id);
   await getFirestore().runTransaction(async (tx) => {

@@ -62,20 +62,31 @@ export default function MeetingCard({
           <Text style={[styles.kicker, cancelled && { color: colors.dangerText }]}>
             {cancelled ? "Meeting cancelled" : ended ? `Ended · ${m.createdByName || "Director's office"}` : `Meeting · ${m.createdByName || "Director's office"}`}
           </Text>
-          <Text style={[styles.title, cancelled && styles.strike]} numberOfLines={compact ? 2 : undefined}>
+          <Text style={[styles.title, cancelled && styles.strike]} numberOfLines={compact ? 1 : undefined}>
             {m.title}
           </Text>
         </View>
       </View>
-      <View style={styles.row}>
-        <Ionicons name="time-outline" size={15} color={colors.textSecondary} />
-        <Text style={styles.meta}>{meetingWhen(m)}</Text>
-      </View>
-      <View style={styles.row}>
-        <Ionicons name="location-outline" size={15} color={colors.textSecondary} />
-        <Text style={styles.meta}>{m.venue}</Text>
-      </View>
-      {!!m.agenda && (
+      {compact ? (
+        <View style={styles.row}>
+          <Ionicons name="time-outline" size={15} color={colors.textSecondary} />
+          <Text style={styles.meta} numberOfLines={1}>
+            {[meetingWhen(m), m.venue].filter(Boolean).join(" · ")}
+          </Text>
+        </View>
+      ) : (
+        <>
+          <View style={styles.row}>
+            <Ionicons name="time-outline" size={15} color={colors.textSecondary} />
+            <Text style={styles.meta}>{meetingWhen(m)}</Text>
+          </View>
+          <View style={styles.row}>
+            <Ionicons name="location-outline" size={15} color={colors.textSecondary} />
+            <Text style={styles.meta}>{m.venue}</Text>
+          </View>
+        </>
+      )}
+      {!!m.agenda && !compact && (
         <View style={styles.agendaBox}>
           <Text style={styles.agenda} numberOfLines={compact ? 2 : undefined}>
             {m.agenda}
@@ -84,7 +95,7 @@ export default function MeetingCard({
       )}
       {!cancelled && !ended && (
         <TouchableOpacity
-          style={[styles.ack, confirmed && styles.ackDone]}
+          style={[styles.ack, compact && styles.ackCompact, confirmed && styles.ackDone]}
           onPress={ack}
           disabled={confirmed || busy}
           activeOpacity={0.85}
@@ -129,6 +140,7 @@ const styles = StyleSheet.create({
   agendaBox: { backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: 10, marginTop: 2 },
   agenda: { fontSize: 13.5, color: colors.textPrimary, lineHeight: 19 },
   ack: { marginTop: 6, minHeight: 44, borderRadius: radius.md, backgroundColor: colors.primary, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
+  ackCompact: { minHeight: 38, marginTop: 4 },
   ackDone: { backgroundColor: colors.successBg },
   ackText: { color: colors.onPrimary, fontWeight: "800", fontSize: 14 },
   err: { color: colors.dangerText, fontSize: 12.5, fontWeight: "600" },

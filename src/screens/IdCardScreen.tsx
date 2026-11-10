@@ -6,10 +6,10 @@ import { colors, radius, spacing } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { getCurrentSemester } from "../utils/academicInfo";
 
-function Field({ label, value }: { label: string; value?: string | number | null }) {
+function Field({ label, value, wide }: { label: string; value?: string | number | null; wide?: boolean }) {
   if (value === undefined || value === null || value === "") return null;
   return (
-    <View style={styles.field}>
+    <View style={[styles.field, wide && { width: "100%" }]}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <Text style={styles.fieldValue}>{value}</Text>
     </View>
@@ -50,7 +50,7 @@ export default function IdCardScreen() {
             <Field label="Section" value={profile?.section} />
             <Field label="Semester" value={semester} />
             <Field label="Batch" value={profile?.admissionYear} />
-            <Field label="Email" value={profile?.email} />
+            <Field label="Email" value={profile?.email} wide />
           </View>
           {!!regNo && (
             <View style={styles.qrWrap}>

@@ -86,7 +86,7 @@ export default function MarksScreen() {
           ) : (
             bySem.map(([sem, list]) => (
               <View key={sem}>
-                <Text style={styles.semTitle}>Semester {sem}</Text>
+                <Text style={styles.semTitle}>{sem ? `Semester ${sem}` : "Semester not set"}</Text>
                 {list.map((m) => (
                   <SubjectCard key={m.id} m={m} />
                 ))}
