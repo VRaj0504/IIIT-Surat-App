@@ -709,6 +709,10 @@ service cloud.firestore {
     match /config/{docId} {
       allow read: if isMember();
       allow create, update: if docId in ['placementStats', 'eventExcusal'] && isAdmin();
+      // Weekly mess menu, edited in the faculty portal.
+      allow create, update: if docId == 'messMenu' && isAdmin() &&
+        request.resource.data.keys().hasOnly(['days', 'updatedAt', 'updatedBy']) &&
+        request.resource.data.days is list && request.resource.data.days.size() <= 7;
       allow update: if docId == 'exams' &&
         (isAdmin() || isExamCell()) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['publishMode']) &&

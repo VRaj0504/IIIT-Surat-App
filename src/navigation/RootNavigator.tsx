@@ -10,6 +10,7 @@ import TabNavigator from "./TabNavigator";
 import AcademicCalendarScreen from "../screens/AcademicCalendarScreen";
 import MessMenuScreen from "../screens/MessMenuScreen";
 import ThaliPassScreen from "../screens/ThaliPassScreen";
+import IdCardScreen from "../screens/IdCardScreen";
 import ScanThaliPassScreen from "../screens/ScanThaliPassScreen";
 import ResourcesScreen from "../screens/ResourcesScreen";
 import FacultyDirectoryScreen from "../screens/FacultyDirectoryScreen";
@@ -99,6 +100,11 @@ export default function RootNavigator() {
         name="ThaliPass"
         component={ThaliPassScreen}
         options={{ title: "Thali Pass" }}
+      />
+      <Stack.Screen
+        name="IdCard"
+        component={IdCardScreen}
+        options={{ title: "Digital ID" }}
       />
       <Stack.Screen
         name="ScanThaliPass"

@@ -16,6 +16,7 @@ export type RootStackParamList = {
   MessMenu: undefined;
 
   ThaliPass: undefined;
+  IdCard: undefined;
   ScanThaliPass: undefined;
 
   ApplyLeave: undefined;

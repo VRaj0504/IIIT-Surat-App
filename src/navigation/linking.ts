@@ -20,6 +20,7 @@ export const linking: LinkingOptions<any> | undefined =
       AcademicCalendar: 'academic-calendar',
       MessMenu: 'mess-menu',
       ThaliPass: 'thali-pass',
+      IdCard: 'id-card',
       ScanThaliPass: 'scan-thali-pass',
       Resources: 'resources',
       Faculty: 'faculty',

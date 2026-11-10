@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Pressable, BackHandler } from 'react-native';
 import HomeMeetings from '../components/HomeMeetings';
+import HomeToday from '../components/HomeToday';
 import { Portal } from '../components/Portal';
 import Animated, { SlideInDown, SlideOutDown, FadeIn, FadeOut } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -73,6 +74,7 @@ const studentSections: Section[] = [
   {
     title: 'Campus',
     tiles: [
+      { label: 'Digital ID', icon: 'id-card-outline', route: 'IdCard', badge: 'blue' },
       { label: 'Empty Classrooms', icon: 'business-outline', route: 'RoomAvailability', badge: 'green' },
       { label: 'Announcements', icon: 'notifications-outline', route: 'Announcements', badge: 'purple' },
       { label: 'Faculty Directory', icon: 'people-outline', route: 'Faculty', badge: 'peach' },
@@ -492,6 +494,13 @@ function MobileHome() {
           )}
 
           <HomeMeetings onOpenAll={() => go('Meetings' as any)} />
+
+          {!isFaculty && (
+            <HomeToday
+              onOpenMess={() => go('MessMenu')}
+              onOpenClub={(clubId, clubName) => navigation.navigate('ClubDetail', { clubId, clubName })}
+            />
+          )}
 
           {isFaculty && (
             <TouchableOpacity

@@ -16,7 +16,8 @@ import {
   typography,
   clayShadowSoft,
 } from "../theme/theme";
-import { messMenu, getTodayIndex, MealType } from "../data/messMenu";
+import { getTodayIndex, MealType } from "../data/messMenu";
+import { useMessMenu } from "../firebase/messMenuService";
 import { subscribeToMessExtras, DEFAULT_MESS_EXTRAS, MessExtra } from "../firebase/messExtrasService";
 
 const mealIcons: Record<MealType, keyof typeof Ionicons.glyphMap> = {
@@ -27,6 +28,7 @@ const mealIcons: Record<MealType, keyof typeof Ionicons.glyphMap> = {
 
 export default function MessMenuScreen() {
 
+  const messMenu = useMessMenu();
   const todayIndex = getTodayIndex();
   const [selectedIndex, setSelectedIndex] = useState(todayIndex === -1 ? 0 : todayIndex);
   const dayMenu = messMenu[selectedIndex];

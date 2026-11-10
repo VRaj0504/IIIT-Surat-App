@@ -7,7 +7,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, spacing, typography, isDark } from '../theme/theme';
 import { useAuth } from '../context/AuthContext';
-import { subscribeToClubs, subscribeToAllUpcomingEvents, Club, ClubEvent } from '../firebase/clubsService';
+import { subscribeToClubs, subscribeToAllUpcomingEvents, isFollowingClub, Club, ClubEvent } from '../firebase/clubsService';
 import { getClubIcon } from '../data/clubIcons';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ClubGlyph from '../components/ClubGlyph';
@@ -42,6 +42,7 @@ export default function ClubsScreen() {
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
+  const isStudent = profile?.role === 'student';
 
   useEffect(() => {
     const unsubscribe = subscribeToClubs((data) => {
@@ -62,15 +63,18 @@ export default function ClubsScreen() {
   const openClub = (clubId: string, clubName: string) => navigation.navigate('ClubDetail', { clubId, clubName });
 
   const categories = useMemo(
-    () => ['All', ...Array.from(new Set(clubs.map((c) => c.category).filter(Boolean))).sort()],
-    [clubs],
+    () => ['All', ...(isStudent ? ['Following'] : []), ...Array.from(new Set(clubs.map((c) => c.category).filter(Boolean))).sort()],
+    [clubs, isStudent],
   );
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
     return clubs.filter(
-      (c) => (category === 'All' || c.category === category) && (!q || c.name.toLowerCase().includes(q)),
+      (c) =>
+        (category === 'All' ||
+          (category === 'Following' ? isFollowingClub(profile?.followedClubs, c.id) : c.category === category)) &&
+        (!q || c.name.toLowerCase().includes(q)),
     );
-  }, [clubs, search, category]);
+  }, [clubs, search, category, profile?.followedClubs]);
 
   const Header = (
     <>
@@ -162,7 +166,11 @@ export default function ClubsScreen() {
       {loadingClubs && <LoadingSpinner style={{ marginTop: spacing.lg }} />}
       {!loadingClubs && shown.length === 0 && (
         <Text style={[styles.emptyText, { marginTop: spacing.md }]}>
-          {clubs.length === 0 ? 'No clubs yet.' : 'No club matches that.'}
+          {clubs.length === 0
+            ? 'No clubs yet.'
+            : category === 'Following' && !search.trim()
+              ? "You don't follow any club yet. Open a club and tap Follow."
+              : 'No club matches that.'}
         </Text>
       )}
     </>

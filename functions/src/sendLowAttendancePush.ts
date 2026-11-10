@@ -5,7 +5,7 @@ import {tokensByEnrollment} from "./audience";
 
 const TARGET = 75;
 
-type Excused = {ranges: {from: string; to: string}[]; sessions: Set<string>};
+export type Excused = {ranges: {from: string; to: string}[]; sessions: Set<string>};
 
 // Approved event excusals and medical leave, so the push matches what the student sees in the app.
 async function excusalsFor(reg: string): Promise<Excused> {
@@ -36,7 +36,7 @@ async function excusalsFor(reg: string): Promise<Excused> {
   return out;
 }
 
-type Session = {
+export type Session = {
   date?: string;
   branch?: string;
   admissionYear?: number;
@@ -50,7 +50,7 @@ type Session = {
   hours?: number;
 };
 
-function tally(sessions: Session[], reg: string, ex?: Excused): {present: number; total: number} {
+export function tally(sessions: Session[], reg: string, ex?: Excused): {present: number; total: number} {
   let present = 0;
   let total = 0;
   for (const s of sessions) {
