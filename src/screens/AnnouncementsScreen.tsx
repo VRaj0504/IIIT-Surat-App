@@ -264,7 +264,7 @@ export default function AnnouncementsScreen() {
                   {ComposeForm}
                   {announcements.length > 0 && <Text style={styles.historyHeading}>Sent announcements</Text>}
                 </View>
-              ) : null
+              ) : undefined
             }
             ListEmptyComponent={
               <View style={styles.emptyContainer}>

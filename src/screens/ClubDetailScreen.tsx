@@ -29,6 +29,7 @@ import { openSafeUrl } from "../utils/safeLink";
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 import ClubGlyph from "../components/ClubGlyph";
 import ClubCoreTeam from "../components/ClubCoreTeam";
+import { COLLEGE_EMAIL_DOMAIN } from "../config/college";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 type DetailRoute = RouteProp<RootStackParamList, "ClubDetail">;
@@ -407,7 +408,7 @@ function ClubDetailScreenInner() {
                 <FieldLabel>Lead's institute email (optional)</FieldLabel>
                 <TextInput
                   style={ui.input}
-                  placeholder="lead@iiitsurat.ac.in"
+                  placeholder={`lead${COLLEGE_EMAIL_DOMAIN}`}
                   placeholderTextColor={colors.textSecondary}
                   autoCapitalize="none"
                   keyboardType="email-address"

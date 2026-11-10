@@ -47,7 +47,7 @@ export default function SignUpScreen({ onNavigateToLogin }: Props) {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dismissedSheet, setDismissedSheet] = useState<string | null>(null);
-  const scroll = useRef<ScrollView>(null);
+  const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const idRef = useRef<any>(null);
   const pwRef = useRef<any>(null);
   const cfRef = useRef<any>(null);

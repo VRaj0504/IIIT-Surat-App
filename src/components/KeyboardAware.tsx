@@ -73,8 +73,8 @@ export const KeyboardAwareScrollView = forwardRef<ScrollView, ScrollViewProps>(f
   { contentContainerStyle, onScroll, onTouchEnd, ...rest },
   ref,
 ) {
-  const inner = useRef<ScrollView>(null);
-  useImperativeHandle(ref, () => inner.current as ScrollView);
+  const inner = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  useImperativeHandle(ref, () => inner.current as unknown as ScrollView);
   const k = useKeyboardAware(useCallback((y: number) => inner.current?.scrollTo({ y, animated: true }), []));
   return (
     <ScrollView

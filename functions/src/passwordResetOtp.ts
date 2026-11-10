@@ -5,6 +5,7 @@ import {getAuth} from "firebase-admin/auth";
 import * as crypto from "crypto";
 import * as nodemailer from "nodemailer";
 import {callerIp, rateLimit} from "./rateLimit";
+import {COLLEGE_DOMAIN} from "./college";
 
 const smtpUser = defineSecret("SMTP_USER");
 const smtpPass = defineSecret("SMTP_PASS");
@@ -15,7 +16,7 @@ const COOLDOWN_MS = 60 * 1000;
 const MAX_TRIES = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_CODES_PER_DAY = 5;
-const ALLOWED = (email: string) => email.endsWith("@iiitsurat.ac.in") || email === "reviewer@collegego.app";
+const ALLOWED = (email: string) => email.endsWith(COLLEGE_DOMAIN) || email === "reviewer@collegego.app";
 
 const norm = (e: unknown) => String(e ?? "").trim().toLowerCase();
 const docIdFor = (email: string) => crypto.createHash("sha256").update(email).digest("hex");

@@ -414,7 +414,7 @@ export default function FacultyDirectoryScreen() {
                   <CoordinatorCard key={c.id} c={c} />
                 ))}
               </View>
-            ) : null
+            ) : undefined
           }
         />
       )}

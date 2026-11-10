@@ -92,7 +92,7 @@ export default function SosAlertsScreen() {
                 <ClosedRow key={a.id} a={a} />
               ))}
             </View>
-          ) : null
+          ) : undefined
         }
         ListEmptyComponent={
           <View style={styles.empty}>

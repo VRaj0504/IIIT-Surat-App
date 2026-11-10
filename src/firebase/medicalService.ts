@@ -4,8 +4,9 @@ import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage
 import { db } from "./firestore";
 import { functions } from "./functionsClient";
 import { storage } from "./storage";
+import { MEDICAL_FORM_URL } from "../config/college";
 
-export const MEDICAL_TEMPLATE_URL = "https://collegego-iiitsurat.web.app/forms/IIITS-Medical-Leave-Form.pdf";
+export const MEDICAL_TEMPLATE_URL: string = MEDICAL_FORM_URL;
 export const LATE_LIMIT_DAYS = 4;
 const COLLECTION = "leaveApplications";
 

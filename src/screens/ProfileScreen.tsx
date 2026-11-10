@@ -14,8 +14,9 @@ import TapCard from "../components/TapCard";
 import { openFacultyPortal } from "../utils/portal";
 import { restartApp } from "../utils/restartApp";
 import { usePlusAccess } from "../hooks/usePlus";
+import { PRIVACY_POLICY_URL } from "../config/college";
 
-export const PRIVACY_URL = "https://collegego-iiitsurat.web.app/privacy.html";
+export const PRIVACY_URL: string = PRIVACY_POLICY_URL;
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 type Row = {

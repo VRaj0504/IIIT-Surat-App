@@ -66,7 +66,7 @@ export default function AcademicCalendarScreen() {
     return i >= 0 ? i : 0;
   });
   const calendar = academicCalendars[selectedIndex];
-  const listRef = useRef<ScrollView>(null);
+  const listRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const rowY = useRef<Record<number, number>>({});
   const scrolledFor = useRef<number | null>(null);
 

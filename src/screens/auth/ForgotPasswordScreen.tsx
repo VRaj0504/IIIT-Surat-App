@@ -17,7 +17,7 @@ export default function ForgotPasswordScreen({ onNavigateToLogin }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
-  const scroll = useRef<ScrollView>(null);
+  const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const keepVisible = () => setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 280);
 
   const send = async () => {

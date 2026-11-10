@@ -16,6 +16,8 @@ import { PortalHost } from './src/components/Portal';
 import Constants from 'expo-constants';
 import { pushTarget } from './src/utils/pushRoute';
 import * as SplashScreen from 'expo-splash-screen';
+import OfflineBanner from './src/components/OfflineBanner';
+import { trackScreen } from './src/utils/usage';
 
 if (Platform.OS !== 'web') {
   SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -99,7 +101,15 @@ function Gate() {
 
 export default function App() {
   const [currentRoute, setCurrentRoute] = React.useState<string | undefined>(undefined);
-  const syncRoute = () => setCurrentRoute(navigationRef.getCurrentRoute()?.name);
+  const lastTracked = React.useRef<string | undefined>(undefined);
+  const syncRoute = () => {
+    const name = navigationRef.getCurrentRoute()?.name;
+    setCurrentRoute(name);
+    if (name !== lastTracked.current) {
+      lastTracked.current = name;
+      trackScreen(name);
+    }
+  };
 
   React.useEffect(() => {
 
@@ -138,6 +148,7 @@ export default function App() {
             <StatusBar style={isDark ? "light" : "dark"} />
           </NavigationContainer>
         </WebShell>
+        <OfflineBanner />
       </SafeAreaProvider>
     </AuthProvider>
   );

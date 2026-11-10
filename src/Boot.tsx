@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Platform } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
 import { colors, loadThemePreference } from "./theme/theme";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 if (Platform.OS !== "web") SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -25,5 +26,9 @@ export default function Boot() {
     });
   }, []);
 
-  return App ? <App /> : null;
+  return App ? (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  ) : null;
 }

@@ -23,6 +23,7 @@ import { auth } from '../firebase/auth';
 import { db } from '../firebase/firestore';
 import { claimPendingClubLead } from '../firebase/clubsService';
 import { registerForPushNotificationsAsync, clearPushToken } from '../firebase/pushService';
+import { COLLEGE_EMAIL_DOMAIN } from '../config/college';
 import { readCached, writeCached, clearCache } from '../firebase/liveCache';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase/functionsClient';
@@ -43,7 +44,7 @@ try {
   googleSignInAvailable = false;
 }
 
-export const ALLOWED_EMAIL_DOMAIN = '@iiitsurat.ac.in';
+export const ALLOWED_EMAIL_DOMAIN: string = COLLEGE_EMAIL_DOMAIN;
 
 export const REVIEWER_EMAIL = 'reviewer@collegego.app';
 export const isReviewerEmail = (email: string) => email.trim().toLowerCase() === REVIEWER_EMAIL;

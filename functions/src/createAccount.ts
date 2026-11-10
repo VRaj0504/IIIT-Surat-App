@@ -2,8 +2,9 @@ import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {getFirestore} from "firebase-admin/firestore";
 import {getAuth} from "firebase-admin/auth";
 import {callerIp, rateLimit} from "./rateLimit";
+import {COLLEGE_DOMAIN, isCollegeEmail} from "./college";
 
-const DOMAIN = "@iiitsurat.ac.in";
+const DOMAIN = COLLEGE_DOMAIN;
 const norm = (v: unknown) => String(v ?? "").trim();
 
 async function onFacultyList(email: string): Promise<boolean> {
@@ -29,7 +30,7 @@ export const createAccount = onCall(
     const email = norm(req.data?.email).toLowerCase();
     const password = String(req.data?.password ?? "");
     const name = norm(req.data?.name).slice(0, 80);
-    if (!/^[^@\s]+@iiitsurat\.ac\.in$/.test(email)) {
+    if (!isCollegeEmail(email)) {
       throw new HttpsError("invalid-argument", `Use your institute email (${DOMAIN}).`);
     }
     if (password.length < 8 || password.length > 128) {

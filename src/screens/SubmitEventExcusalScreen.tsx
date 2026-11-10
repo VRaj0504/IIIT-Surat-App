@@ -265,7 +265,7 @@ export default function SubmitEventExcusalScreen() {
                 style={styles.input}
                 value={eventName}
                 onChangeText={setEventName}
-                placeholder="e.g. Inter-IIIT Sports Meet 2026"
+                placeholder="e.g. Inter-College Sports Meet 2026"
                 placeholderTextColor={colors.textSecondary}
               />
               <SelectField label="Category" value={category} placeholder="Pick category" icon="pricetag-outline" onPress={() => setSheet("category")} />

@@ -24,6 +24,7 @@ import {
 } from "../theme/theme";
 import { createClub, subscribeToClubs, Club } from "../firebase/clubsService";
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
+import { COLLEGE_EMAIL_DOMAIN } from "../config/college";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -137,7 +138,7 @@ export default function CreateClubScreen() {
             <Text style={styles.label}>Lead's Account Email (optional)</Text>
             <TextInput
               style={styles.input}
-              placeholder="lead@iiitsurat.ac.in"
+              placeholder={`lead${COLLEGE_EMAIL_DOMAIN}`}
               placeholderTextColor={colors.textSecondary}
               autoCapitalize="none"
               keyboardType="email-address"

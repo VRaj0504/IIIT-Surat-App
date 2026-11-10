@@ -43,7 +43,7 @@ const BLUR_METHOD = "dimezisBlurViewSdk31Plus" as const;
 
 export const tick = () => Haptics.selectionAsync().catch(() => {});
 
-const BgRef = createContext<React.RefObject<View | null> | null>(null);
+const BgRef = createContext<React.RefObject<React.ComponentRef<typeof View> | null> | null>(null);
 
 function Blob({ size, color, x, y, dx, dy, duration }: { size: number; color: string; x: number; y: number; dx: number; dy: number; duration: number }) {
   const t = useSharedValue(0);
@@ -60,7 +60,7 @@ function Blob({ size, color, x, y, dx, dy, duration }: { size: number; color: st
 }
 
 export function GlassScreen({ children }: { children: React.ReactNode }) {
-  const bg = useRef<View>(null);
+  const bg = useRef<React.ComponentRef<typeof View>>(null);
   const { width, height } = useWindowDimensions();
   return (
     <BgRef.Provider value={bg}>
@@ -232,7 +232,7 @@ export function GlassInput({
   onBlur,
   ref,
   ...props
-}: TextInputProps & { icon: keyof typeof Ionicons.glyphMap; suffix?: string; right?: React.ReactNode; ref?: React.Ref<TextInput> }) {
+}: TextInputProps & { icon: keyof typeof Ionicons.glyphMap; suffix?: string; right?: React.ReactNode; ref?: React.Ref<React.ComponentRef<typeof TextInput>> }) {
   const f = useSharedValue(0);
   const a = useAnimatedStyle(() => ({
     borderColor: interpolateColor(f.value, [0, 1], [isDark ? "rgba(255,255,255,0.10)" : "rgba(14,26,51,0.08)", isDark ? "rgba(138,168,240,0.8)" : "rgba(11,61,145,0.75)"]),
