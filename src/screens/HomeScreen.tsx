@@ -358,7 +358,15 @@ function MobileHome() {
     heroChip = until <= 90 ? `in ${minutesLabel(until)}` : `at ${to12h(hero.startTime)}`;
   }
 
-  const firstName = (profile?.name ?? '').replace(/^(dr|prof|mr|mrs|ms)\.?\s+/i, '').split(' ')[0] || 'there';
+  const rawFirst = (profile?.name ?? '').trim().replace(/^(dr|prof|mr|mrs|ms)\.?\s+/i, '').split(/\s+/)[0] ?? '';
+  // Names often come from the roster in capitals ("VAIBHAV"); show them as "Vaibhav" so they fit and read naturally.
+  const firstName = rawFirst
+    ? rawFirst
+        .toLowerCase()
+        .split('-')
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join('-')
+    : 'there';
   const dateLabel = now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
   const goTimetable = () => navigation.navigate('Timetable' as any);
 
@@ -429,7 +437,7 @@ function MobileHome() {
 
           <View style={styles.headerRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.greeting} numberOfLines={1}>
+              <Text style={styles.greeting} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
                 Hi, {firstName}
               </Text>
             </View>
