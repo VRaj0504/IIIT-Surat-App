@@ -329,3 +329,18 @@ describe('company prep', () => {
     await assertFails(getDoc(doc(as(OTHER), 'prepProgress', STUDENT.uid)));
   });
 });
+
+describe('prep profiles and notes', () => {
+  it('a student can set only their own Codeforces handle, not their score', async () => {
+    await assertSucceeds(setDoc(doc(as(STUDENT), 'prepProfiles', STUDENT.uid), { cfHandle: 'tourist' }));
+    await assertFails(setDoc(doc(as(STUDENT), 'prepProfiles', STUDENT.uid), { cfHandle: 'tourist', solved: 999 }));
+    await assertFails(setDoc(doc(as(OTHER), 'prepProfiles', STUDENT.uid), { cfHandle: 'x' }));
+    await assertSucceeds(getDoc(doc(as(OTHER), 'prepProfiles', STUDENT.uid)));
+  });
+  it('notes are private; the ladder is read-only for students', async () => {
+    await assertSucceeds(setDoc(doc(as(STUDENT), 'prepNotes', STUDENT.uid), { notes: { a: 'x' }, updatedAt: new Date() }));
+    await assertFails(getDoc(doc(as(OTHER), 'prepNotes', STUDENT.uid)));
+    await assertFails(setDoc(doc(as(STUDENT), 'prepLadder', 'main'), { ratings: {} }));
+    await assertSucceeds(setDoc(doc(as(ADMIN), 'prepLadder', 'main'), { ratings: {} }));
+  });
+});

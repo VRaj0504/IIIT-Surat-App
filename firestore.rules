@@ -874,6 +874,31 @@ service cloud.firestore {
         request.resource.data.get('starred', {}) is map && request.resource.data.get('starred', {}).size() <= 2000;
     }
 
+    // Leaderboard row. Scores are written by the prepLeaderboard function; the owner may only set a Codeforces handle.
+    match /prepProfiles/{uid} {
+      allow read: if isMember();
+      allow create: if isMember() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['cfHandle']) &&
+        request.resource.data.cfHandle is string && request.resource.data.cfHandle.matches('^[A-Za-z0-9_.-]{0,24}$');
+      allow update: if isMember() && request.auth.uid == uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cfHandle']) &&
+        request.resource.data.cfHandle is string && request.resource.data.cfHandle.matches('^[A-Za-z0-9_.-]{0,24}$');
+    }
+
+    // Personal notes on problems. Private to the owner.
+    match /prepNotes/{uid} {
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create, update: if isMember() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['notes', 'updatedAt']) &&
+        request.resource.data.notes is map && request.resource.data.notes.size() <= 600;
+    }
+
+    // CP ladder and contest calendar, refreshed from the public Codeforces API (weekly function, or an admin's browser).
+    match /prepLadder/{docId} {
+      allow read: if isMember();
+      allow write: if isPrepReviewer();
+    }
+
     match /prepContributors/{uid} {
       allow read: if isMember();
       allow write: if false;
