@@ -778,7 +778,7 @@ service cloud.firestore {
       allow create: if isMember() &&
         request.resource.data.keys().hasOnly(['kind', 'contentId', 'title', 'authorUid', 'authorName', 'clubName', 'reason', 'reporterUid', 'status', 'createdAt']) &&
         request.resource.data.reporterUid == request.auth.uid &&
-        request.resource.data.kind in ['notice', 'event'] &&
+        request.resource.data.kind in ['notice', 'event', 'question'] &&
         request.resource.data.reason in ['spam', 'harassment', 'hate', 'sexual', 'violence', 'false', 'other'] &&
         request.resource.data.status == 'open' &&
         request.resource.data.contentId is string && request.resource.data.contentId.size() < 100 &&
@@ -790,6 +790,93 @@ service cloud.firestore {
       allow read, delete: if isAdmin();
       allow update: if isAdmin() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'resolvedBy', 'resolvedAt', 'action']);
+    }
+
+    // ---------- Company Prep website ----------
+    function isPrepReviewer() {
+      return isAdmin() || (isMember() && exists(/databases/$(database)/documents/prepReviewers/$(request.auth.uid)));
+    }
+
+    // Plus gate for campus OA summaries. Off (everything free) until config/prep.plusGate is true.
+    function prepOpen() {
+      return !exists(/databases/$(database)/documents/config/prep) ||
+        get(/databases/$(database)/documents/config/prep).data.get('plusGate', false) != true ||
+        (exists(/databases/$(database)/documents/subscriptions/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/subscriptions/$(request.auth.uid)).data.get('entitledUntil', request.time) > request.time);
+    }
+
+    match /config/prep {
+      allow read: if isMember();
+      allow write: if isAdmin();
+    }
+
+    match /prepReviewers/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if false;
+    }
+
+    match /prepCompanies/{slug} {
+      allow read: if isMember();
+      allow create, update: if isPrepReviewer() &&
+        request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 80 &&
+        request.resource.data.category is string;
+      allow delete: if isAdmin();
+    }
+
+    match /prepQuestions/{qid} {
+      allow read: if isMember();
+      allow create, update: if isPrepReviewer() &&
+        request.resource.data.companySlug is string &&
+        request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 150 &&
+        request.resource.data.source in ['campus', 'community'] &&
+        request.resource.data.difficulty in ['Easy', 'Medium', 'Hard'];
+      allow delete: if isPrepReviewer();
+    }
+
+    // Summary in the contributor's words. First 3 campus questions per company are free; the rest follow prepOpen().
+    match /prepQuestionDetails/{qid} {
+      allow get: if isMember() && (resource.data.get('free', false) == true || prepOpen() || isPrepReviewer());
+      allow list: if isPrepReviewer();
+      allow create, update: if isPrepReviewer() &&
+        request.resource.data.summary is string && request.resource.data.summary.size() <= 3000;
+      allow delete: if isPrepReviewer();
+    }
+
+    match /prepSubmissions/{sid} {
+      allow create: if isMember() &&
+        request.resource.data.keys().hasOnly(['companySlug', 'newCompany', 'title', 'summary', 'difficulty', 'topics', 'year',
+          'round', 'role', 'platform', 'link', 'status', 'uid', 'name', 'createdAt']) &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.companySlug is string && request.resource.data.companySlug.size() <= 80 &&
+        request.resource.data.newCompany is string && request.resource.data.newCompany.size() <= 80 &&
+        request.resource.data.title is string && request.resource.data.title.size() >= 3 && request.resource.data.title.size() <= 150 &&
+        request.resource.data.summary is string && request.resource.data.summary.size() >= 30 && request.resource.data.summary.size() <= 2000 &&
+        request.resource.data.difficulty in ['Easy', 'Medium', 'Hard'] &&
+        request.resource.data.topics is list && request.resource.data.topics.size() >= 1 && request.resource.data.topics.size() <= 5 &&
+        request.resource.data.year is int && request.resource.data.year >= 2015 && request.resource.data.year <= 2035 &&
+        request.resource.data.round is string && request.resource.data.round.size() <= 30 &&
+        request.resource.data.role is string && request.resource.data.role.size() <= 30 &&
+        request.resource.data.platform is string && request.resource.data.platform.size() <= 30 &&
+        request.resource.data.link is string && request.resource.data.link.size() <= 300 &&
+        request.resource.data.name is string && request.resource.data.name.size() <= 120;
+      allow read: if signedIn() && (resource.data.uid == request.auth.uid || isPrepReviewer());
+      allow update: if isPrepReviewer();
+      allow delete: if isPrepReviewer() || (signedIn() && resource.data.uid == request.auth.uid && resource.data.status == 'pending');
+    }
+
+    match /prepProgress/{uid} {
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create, update: if isMember() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['solved', 'starred', 'updatedAt']) &&
+        request.resource.data.get('solved', {}) is map && request.resource.data.get('solved', {}).size() <= 5000 &&
+        request.resource.data.get('starred', {}) is map && request.resource.data.get('starred', {}).size() <= 2000;
+    }
+
+    match /prepContributors/{uid} {
+      allow read: if isMember();
+      allow write: if false;
     }
 
     // Each person's block list (⋯ → Block). Only the owner can read or change it.

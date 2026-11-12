@@ -290,3 +290,42 @@ describe('report and block', () => {
     await assertFails(setDoc(doc(as(OTHER), 'userBlocks', STUDENT.uid), { blocked: {}, updatedAt: new Date() }));
   });
 });
+
+describe('company prep', () => {
+  const sub = (u, extra = {}) => ({
+    companySlug: 'amazon', newCompany: '', title: 'Sliding window max', summary: 'Given an array and k, find the max of every window of size k.',
+    difficulty: 'Medium', topics: ['Sliding Window'], year: 2026, round: 'OA', role: 'SDE', platform: 'HackerRank',
+    link: 'https://leetcode.com/problems/sliding-window-maximum/', status: 'pending', uid: u.uid, name: 'Student', createdAt: serverTimestamp(), ...extra,
+  });
+  it('a member can submit a question; only reviewers can approve it', async () => {
+    await assertSucceeds(setDoc(doc(as(STUDENT), 'prepSubmissions', 's1'), sub(STUDENT)));
+    await assertSucceeds(getDoc(doc(as(STUDENT), 'prepSubmissions', 's1')));
+    await assertFails(getDoc(doc(as(OTHER), 'prepSubmissions', 's1')));
+    await assertFails(updateDoc(doc(as(STUDENT), 'prepSubmissions', 's1'), { status: 'approved' }));
+    await assertSucceeds(updateDoc(doc(as(ADMIN), 'prepSubmissions', 's1'), { status: 'approved' }));
+  });
+  it("a submission can't be pre-approved or filed for someone else", async () => {
+    await assertFails(setDoc(doc(as(STUDENT), 'prepSubmissions', 's2'), sub(STUDENT, { status: 'approved' })));
+    await assertFails(setDoc(doc(as(STUDENT), 'prepSubmissions', 's3'), sub(OTHER)));
+  });
+  it('students read questions but cannot write them', async () => {
+    await assertSucceeds(setDoc(doc(as(ADMIN), 'prepQuestions', 'q1'), { companySlug: 'amazon', title: 'X', source: 'campus', difficulty: 'Easy' }));
+    await assertSucceeds(getDoc(doc(as(STUDENT), 'prepQuestions', 'q1')));
+    await assertFails(setDoc(doc(as(STUDENT), 'prepQuestions', 'q2'), { companySlug: 'amazon', title: 'X', source: 'campus', difficulty: 'Easy' }));
+  });
+  it('locked summaries need Plus once the gate is on; free ones stay open', async () => {
+    await env.withSecurityRulesDisabled(async (c) => {
+      const db = c.firestore();
+      await setDoc(doc(db, 'config', 'prep'), { plusGate: true });
+      await setDoc(doc(db, 'prepQuestionDetails', 'free1'), { summary: 'a', free: true });
+      await setDoc(doc(db, 'prepQuestionDetails', 'paid1'), { summary: 'b', free: false });
+    });
+    await assertSucceeds(getDoc(doc(as(STUDENT), 'prepQuestionDetails', 'free1')));
+    await assertFails(getDoc(doc(as(STUDENT), 'prepQuestionDetails', 'paid1')));
+    await assertSucceeds(getDoc(doc(as(ADMIN), 'prepQuestionDetails', 'paid1')));
+  });
+  it('progress is private to its owner', async () => {
+    await assertSucceeds(setDoc(doc(as(STUDENT), 'prepProgress', STUDENT.uid), { solved: { q1: 1 }, starred: {}, updatedAt: new Date() }));
+    await assertFails(getDoc(doc(as(OTHER), 'prepProgress', STUDENT.uid)));
+  });
+});
