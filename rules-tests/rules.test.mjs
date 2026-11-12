@@ -344,3 +344,13 @@ describe('prep profiles and notes', () => {
     await assertSucceeds(setDoc(doc(as(ADMIN), 'prepLadder', 'main'), { ratings: {} }));
   });
 });
+
+describe('prep study groups', () => {
+  it('members can join a group but only add or remove themselves', async () => {
+    await assertSucceeds(setDoc(doc(as(STUDENT), 'prepGroups', 'ABC123'), { name: 'CSE2 grind', ownerUid: STUDENT.uid, members: { [STUDENT.uid]: 'A' }, createdAt: new Date() }));
+    await assertSucceeds(updateDoc(doc(as(OTHER), 'prepGroups', 'ABC123'), { [`members.${OTHER.uid}`]: 'B' }));
+    await assertFails(updateDoc(doc(as(OTHER), 'prepGroups', 'ABC123'), { [`members.${STUDENT.uid}`]: 'hacked' }));
+    await assertFails(updateDoc(doc(as(OTHER), 'prepGroups', 'ABC123'), { name: 'renamed' }));
+    await assertFails(getDocs(collection(as(OTHER), 'prepGroups')));
+  });
+});

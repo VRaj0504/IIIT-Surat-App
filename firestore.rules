@@ -885,6 +885,31 @@ service cloud.firestore {
         request.resource.data.cfHandle is string && request.resource.data.cfHandle.matches('^[A-Za-z0-9_.-]{0,24}$');
     }
 
+    // Roadmap settings and the study groups a student has joined. Private to the owner.
+    match /prepSettings/{uid} {
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create, update: if isMember() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['roadmap', 'groups', 'updatedAt']) &&
+        request.resource.data.get('roadmap', {}) is map &&
+        request.resource.data.get('groups', []) is list && request.resource.data.get('groups', []).size() <= 10;
+    }
+
+    // Study group, joined with its code (the document id). Members may only add or remove themselves.
+    match /prepGroups/{code} {
+      allow get: if isMember();
+      allow list: if false;
+      allow create: if isMember() &&
+        request.resource.data.keys().hasOnly(['name', 'ownerUid', 'members', 'createdAt']) &&
+        request.resource.data.ownerUid == request.auth.uid &&
+        request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 40 &&
+        request.resource.data.members.keys().hasOnly([request.auth.uid]);
+      allow update: if isMember() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
+        request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid]) &&
+        request.resource.data.members.size() <= 30;
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+    }
+
     // Personal notes on problems. Private to the owner.
     match /prepNotes/{uid} {
       allow read, delete: if signedIn() && request.auth.uid == uid;
