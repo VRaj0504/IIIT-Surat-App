@@ -17,6 +17,7 @@ export type RootStackParamList = {
 
   ThaliPass: undefined;
   IdCard: undefined;
+  BlockedPeople: undefined;
   ScanThaliPass: undefined;
 
   ApplyLeave: undefined;

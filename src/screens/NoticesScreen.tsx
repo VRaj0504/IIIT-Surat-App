@@ -8,6 +8,7 @@ import type { RootStackParamList } from "../navigation/types";
 import { colors, spacing, typography } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { subscribeToNotices, deleteNotice, Notice } from "../firebase/noticesService";
+import ContentMenu from "../components/ContentMenu";
 import { openSafeUrl } from "../utils/safeLink";
 import LoadingSpinner from "../components/LoadingSpinner";
 import TapCard from "../components/TapCard";
@@ -59,13 +60,6 @@ function NoticeCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const openMenu = () => {
-    const buttons: { text: string; style?: "cancel" | "destructive"; onPress?: () => void }[] = [];
-    if (canEdit) buttons.push({ text: "Edit", onPress: onEdit });
-    if (canDelete) buttons.push({ text: "Delete", style: "destructive", onPress: onDelete });
-    buttons.push({ text: "Close", style: "cancel" });
-    Alert.alert(item.title, undefined, buttons);
-  };
   const [open, setOpen] = useState(false);
   const tone = colors.tile[TONE[item.category] ?? "blue"];
   const created = item.createdAt ? item.createdAt.toMillis() : 0;
@@ -97,11 +91,15 @@ function NoticeCard({
             <Text style={styles.newText}>NEW</Text>
           </View>
         )}
-        {(canEdit || canDelete) && (
-          <TouchableOpacity onPress={openMenu} hitSlop={10} accessibilityLabel="Notice options" style={styles.menuBtn}>
-            <Ionicons name="ellipsis-horizontal" size={18} color={colors.textSecondary} />
-          </TouchableOpacity>
-        )}
+        <ContentMenu
+          style={styles.menuBtn}
+          target={{ kind: "notice", ...item }}
+          allowBlock={item.category === "Club"}
+          ownerActions={[
+            ...(canEdit ? [{ label: "Edit", onPress: onEdit }] : []),
+            ...(canDelete ? [{ label: "Delete", destructive: true, onPress: onDelete }] : []),
+          ]}
+        />
       </View>
 
       <Text style={styles.title}>{item.title}</Text>

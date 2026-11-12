@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import { assertFails, assertSucceeds, initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { collection, deleteDoc, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 
 let env;
 
@@ -263,5 +263,30 @@ describe('mess menu and class changes', () => {
     await assertSucceeds(getDoc(doc(as(STUDENT), 'classChanges', 'c1')));
     await assertFails(getDoc(doc(as(STRANGER), 'classChanges', 'c1')));
     await assertFails(setDoc(doc(as(FACULTY), 'classChanges', 'c2'), { date: '2026-11-10', type: 'cancelled' }));
+  });
+});
+
+describe('report and block', () => {
+  const report = (u, extra = {}) => ({
+    kind: 'event', contentId: 'e1', title: 'Hackathon', authorUid: OTHER.uid, authorName: 'Club lead', clubName: 'Coding Club',
+    reason: 'spam', reporterUid: u.uid, status: 'open', createdAt: serverTimestamp(), ...extra,
+  });
+
+  it('a member can report a post; only an admin can read or resolve reports', async () => {
+    await assertSucceeds(setDoc(doc(as(STUDENT), 'contentReports', 'r1'), report(STUDENT)));
+    await assertFails(getDoc(doc(as(STUDENT), 'contentReports', 'r1')));
+    await assertSucceeds(getDoc(doc(as(ADMIN), 'contentReports', 'r1')));
+    await assertSucceeds(updateDoc(doc(as(ADMIN), 'contentReports', 'r1'), { status: 'removed', resolvedBy: ADMIN.email, resolvedAt: new Date(), action: 'deleted' }));
+  });
+  it("a report can't be filed for someone else, with a made-up reason, or by a stranger", async () => {
+    await assertFails(setDoc(doc(as(STUDENT), 'contentReports', 'r2'), report(OTHER)));
+    await assertFails(setDoc(doc(as(STUDENT), 'contentReports', 'r3'), report(STUDENT, { reason: 'boring' })));
+    await assertFails(setDoc(doc(as(STRANGER), 'contentReports', 'r4'), report(STRANGER)));
+  });
+  it('each person reads and changes only their own block list', async () => {
+    await assertSucceeds(setDoc(doc(as(STUDENT), 'userBlocks', STUDENT.uid), { blocked: { [OTHER.uid]: 'Club lead' }, updatedAt: new Date() }));
+    await assertSucceeds(getDoc(doc(as(STUDENT), 'userBlocks', STUDENT.uid)));
+    await assertFails(getDoc(doc(as(OTHER), 'userBlocks', STUDENT.uid)));
+    await assertFails(setDoc(doc(as(OTHER), 'userBlocks', STUDENT.uid), { blocked: {}, updatedAt: new Date() }));
   });
 });

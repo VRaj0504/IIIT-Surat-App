@@ -14,6 +14,8 @@ import {
 import { BlurView, BlurTargetView } from "expo-blur";
 import { StatusBar } from "expo-status-bar";
 import * as Haptics from "expo-haptics";
+import { openSafeUrl } from "../../utils/safeLink";
+import { COMMUNITY_GUIDELINES_URL, PRIVACY_POLICY_URL } from "../../config/college";
 import Animated, {
   Easing,
   interpolateColor,
@@ -282,6 +284,24 @@ export function RoundBack({ onPress }: { onPress: () => void }) {
     <Press onPress={onPress} label="Back" style={g.back}>
       <Ionicons name="arrow-back" size={20} color="#fff" />
     </Press>
+  );
+}
+
+/** Shown under the sign-in options: using the app means agreeing to the guidelines (no tolerance for abuse). */
+export function AgreeLine() {
+  const link = (url: string) => () => openSafeUrl(url).catch(() => undefined);
+  return (
+    <Text style={[g.footerText, { textAlign: "center", lineHeight: 18 }]}>
+      By continuing you agree to the{" "}
+      <Text style={{ color: ACCENT, fontWeight: "700" }} onPress={link(COMMUNITY_GUIDELINES_URL)} accessibilityRole="link">
+        Community guidelines
+      </Text>{" "}
+      and{" "}
+      <Text style={{ color: ACCENT, fontWeight: "700" }} onPress={link(PRIVACY_POLICY_URL)} accessibilityRole="link">
+        Privacy policy
+      </Text>
+      . Abusive or objectionable posts are not allowed and are removed.
+    </Text>
   );
 }
 

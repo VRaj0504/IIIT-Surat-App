@@ -29,6 +29,7 @@ import { openSafeUrl } from "../utils/safeLink";
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 import ClubGlyph from "../components/ClubGlyph";
 import ClubCoreTeam from "../components/ClubCoreTeam";
+import ContentMenu from "../components/ContentMenu";
 import { COLLEGE_EMAIL_DOMAIN } from "../config/college";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
@@ -317,6 +318,7 @@ function ClubDetailScreenInner() {
                       </Text>
                       {item.category ? <Text style={styles.itemCat}>{item.category}</Text> : null}
                     </View>
+                    <ContentMenu target={{ kind: "event", ...item }} />
                   </View>
                   {item.description ? <Text style={styles.itemBody}>{item.description}</Text> : null}
                   <View style={styles.itemActions}>
@@ -353,7 +355,10 @@ function ClubDetailScreenInner() {
         ) : (
           clubNotices.map((notice) => (
             <Card key={notice.id} style={styles.item}>
-              <Text style={styles.itemTitle}>{notice.title}</Text>
+              <View style={styles.noticeHead}>
+                <Text style={[styles.itemTitle, { flex: 1 }]}>{notice.title}</Text>
+                <ContentMenu target={{ kind: "notice", ...notice }} />
+              </View>
               <Text style={styles.itemBody}>{notice.description}</Text>
               <View style={styles.itemActions}>
                 {notice.link ? (
@@ -438,6 +443,7 @@ function ClubDetailScreenInner() {
 }
 
 const styles = StyleSheet.create({
+  noticeHead: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
   followBtn: { marginTop: spacing.md, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 6, minHeight: 40, paddingHorizontal: 20, borderRadius: radius.full, backgroundColor: colors.primary },
   followBtnOn: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.primary },
   followText: { color: colors.onPrimary, fontWeight: "800", fontSize: 14 },

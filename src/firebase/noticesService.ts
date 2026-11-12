@@ -1,4 +1,5 @@
 import { isForViewer } from '../utils/audience';
+import { hideBlocked } from './moderationService';
 import {
   collection,
   addDoc,
@@ -115,7 +116,8 @@ export function subscribeToNotices(
     docs
       .map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as Omit<Notice, 'id'>) }))
       .filter((n) => viewer === undefined || isForViewer(n, viewer));
-  return persisted(`notices:${viewer === undefined ? 'staff' : JSON.stringify(viewer)}`, (onUpdate, fail) => {
+  const shown = hideBlocked<Notice>(onUpdate);
+  const stop = persisted(`notices:${viewer === undefined ? 'staff' : JSON.stringify(viewer)}`, (onUpdate, fail) => {
     // Students only load the last 30 days, so pinned notices are fetched separately and kept on top until unpinned.
     let recent: Notice[] | null = null;
     let pinned: Notice[] = [];
@@ -140,5 +142,9 @@ export function subscribeToNotices(
       unsubRecent();
       unsubPinned();
     };
-  }, onUpdate);
+  }, shown.onUpdate);
+  return () => {
+    stop();
+    shown.stop();
+  };
 }

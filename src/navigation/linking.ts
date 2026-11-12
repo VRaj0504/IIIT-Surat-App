@@ -21,6 +21,7 @@ export const linking: LinkingOptions<any> | undefined =
       MessMenu: 'mess-menu',
       ThaliPass: 'thali-pass',
       IdCard: 'id-card',
+      BlockedPeople: 'blocked',
       ScanThaliPass: 'scan-thali-pass',
       Resources: 'resources',
       Faculty: 'faculty',

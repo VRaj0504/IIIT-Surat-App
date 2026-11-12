@@ -13,6 +13,7 @@ import GlassCard from "../components/GlassCard";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
 import ClubGlyph from "../components/ClubGlyph";
+import ContentMenu from "../components/ContentMenu";
 import { SelectField, SheetPicker, Segmented } from "../components/ui";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
@@ -176,6 +177,7 @@ export default function EventsScreen() {
                       </Text>
                       {!!event.category && <Text style={styles.eventCat}>{event.category}</Text>}
                     </View>
+                    <ContentMenu target={{ kind: "event", ...event }} style={{ marginRight: 4 }} />
                     <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
                   </TouchableOpacity>
                 </GlassCard>

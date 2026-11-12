@@ -57,3 +57,4 @@ export {archiveDatabase, archiveDatabaseDaily} from "./archiveDatabase";
 export {excusalSubmit, excusalAct, excusalWithdraw, excusalReminder} from "./excusalFlow";
 export {classChangeSet} from "./classChange";
 export {sendExamEvePush, sendWeeklyAttendancePush, sendAttendanceNudgePush} from "./scheduledNudges";
+export {notifyContentReport} from "./notifyContentReport";

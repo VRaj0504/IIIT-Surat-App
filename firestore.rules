@@ -773,6 +773,34 @@ service cloud.firestore {
       allow read, delete: if isAdmin();
     }
 
+    // Report a club event or notice (⋯ → Report post). Members can only add one; admins review on the portal.
+    match /contentReports/{reportId} {
+      allow create: if isMember() &&
+        request.resource.data.keys().hasOnly(['kind', 'contentId', 'title', 'authorUid', 'authorName', 'clubName', 'reason', 'reporterUid', 'status', 'createdAt']) &&
+        request.resource.data.reporterUid == request.auth.uid &&
+        request.resource.data.kind in ['notice', 'event'] &&
+        request.resource.data.reason in ['spam', 'harassment', 'hate', 'sexual', 'violence', 'false', 'other'] &&
+        request.resource.data.status == 'open' &&
+        request.resource.data.contentId is string && request.resource.data.contentId.size() < 100 &&
+        request.resource.data.title is string && request.resource.data.title.size() <= 200 &&
+        request.resource.data.authorUid is string && request.resource.data.authorUid.size() < 200 &&
+        request.resource.data.authorName is string && request.resource.data.authorName.size() <= 120 &&
+        request.resource.data.clubName is string && request.resource.data.clubName.size() <= 120 &&
+        request.resource.data.createdAt == request.time;
+      allow read, delete: if isAdmin();
+      allow update: if isAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'resolvedBy', 'resolvedAt', 'action']);
+    }
+
+    // Each person's block list (⋯ → Block). Only the owner can read or change it.
+    match /userBlocks/{userId} {
+      allow read, delete: if signedIn() && request.auth.uid == userId;
+      allow create, update: if isMember() && request.auth.uid == userId &&
+        request.resource.data.keys().hasOnly(['blocked', 'updatedAt']) &&
+        request.resource.data.blocked is map &&
+        request.resource.data.blocked.size() <= 300;
+    }
+
     match /plusConfig/{docId} {
       allow read: if isMember();
       allow write: if false;

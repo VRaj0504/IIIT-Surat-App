@@ -6,7 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth, ALLOWED_EMAIL_DOMAIN } from "../../context/AuthContext";
 import { WrongAccountSheet, ErrorBox, wrongAccountEmail } from "./authUi";
 import { toInstituteEmail } from "./LoginScreen";
-import { GlassScreen, Glass, Reveal, Heading, HintRow, OptionCard, GlassInput, PrimaryButton, RoundBack, Footer, g, ACCENT, MUTED, TEXT, EASE, AuthSpacer, useAuthScroll } from "./glassUi";
+import { GlassScreen, Glass, Reveal, Heading, HintRow, OptionCard, GlassInput, PrimaryButton, AgreeLine, RoundBack, Footer, g, ACCENT, MUTED, TEXT, EASE, AuthSpacer, useAuthScroll } from "./glassUi";
 
 type Props = { onNavigateToLogin: () => void };
 
@@ -187,6 +187,8 @@ export default function SignUpScreen({ onNavigateToLogin }: Props) {
                 </Animated.View>
               ) : null}
             </Animated.View>
+
+            <AgreeLine />
 
             <Reveal delay={360} style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
               <RoundBack onPress={onNavigateToLogin} />

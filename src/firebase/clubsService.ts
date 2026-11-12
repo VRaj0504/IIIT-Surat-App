@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firestore';
 import { persisted } from './liveCache';
+import { hideBlocked } from './moderationService';
 
 export type Club = {
   id: string;
@@ -222,13 +223,18 @@ export function subscribeToClubEvents(clubId: string, onUpdate: (events: ClubEve
     where('dateTime', '>=', Timestamp.fromDate(new Date())),
     orderBy('dateTime', 'asc')
   );
-  return persisted(`clubev:${clubId}`, (onUpdate, fail) => onSnapshot(q, (snapshot) => {
+  const shown = hideBlocked<ClubEvent>(onUpdate);
+  const stop = persisted(`clubev:${clubId}`, (onUpdate, fail) => onSnapshot(q, (snapshot) => {
     const events: ClubEvent[] = snapshot.docs.map((docSnap) => ({
       id: docSnap.id,
       ...(docSnap.data() as Omit<ClubEvent, 'id'>),
     }));
     onUpdate(events);
-  }, () => fail([])), onUpdate);
+  }, () => fail([])), shown.onUpdate);
+  return () => {
+    stop();
+    shown.stop();
+  };
 }
 
 export function subscribeToAllUpcomingEvents(onUpdate: (events: ClubEvent[]) => void): () => void {
@@ -238,13 +244,18 @@ export function subscribeToAllUpcomingEvents(onUpdate: (events: ClubEvent[]) => 
     where('dateTime', '>=', now),
     orderBy('dateTime', 'asc')
   );
-  return persisted('events:upcoming', (onUpdate, fail) => onSnapshot(q, (snapshot) => {
+  const shown = hideBlocked<ClubEvent>(onUpdate);
+  const stop = persisted('events:upcoming', (onUpdate, fail) => onSnapshot(q, (snapshot) => {
     const events: ClubEvent[] = snapshot.docs.map((docSnap) => ({
       id: docSnap.id,
       ...(docSnap.data() as Omit<ClubEvent, 'id'>),
     }));
     onUpdate(events);
-  }, () => fail([])), onUpdate);
+  }, () => fail([])), shown.onUpdate);
+  return () => {
+    stop();
+    shown.stop();
+  };
 }
 /** Events from the last `days` days (newest first), for the Past tab. */
 export function subscribeToRecentPastEvents(onUpdate: (events: ClubEvent[]) => void, days = 30): () => void {
@@ -255,11 +266,16 @@ export function subscribeToRecentPastEvents(onUpdate: (events: ClubEvent[]) => v
     where('dateTime', '<', Timestamp.fromDate(now)),
     orderBy('dateTime', 'desc')
   );
-  return onSnapshot(
+  const shown = hideBlocked<ClubEvent>(onUpdate);
+  const stop = onSnapshot(
     q,
-    (snapshot) => onUpdate(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ClubEvent, 'id'>) }))),
-    () => onUpdate([])
+    (snapshot) => shown.onUpdate(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ClubEvent, 'id'>) }))),
+    () => shown.onUpdate([])
   );
+  return () => {
+    stop();
+    shown.stop();
+  };
 }
 
 // Clubs a student follows (stored on users/{uid}.followedClubs). Followers get a push 1 hour before each event.

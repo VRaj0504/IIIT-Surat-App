@@ -5,7 +5,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth, isAllowedEmailDomain, isReviewerEmail, ALLOWED_EMAIL_DOMAIN } from "../../context/AuthContext";
 import { WrongAccountSheet, ErrorBox, wrongAccountEmail } from "./authUi";
-import { GlassScreen, Glass, Reveal, BrandRow, Heading, HintRow, OptionCard, GlassInput, PrimaryButton, Footer, g, ACCENT, MUTED, TEXT, EASE, AuthSpacer, useAuthScroll } from "./glassUi";
+import { GlassScreen, Glass, Reveal, BrandRow, Heading, HintRow, OptionCard, GlassInput, PrimaryButton, AgreeLine, Footer, g, ACCENT, MUTED, TEXT, EASE, AuthSpacer, useAuthScroll } from "./glassUi";
 
 type Props = {
   onNavigateToSignUp: () => void;
@@ -168,6 +168,8 @@ export default function LoginScreen({ onNavigateToSignUp, onNavigateToForgotPass
                 </Animated.View>
               ) : null}
             </Animated.View>
+
+            <AgreeLine />
 
             <Reveal delay={400}>
               <Footer

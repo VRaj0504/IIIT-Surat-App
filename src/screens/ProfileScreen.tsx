@@ -34,6 +34,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       { label: "Notification history", sub: "Everything sent to you, last 60 days", icon: "notifications-outline", route: "Notifications", tone: "lilac" },
       { label: "Notification settings", sub: "What the app pings you about", icon: "options-outline", route: "NotificationSettings", tone: "blue" },
       { label: "My downloads", sub: "Files saved on this phone", icon: "download-outline", route: "MyDownloads", tone: "mint" },
+      { label: "Blocked people", sub: "People whose posts you hid", icon: "eye-off-outline", route: "BlockedPeople", tone: "pink" },
     ],
   },
   {

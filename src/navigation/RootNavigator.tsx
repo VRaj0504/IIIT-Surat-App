@@ -11,6 +11,7 @@ import AcademicCalendarScreen from "../screens/AcademicCalendarScreen";
 import MessMenuScreen from "../screens/MessMenuScreen";
 import ThaliPassScreen from "../screens/ThaliPassScreen";
 import IdCardScreen from "../screens/IdCardScreen";
+import BlockedPeopleScreen from "../screens/BlockedPeopleScreen";
 import ScanThaliPassScreen from "../screens/ScanThaliPassScreen";
 import ResourcesScreen from "../screens/ResourcesScreen";
 import FacultyDirectoryScreen from "../screens/FacultyDirectoryScreen";
@@ -105,6 +106,11 @@ export default function RootNavigator() {
         name="IdCard"
         component={IdCardScreen}
         options={{ title: "Digital ID" }}
+      />
+      <Stack.Screen
+        name="BlockedPeople"
+        component={BlockedPeopleScreen}
+        options={{ title: "Blocked people" }}
       />
       <Stack.Screen
         name="ScanThaliPass"
