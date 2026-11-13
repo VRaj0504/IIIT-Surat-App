@@ -1,7 +1,7 @@
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getStorage } = require('firebase-admin/storage');
-const serviceAccount = require('./serviceAccountKey.json');
+const serviceAccount = require('../serviceAccountKey.json');
 
 const really = process.argv.includes('--yes');
 const beforeArg = process.argv.find((a) => a.startsWith('--before='));

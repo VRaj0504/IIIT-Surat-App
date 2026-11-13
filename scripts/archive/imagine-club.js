@@ -2,7 +2,7 @@
 // Dry run by default. Add --yes to make the change.
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
-const serviceAccount = require('./serviceAccountKey.json');
+const serviceAccount = require('../serviceAccountKey.json');
 
 const really = process.argv.includes('--yes');
 const PARENT = 'Imagine';

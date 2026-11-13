@@ -2,7 +2,7 @@
 
 const { initializeApp, cert } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
-initializeApp({ credential: cert(require("./serviceAccountKey.json")) });
+initializeApp({ credential: cert(require("../serviceAccountKey.json")) });
 const db = getFirestore();
 const APPLY = process.argv.includes("--apply");
 
