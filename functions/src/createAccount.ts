@@ -1,3 +1,4 @@
+import * as crypto from "crypto";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {getFirestore} from "firebase-admin/firestore";
 import {getAuth} from "firebase-admin/auth";
@@ -53,7 +54,8 @@ export const createAccount = onCall(
     }
     // Slow down scripts: per network and per email.
     const ip = callerIp(req);
-    await rateLimit(`signup-ip:${ip}`, 20, 60 * 60 * 1000, "Too many sign-ups from this network. Try again in an hour.");
+    const shard = parseInt(crypto.createHash("sha256").update(email).digest("hex").slice(0, 2), 16) % 10;
+    await rateLimit(`signup-ip:${ip}:${shard}`, 60, 60 * 60 * 1000, "Too many sign-ups from this network. Try again in an hour.");
     await rateLimit(`signup-email:${email}`, 5, 24 * 60 * 60 * 1000, "Too many tries for this email today. Try again tomorrow or use \"Forgot password\".");
 
     // Someone may have started an account with this email but never verified it (they can't, without the inbox).

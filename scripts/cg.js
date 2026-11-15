@@ -73,6 +73,14 @@ const MENU = {
       ask: async () => [await pick("Branch", BRANCHES), await pick("Admission year", YEARS), await pick("Section to set", SECTIONS), ...(await mode("Mode", [], ["--apply"]))] },
     { label: "Why can't a student see resources?", script: "why-resources-hidden.js", ask: async () => [await collegeEmail("Student email")] },
   ],
+  Resources: [
+    { label: "Straighten sideways PDFs", script: "straighten-pdfs.js",
+      ask: async () => {
+        const which = await pick("Which files", [{ name: "All PDFs", value: "all" }, { name: "Only files matching some text", value: "some" }]);
+        const only = which === "some" ? [`--only=${await text("Text in the title or file name")}`] : [];
+        return [...only, ...(await mode("Mode", [], ["--apply"]))];
+      } },
+  ],
   Clubs: [
     { label: "Create / update clubs (list in file)", script: "manage-clubs.js", ask: async () => inFile("manage-clubs.js") },
     { label: "Rename a club everywhere", script: "rename-club.js",

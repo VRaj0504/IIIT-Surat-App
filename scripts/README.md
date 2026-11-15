@@ -35,6 +35,12 @@ Pick a task with ↑ ↓ and Enter, then answer the questions. Before anything r
 | fill-section.js | Set the section for students in a batch who have none | `node scripts/fill-section.js CSE 2025 CSE2 [--apply]` |
 | why-resources-hidden.js | Explain why a student can't see resources | `node scripts/why-resources-hidden.js s@…` |
 
+**Resources**
+
+| Script | What it does | Example |
+|---|---|---|
+| straighten-pdfs.js | Find PDFs with sideways pages and turn them upright | `node scripts/straighten-pdfs.js [--only=text] [--apply]` |
+
 **Clubs**
 
 | Script | What it does | Example |

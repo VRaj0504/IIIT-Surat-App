@@ -5,16 +5,9 @@ const serviceAccount = require("./serviceAccountKey.json");
 initializeApp({ credential: cert(serviceAccount) });
 const db = getFirestore();
 
-const OFFICE = {
-  name: "Academic Office",
-  email: "office@iiitsurat.ac.in",
-  designation: "Academic Office",
-  teaching: false,
-};
-
-const MEDICAL_OFFICER = {
-  name: "Dr. Paresh Chhotala",
-  email: "medical.officer@iiitsurat.ac.in",
+const DOCTOR = {
+  name: "REPLACE_DOCTOR_NAME",
+  email: "REPLACE_DOCTOR_EMAIL@iiitsurat.ac.in",
   designation: "Medical Officer",
   teaching: false,
 };
@@ -40,6 +33,12 @@ const JOINT_REGISTRAR = {
   teaching: false,
 };
 
+const ADMINISTRATOR = {
+  name: "Shri. Kartik Patel",
+  email: "kartikp@iiitsurat.ac.in",
+  designation: "Administrator",
+  teaching: false,
+};
 
 const isSet = (p) => p && p.email && !p.email.startsWith("REPLACE_") && p.email.toLowerCase().endsWith("@iiitsurat.ac.in");
 const lower = (p) => ({ ...p, email: p.email.trim().toLowerCase() });
@@ -67,57 +66,55 @@ async function ensureFaculty(p, department) {
 }
 
 async function main() {
+  if (!isSet(DOCTOR)) {
+    console.error("Set DOCTOR.name and DOCTOR.email at the top of this script first.");
+    process.exit(1);
+  }
   const hods = HODS.filter(isSet).map(lower);
   if (hods.length === 0) {
     console.error("Add at least one HOD.");
     process.exit(1);
   }
-  for (const [label, p] of [["OFFICE", OFFICE], ["MEDICAL_OFFICER", MEDICAL_OFFICER], ["DEAN", DEAN], ["JOINT_REGISTRAR", JOINT_REGISTRAR]]) {
-    if (!isSet(p)) {
-      console.error(`Set ${label} (name and @iiitsurat.ac.in email) at the top of this file.`);
-      process.exit(1);
-    }
-  }
-  const office = lower(OFFICE);
-  const mo = lower(MEDICAL_OFFICER);
-  const dean = lower(DEAN);
-  const jr = lower(JOINT_REGISTRAR);
+  const doctor = lower(DOCTOR);
+  const dean = isSet(DEAN) ? lower(DEAN) : null;
+  const jr = isSet(JUNIOR_REGISTRAR) ? lower(JUNIOR_REGISTRAR) : null;
+  const administrator = isSet(ADMINISTRATOR) ? lower(ADMINISTRATOR) : null;
   const person = (p) => ({ name: p.name, email: p.email });
 
-  const hodByBranch = {};
+  const ref = db.collection("config").doc("medicalLeave");
+  const existing = (await ref.get()).data() ?? {};
+  const hodByBranch = { ...(existing.hodByBranch ?? {}) };
   for (const h of hods) if (["CSE", "ECE", "MNC"].includes(h.department)) hodByBranch[h.department] = person(h);
 
-  await db.collection("config").doc("medicalLeave").set({
-    flow: 2,
-    office: person(office),
-    medicalOfficer: person(mo),
+  await ref.set({
+    doctor: person(doctor),
     hods: hods.map((h) => ({ department: h.department, name: h.name, email: h.email })),
     hodEmails: hods.map((h) => h.email),
     hodByBranch,
-    dean: person(dean),
-    jr: person(jr),
-    lateLimitDays: 4,
+    ...(dean ? { dean: person(dean) } : {}),
+    ...(jr ? { jr: person(jr) } : {}),
+    ...(administrator ? { administrator: person(administrator) } : {}),
     updatedAt: new Date(),
   });
 
-  await ensureFaculty(office, "ADMIN");
-  await ensureFaculty(mo, "MEDICAL");
-  await ensureFaculty(dean, "ADMIN");
-  await ensureFaculty(jr, "ADMIN");
+  await ensureFaculty(doctor, "MEDICAL");
+  if (dean) await ensureFaculty(dean, "ADMIN");
+  if (jr) await ensureFaculty(jr, "ADMIN");
+  if (administrator) await ensureFaculty(administrator, "ADMIN");
   for (const h of hods) {
     const snap = await db.collection("allowlist").doc(h.email).get();
-    if (!snap.exists) console.warn(`  WARNING: HOD ${h.email} is not on the faculty allowlist, so they can't sign yet.`);
+    if (!snap.exists) console.warn(`  WARNING: HOD ${h.email} is not on the faculty allowlist, so they can't approve yet.`);
   }
 
-  console.log("\nMedical leave process saved:");
-  console.log(`  1. Student submits the form with reports -> Academic Office <${office.email}>`);
-  console.log(`  2. Office checks and forwards -> Medical Officer ${mo.name} <${mo.email}>`);
-  console.log(`  3. After the Medical Officer approves, these sign in any order:`);
-  console.log(`       HOD (student picks): ${hods.map((h) => `${h.name} (${h.department})`).join(", ")}`);
-  console.log(`       Associate Dean: ${dean.name} <${dean.email}>`);
-  console.log(`       Joint Registrar: ${jr.name} <${jr.email}>`);
-  console.log("  4. All approve -> classes in those dates count as present; signed form and bundle saved.");
-  console.log("  The office and Medical Officer sign in to the faculty portal with these emails.");
+  console.log("\nMedical leave chain saved:");
+  console.log(`  1. Doctor: ${doctor.name} <${doctor.email}>`);
+  console.log(`  2. HOD (student picks): ${hods.map((h) => `${h.name} (${h.department})`).join(", ")}`);
+  console.log(dean ? `  3. Dean: ${dean.name} <${dean.email}>` : "  3. Dean: not set yet (step skipped)");
+  console.log(jr ? `  4. Junior Registrar: ${jr.name} <${jr.email}>` : "  4. Junior Registrar: not set yet (step skipped)");
+  console.log(
+    administrator ? `  5. Administrator: ${administrator.name} <${administrator.email}>` : "  5. Administrator: not set yet (step skipped)",
+  );
+  console.log("  Then: classes in those dates count as present; each teacher can still change it.");
   process.exit(0);
 }
 
