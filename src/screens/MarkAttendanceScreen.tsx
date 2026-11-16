@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, memo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from "react";
 import {
   View,
   Text,
@@ -27,10 +27,15 @@ import { SelectField, SheetPicker, FieldLabel } from "../components/ui";
 import { subscribeToFacultyTimetable, FacultyScheduleEntry } from "../firebase/timetableService";
 import { mergeContiguousSlots, toMinutes } from "../utils/timetable";
 import { RollCallCard } from "../components/attendance/RollCall";
+import RollGrid from "../components/attendance/RollGrid";
+import RollNumberPad from "../components/attendance/RollNumberPad";
 import { excusalCovers, getApprovedExcusalsOn, rangeFor } from "../firebase/eventExcusalService";
 import { rosterForYear } from "../firebase/rosterCache";
 
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+
+const SEG_LABEL = { grid: "Grid", pad: "Type", roll: "Roll call", list: "List" } as const;
+const SEG_ICON = { grid: "grid-outline", pad: "keypad-outline", roll: "person-outline", list: "list-outline" } as const;
 
 type ClassGroup = {
   key: string;
@@ -154,7 +159,10 @@ export default function MarkAttendanceScreen() {
   const [rosterLoading, setRosterLoading] = useState(false);
   const [absentSet, setAbsentSet] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
-  const [mode, setMode] = useState<"roll" | "list">("roll");
+  const [mode, setMode] = useState<"grid" | "pad" | "roll" | "list">("grid");
+  const autoStart = useRef(false);
+  const autoTried = useRef(false);
+  const [copying, setCopying] = useState(false);
   const [phase, setPhase] = useState<"mark" | "review" | "done">("mark");
   const [cursor, setCursor] = useState(0);
   const [marks, setMarks] = useState<Map<string, "P" | "A">>(new Map());
@@ -201,10 +209,22 @@ export default function MarkAttendanceScreen() {
   const applyPick = useCallback((e: FacultyScheduleEntry) => {
     const year = admissionYearFor(e.semester);
     if (year === null) return;
+    autoStart.current = true;
     setPick({ year, branch: e.branch, semester: e.semester, section: e.section, subjectCode: e.subjectCode });
     setDate(todayDateString());
     setSelectedYear(year);
   }, []);
+
+  useEffect(() => {
+    if (autoTried.current || !todays.length || selectedSubject || pick) return;
+    autoTried.current = true;
+    const current = todays.find((e) => {
+      const a = toMinutes(e.startTime);
+      const b = toMinutes(e.endTime);
+      return a <= nowMin && nowMin < b + 15;
+    });
+    if (current) applyPick(current);
+  }, [todays]);
 
   useEffect(() => {
     if (!pick || classesLoading || optionsYear !== pick.year) return;
@@ -334,15 +354,18 @@ export default function MarkAttendanceScreen() {
         if (existing) {
           setMarks(new Map(list.map((r) => [r.enrollmentNumber, abs.has(r.enrollmentNumber) ? "A" : "P"] as [string, "P" | "A"])));
           setCursor(list.length);
-          setMode("list");
           setPhase("review");
         } else {
           setMarks(new Map());
           setCursor(0);
-          setMode("roll");
           setPhase("mark");
         }
+        setMode((m) => (m === "roll" && existing ? "grid" : m));
         setRosterStatus("ready");
+        if (autoStart.current && list.length) {
+          autoStart.current = false;
+          setSetupOpen(false);
+        }
       })
       .catch((err) => {
         if (!live) return;
@@ -402,6 +425,29 @@ export default function MarkAttendanceScreen() {
     setCursor(n);
     setPhase("mark");
   }, [cursor, roster]);
+
+  const copyPrev = useCallback(async () => {
+    if (!selectedClass || selectedYear === null || !selectedSubject || lecture < 2) return;
+    setCopying(true);
+    try {
+      const metas = await Promise.all(
+        selectedClass.branches.map((branch) =>
+          getSessionMeta({ branch, admissionYear: selectedYear, section: selectedClass.section, subjectCode: selectedSubject.code, date: date.trim(), lecture: lecture - 1 }),
+        ),
+      );
+      const regs = new Set(roster.map((r) => r.enrollmentNumber));
+      const abs = new Set(metas.flatMap((m) => m?.absent ?? []).filter((r) => regs.has(r)));
+      setAbsentSet(abs);
+      setMarks(new Map(roster.map((r) => [r.enrollmentNumber, abs.has(r.enrollmentNumber) ? "A" : "P"] as [string, "P" | "A"])));
+      setCursor(roster.length);
+      setPhase("review");
+      if (mode === "roll") setMode("grid");
+    } catch (err: any) {
+      Alert.alert("Couldn't copy", err.message ?? "Please try again.");
+    } finally {
+      setCopying(false);
+    }
+  }, [selectedClass, selectedYear, selectedSubject, lecture, date, roster, mode]);
 
   const restPresent = useCallback(() => {
     setMarks((prev) => {
@@ -490,7 +536,6 @@ export default function MarkAttendanceScreen() {
     }
   };
 
-  // Students on an approved event excusal for this class: they can be marked absent and it still counts as attended.
   const [onDuty, setOnDuty] = useState<Map<string, string>>(new Map());
   useEffect(() => {
     const code = selectedSubject?.code;
@@ -719,9 +764,16 @@ export default function MarkAttendanceScreen() {
                 </Text>
               )}
 
+              {phase !== "done" && lecture > 1 && savedLectures.includes(lecture - 1) && !wasSaved && (
+                <TouchableOpacity style={styles.copyBtn} onPress={copyPrev} disabled={copying} accessibilityRole="button">
+                  {copying ? <ActivityIndicator size="small" color={colors.primary} /> : <Ionicons name="copy-outline" size={16} color={colors.primary} />}
+                  <Text style={styles.copyText}>Same absentees as {lecture === 2 ? "1st" : "2nd"} class</Text>
+                </TouchableOpacity>
+              )}
+
               {phase !== "done" && (
                 <View style={styles.segment}>
-                  {(["roll", "list"] as const).map((m) => (
+                  {(["grid", "pad", "roll", "list"] as const).map((m) => (
                     <TouchableOpacity
                       key={m}
                       style={[styles.segBtn, mode === m && styles.segBtnOn]}
@@ -730,8 +782,8 @@ export default function MarkAttendanceScreen() {
                         if (m === "roll" && cursor >= roster.length) setPhase("review");
                       }}
                     >
-                      <Ionicons name={m === "roll" ? "person-outline" : "list-outline"} size={15} color={mode === m ? colors.onPrimary : colors.textSecondary} />
-                      <Text style={[styles.segText, mode === m && styles.segTextOn]}>{m === "roll" ? "One by one" : "Full list"}</Text>
+                      <Ionicons name={SEG_ICON[m]} size={15} color={mode === m ? colors.onPrimary : colors.textSecondary} />
+                      <Text style={[styles.segText, mode === m && styles.segTextOn]}>{SEG_LABEL[m]}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -754,7 +806,7 @@ export default function MarkAttendanceScreen() {
                   )}
                   <Text style={styles.doneSync}>Students see it now, and it's already in the register on the faculty portal.</Text>
                   <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg, alignSelf: "stretch" }}>
-                    <TouchableOpacity style={[styles.secondaryBtn, { flex: 1 }]} onPress={() => { setPhase("review"); setMode("list"); }}>
+                    <TouchableOpacity style={[styles.secondaryBtn, { flex: 1 }]} onPress={() => { setPhase("review"); setMode("grid"); }}>
                       <Text style={styles.secondaryText}>Edit</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -769,6 +821,10 @@ export default function MarkAttendanceScreen() {
                     </TouchableOpacity>
                   </View>
                 </View>
+              ) : mode === "grid" ? (
+                <RollGrid students={roster} absent={absentSet} onDuty={onDuty} onToggle={toggleAbsent} />
+              ) : mode === "pad" ? (
+                <RollNumberPad students={roster} absent={absentSet} onToggle={toggleAbsent} />
               ) : mode === "roll" && phase === "mark" ? (
                 <RollCallCard students={roster} index={Math.min(cursor, roster.length - 1)} marks={marks} absentCount={absentSet.size} onMark={markOne} onUndo={undo} onRestPresent={restPresent} onDuty={onDuty} />
               ) : mode === "roll" ? (
@@ -834,7 +890,7 @@ export default function MarkAttendanceScreen() {
     </View>
   );
 
-  const canSave = selectedSubject && !dateError && !setupOpen && !rosterLoading && roster.length > 0 && phase !== "done" && (mode === "list" || phase === "review");
+  const canSave = selectedSubject && !dateError && !setupOpen && !rosterLoading && roster.length > 0 && phase !== "done" && (mode !== "roll" || phase === "review");
   const canStart = setupOpen && !!selectedSubject && !dateError && !rosterLoading && roster.length > 0;
 
   return (
@@ -1019,9 +1075,11 @@ const styles = StyleSheet.create({
   changeBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.full, backgroundColor: "rgba(255,255,255,0.18)" },
   changeText: { color: colors.onPrimary, fontWeight: "700", fontSize: 13 },
   segment: { flexDirection: "row", backgroundColor: colors.surface, borderRadius: radius.full, padding: 4, marginTop: spacing.md, borderWidth: 1, borderColor: colors.border },
-  segBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: radius.full },
+  segBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, minHeight: 40, paddingHorizontal: 4, borderRadius: radius.full },
+  copyBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 44, marginTop: spacing.md, borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.surface },
+  copyText: { fontSize: 14, fontWeight: "700", color: colors.primary },
   segBtnOn: { backgroundColor: colors.primary },
-  segText: { fontSize: 14, fontWeight: "700", color: colors.textSecondary },
+  segText: { fontSize: 12.5, fontWeight: "700", color: colors.textSecondary },
   segTextOn: { color: colors.onPrimary },
   reviewCard: { marginTop: spacing.md, backgroundColor: colors.surface, borderRadius: 24, padding: spacing.lg, borderWidth: 1.5, borderColor: colors.border },
   reviewTitle: { fontSize: 18, fontWeight: "800", color: colors.textPrimary },

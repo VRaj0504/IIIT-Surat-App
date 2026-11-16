@@ -10,8 +10,9 @@ import { useAuth } from "../context/AuthContext";
 import { subscribeToNotices, deleteNotice, Notice } from "../firebase/noticesService";
 import ContentMenu from "../components/ContentMenu";
 import { openSafeUrl } from "../utils/safeLink";
-import LoadingSpinner from "../components/LoadingSpinner";
+import SkeletonList from "../components/Skeleton";
 import TapCard from "../components/TapCard";
+import { useTabBarSpace } from "../utils/tabBarSpace";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 type Category = Notice["category"];
@@ -123,6 +124,7 @@ function NoticeCard({
 }
 
 export default function NoticesScreen() {
+  const tabSpace = useTabBarSpace();
   const navigation = useNavigation<NavProp>();
   const route = useRoute<any>();
   const { user, profile } = useAuth();
@@ -232,12 +234,12 @@ export default function NoticesScreen() {
         )}
 
         {loading ? (
-          <LoadingSpinner style={{ marginTop: spacing.xl }} />
+          <SkeletonList count={3} lines={2} style={{ marginTop: spacing.md, paddingHorizontal: spacing.md }} />
         ) : (
           <FlatList
             data={shown}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.list}
+            contentContainerStyle={[styles.list, { paddingBottom: tabSpace }]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"

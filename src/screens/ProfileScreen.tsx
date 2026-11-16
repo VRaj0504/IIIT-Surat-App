@@ -15,6 +15,7 @@ import { openFacultyPortal } from "../utils/portal";
 import { restartApp } from "../utils/restartApp";
 import { usePlusAccess } from "../hooks/usePlus";
 import { PRIVACY_POLICY_URL } from "../config/college";
+import { useTabBarSpace } from "../utils/tabBarSpace";
 
 export const PRIVACY_URL: string = PRIVACY_POLICY_URL;
 
@@ -60,6 +61,7 @@ function initialsOf(name: string): string {
 }
 
 export default function ProfileScreen() {
+  const tabSpace = useTabBarSpace();
   const { profile, logOut, previewRole, setPreviewRole } = useAuth();
   const navigation = useNavigation<NavProp>();
   const isStudent = profile?.role === "student";
@@ -154,7 +156,7 @@ export default function ProfileScreen() {
   return (
     <View style={styles.page}>
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: tabSpace }]} showsVerticalScrollIndicator={false}>
           <Text style={styles.h1}>Profile</Text>
 
           <View style={styles.hero}>

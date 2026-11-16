@@ -5,7 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors, spacing, radius, typography } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
-import LoadingSpinner from "../components/LoadingSpinner";
+import SkeletonList from "../components/Skeleton";
 import ScreenHeader from "../components/ScreenHeader";
 import {
   subscribeToAnnouncements,
@@ -252,7 +252,7 @@ export default function AnnouncementsScreen() {
         </View>
 
         {loading ? (
-          <LoadingSpinner style={{ marginTop: spacing.xl }} />
+          <SkeletonList count={3} lines={2} style={{ marginTop: spacing.md, paddingHorizontal: spacing.md }} />
         ) : (
           <KeyboardAwareFlatList
             data={announcements}

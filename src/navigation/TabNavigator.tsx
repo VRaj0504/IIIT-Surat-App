@@ -3,10 +3,12 @@ import { View, Text, Pressable, StyleSheet, Animated, PanResponder, Platform } f
 import { createBottomTabNavigator, BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme/theme';
 import type { RootTabParamList } from './types';
 import { useWebLayout } from '../utils/useWebLayout';
+import { tabBarBottom } from '../utils/tabBarSpace';
 
 import HomeScreen from '../screens/HomeScreen';
 import TimetableScreen from '../screens/TimetableScreen';
@@ -139,7 +141,15 @@ function AppTabBar({ state, navigation }: BottomTabBarProps) {
   const lit = hover ?? state.index;
 
   return (
-    <View pointerEvents="box-none" style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+    <View pointerEvents="box-none" style={[styles.wrap, { paddingBottom: tabBarBottom(insets.bottom) }]}>
+      {Platform.OS !== 'web' && (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[colors.background + '00', colors.background, colors.background]}
+          locations={[0, 0.45, 1]}
+          style={[styles.fade, { height: tabBarBottom(insets.bottom) + 56 }]}
+        />
+      )}
       <View style={styles.shadow}>
         <View style={styles.glass} {...pan.panHandlers}>
           {Platform.OS === 'ios' ? (
@@ -222,6 +232,7 @@ export default function TabNavigator() {
 }
 
 const styles = StyleSheet.create({
+  fade: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   wrap: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'transparent', paddingTop: 8, paddingHorizontal: 20 },
   shadow: {
     borderRadius: 32,

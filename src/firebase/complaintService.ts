@@ -16,6 +16,8 @@ import {
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db } from "./firestore";
 import { storage } from "./storage";
+import { imageBlob } from "../utils/compressImage";
+import { persisted } from "./liveCache";
 
 export type IssueType = "complaint" | "doubt";
 export type ComplaintCategory = "Facilities" | "Harassment" | "Academic" | "Other";
@@ -71,13 +73,14 @@ export async function submitComplaint(params: {
   photoUris?: string[];
 }): Promise<void> {
   const docRef = doc(collection(db, COLLECTION));
-  const photoPaths: string[] = [];
-  for (const [i, uri] of (params.photoUris ?? []).slice(0, 2).entries()) {
-    const blob = await (await fetch(uri)).blob();
-    const path = `complaints/${params.studentUid}/${docRef.id}/${i + 1}.jpg`;
-    await uploadBytes(ref(storage, path), blob, { contentType: "image/jpeg" });
-    photoPaths.push(path);
-  }
+  const photoPaths = await Promise.all(
+    (params.photoUris ?? []).slice(0, 2).map(async (uri, i) => {
+      const blob = await imageBlob(uri);
+      const path = `complaints/${params.studentUid}/${docRef.id}/${i + 1}.jpg`;
+      await uploadBytes(ref(storage, path), blob, { contentType: "image/jpeg" });
+      return path;
+    }),
+  );
   await setDoc(docRef, {
     ...(photoPaths.length ? { photoPaths } : {}),
     studentUid: params.studentUid,
@@ -108,24 +111,29 @@ export function subscribeToMyComplaints(
     where("studentUid", "==", studentUid),
     orderBy("createdAt", "desc"),
   );
-  return onSnapshot(
+  return persisted(`mycomplaints:${studentUid}`, (update) => onSnapshot(
     q,
     (snapshot) => {
-      onUpdate(snapshot.docs.map((d) => withType(d.id, d.data() as Omit<Complaint, "id">)));
+      update(snapshot.docs.map((d) => withType(d.id, d.data() as Omit<Complaint, "id">)));
     },
     (err) => {
-      // eslint-disable-next-line no-console
       console.error("[complaintService] subscribeToMyComplaints error:", err);
     },
-  );
+  ), onUpdate);
 }
 
 export function subscribeToAllComplaints(
   viewer: { email: string; isAdmin: boolean },
   onUpdate: (complaints: Complaint[]) => void,
 ): () => void {
+  return persisted(`allcomplaints:${viewer.email}:${viewer.isAdmin ? 1 : 0}`, (update) => listenAllComplaints(viewer, update), onUpdate);
+}
+
+function listenAllComplaints(
+  viewer: { email: string; isAdmin: boolean },
+  onUpdate: (complaints: Complaint[]) => void,
+): () => void {
   const onErr = (err: unknown) => {
-    // eslint-disable-next-line no-console
     console.error("[complaintService] subscribeToAllComplaints error:", err);
   };
   const parts = new Map<string, Complaint[]>();

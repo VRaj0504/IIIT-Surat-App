@@ -2,6 +2,7 @@ import { ref, uploadBytes } from "firebase/storage";
 import { httpsCallable } from "firebase/functions";
 import { storage } from "./storage";
 import { functions } from "./functionsClient";
+import { imageBlob } from "../utils/compressImage";
 
 export type PosterExtraction = {
   rawText: string;
@@ -16,8 +17,7 @@ export async function scanPoster(localUri: string, uid: string): Promise<PosterE
   const storagePath = `posterScans/${uid}/${Date.now()}.jpg`;
   const fileRef = ref(storage, storagePath);
 
-  const response = await fetch(localUri);
-  const blob = await response.blob();
+  const blob = await imageBlob(localUri, 2000);
   await uploadBytes(fileRef, blob, { contentType: "image/jpeg" });
 
   const extractPosterInfo = httpsCallable<

@@ -30,6 +30,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { getCurrentSemester } from "../utils/academicInfo";
 import { KeyboardAwareScrollView } from "../components/KeyboardAware";
+import { imageBlob } from "../utils/compressImage";
 
 export default function EditProfileScreen() {
   const navigation = useNavigation();
@@ -108,8 +109,7 @@ export default function EditProfileScreen() {
     try {
 
       const photoRef = ref(storage, `profilePhotos/${profile.uid}/photo.jpg`);
-      const response = await fetch(result.assets[0].uri);
-      const blob = await response.blob();
+      const blob = await imageBlob(result.assets[0].uri, 600);
       await uploadBytes(photoRef, blob, { contentType: "image/jpeg" });
       const url = await getDownloadURL(photoRef);
       await updatePhoto(url);

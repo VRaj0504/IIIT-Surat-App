@@ -71,19 +71,21 @@ export default function MessMenuScreen() {
               <Text style={styles.itemText}>No menu set for this day yet.</Text>
             </View>
           ) : (Object.keys(dayMenu.meals) as MealType[]).map((meal) => (
-            <View key={meal} style={styles.mealCard}>
-              <View style={styles.mealHeader}>
-                <Ionicons
-                  name={mealIcons[meal]}
-                  size={20}
-                  color={colors.primary}
-                />
-                <Text style={styles.mealTitle}>{meal}</Text>
+            <View key={meal} style={styles.heroCard}>
+              <View style={styles.heroTop}>
+                <View style={styles.heroIcon}>
+                  <Ionicons name={mealIcons[meal]} size={20} color={colors.onPrimary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.heroLabel}>{selectedIndex === todayIndex ? `Today's ${meal.toLowerCase()}` : `${dayMenu.day}'s ${meal.toLowerCase()}`}</Text>
+                  <Text style={styles.heroTime}>12:00 – 2:30 PM · Unlimited Thali</Text>
+                </View>
               </View>
-              <View style={styles.itemsWrap}>
+              <View style={styles.dishList}>
                 {dayMenu.meals[meal].map((item) => (
-                  <View key={item} style={styles.itemPill}>
-                    <Text style={styles.itemText}>{item}</Text>
+                  <View key={item} style={styles.dishRow}>
+                    <View style={styles.dishDot} />
+                    <Text style={styles.dishText}>{item}</Text>
                   </View>
                 ))}
               </View>
@@ -122,11 +124,12 @@ const styles = StyleSheet.create({
   dayTabs: { flexDirection: "row", gap: spacing.xs, marginBottom: spacing.md },
   dayTab: {
     flex: 1,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    minHeight: 44,
+    justifyContent: "center",
     borderRadius: radius.full,
     backgroundColor: colors.surface,
-    ...clayShadowSoft,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: "center",
   },
   dayTabActive: {
@@ -151,10 +154,11 @@ const styles = StyleSheet.create({
   mealsList: { paddingBottom: spacing.xl },
   mealCard: {
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     padding: spacing.md,
     marginBottom: spacing.sm,
-    ...clayShadowSoft,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   mealHeader: {
     flexDirection: "row",
@@ -163,6 +167,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   mealTitle: { ...typography.h3, color: colors.textPrimary },
+  heroCard: { backgroundColor: colors.primary, borderRadius: 24, padding: spacing.lg, marginBottom: spacing.md },
+  heroTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  heroIcon: { width: 40, height: 40, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.16)", alignItems: "center", justifyContent: "center" },
+  heroLabel: { fontSize: 18, fontWeight: "800", color: colors.onPrimary },
+  heroTime: { fontSize: 12.5, color: colors.heroMuted, marginTop: 2 },
+  dishList: { marginTop: spacing.md, gap: 10 },
+  dishRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  dishDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.heroMuted },
+  dishText: { fontSize: 15.5, fontWeight: "600", color: colors.onPrimary },
   itemsWrap: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
   itemPill: {
     backgroundColor: colors.background,

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from "react";
-import LoadingSpinner from "../components/LoadingSpinner";
+import SkeletonList from "../components/Skeleton";
 import {
   KeyboardAvoidingView,
   View,
@@ -350,7 +350,7 @@ export default function SubmitComplaintScreen() {
 
           <Text style={styles.historyHeader}>Your Submissions</Text>
           {historyLoading ? (
-            <LoadingSpinner style={{ marginTop: spacing.md }} />
+            <SkeletonList count={2} lines={1} avatar={false} />
           ) : myComplaints.length === 0 ? (
             <Text style={styles.emptyText}>Nothing submitted yet.</Text>
           ) : (
@@ -382,39 +382,46 @@ export default function SubmitComplaintScreen() {
 
 const styles = StyleSheet.create({
   photoRow: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
-  photoThumb: { width: 76, height: 76, borderRadius: 14, backgroundColor: colors.surfaceAlt },
+  photoThumb: { width: 88, height: 88, borderRadius: 16, backgroundColor: colors.surfaceAlt },
   photoRemove: { position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: 11, backgroundColor: colors.danger, alignItems: "center", justifyContent: "center" },
-  photoAdd: { width: 76, height: 76, borderRadius: 14, borderWidth: 1.5, borderStyle: "dashed", borderColor: colors.primary + "66", alignItems: "center", justifyContent: "center", gap: 2 },
+  photoAdd: { width: 88, height: 88, borderRadius: 14, borderWidth: 1.5, borderStyle: "dashed", borderColor: colors.primary + "66", alignItems: "center", justifyContent: "center", gap: 2 },
   photoAddText: { fontSize: 11, fontWeight: "700", color: colors.primary },
   container: { flex: 1 },
   scrollContent: { padding: spacing.lg, paddingBottom: spacing.xl * 2 },
   header: { ...typography.h2, color: colors.textPrimary, marginBottom: spacing.xs },
   subheader: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.sm },
-  label: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.md, marginBottom: 4, fontWeight: "600" },
+  label: { fontSize: 13, color: colors.textPrimary, marginTop: spacing.lg, marginBottom: 8, fontWeight: "800" },
   input: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    minHeight: 50,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: 12,
     ...typography.body,
     color: colors.textPrimary,
   },
-  textArea: { minHeight: 100, textAlignVertical: "top" },
+  textArea: { minHeight: 120, textAlignVertical: "top" },
   categoryRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   categoryChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    minHeight: 40,
+    justifyContent: "center",
+    paddingHorizontal: 16,
     borderRadius: radius.full,
     backgroundColor: colors.surface,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
   },
   typeChip: {
+    flex: 1,
+    minHeight: 46,
+    alignItems: "center",
+    justifyContent: "center",
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
     borderRadius: radius.full,
     backgroundColor: colors.surface,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
   },
   categoryChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
@@ -424,10 +431,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.surface,
     borderRadius: radius.md,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
+    minHeight: 50,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    paddingVertical: 12,
   },
   dropdownValue: { ...typography.body, color: colors.textPrimary, fontWeight: "600" },
   dropdownPlaceholder: { ...typography.body, color: colors.textSecondary },
@@ -454,12 +462,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   facultyOptionText: { ...typography.body, color: colors.textPrimary },
-  categoryText: { ...typography.body, color: colors.textSecondary, fontWeight: "600" },
+  categoryText: { fontSize: 14, color: colors.textPrimary, fontWeight: "700" },
   categoryTextActive: { color: colors.surface },
   submitButton: {
     backgroundColor: colors.primary,
     borderRadius: radius.full,
-    paddingVertical: spacing.md,
+    minHeight: 54,
+    justifyContent: "center",
     alignItems: "center",
     marginTop: spacing.xl,
     ...clayShadowSoft,
@@ -468,7 +477,7 @@ const styles = StyleSheet.create({
   submitButtonText: { color: colors.surface, fontWeight: "700", fontSize: 16 },
   historyHeader: { ...typography.h3, color: colors.textPrimary, marginTop: spacing.xl, marginBottom: spacing.sm },
   emptyText: { ...typography.body, color: colors.textSecondary },
-  historyCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm, ...clayShadowSoft },
+  historyCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
   historyHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   historyTitle: { ...typography.body, color: colors.textPrimary, fontWeight: "600", flex: 1 },
   historySubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },

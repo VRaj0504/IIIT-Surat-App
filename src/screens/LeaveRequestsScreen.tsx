@@ -4,7 +4,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors, spacing, radius } from "../theme/theme";
 import { Card, EmptyState, PrimaryButton, Segmented, StatusPill, Timeline, TimelineStep, dateRange, ui } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
-import LoadingSpinner from "../components/LoadingSpinner";
+import SkeletonList from "../components/Skeleton";
 import {
   subscribeToLeaveRequestsForFaculty,
   subscribeToMedicalLeavesFor,
@@ -466,7 +466,7 @@ export default function LeaveRequestsScreen() {
   return (
     <View style={styles.screen}>
       {loading ? (
-        <LoadingSpinner style={{ marginTop: spacing.xl }} />
+        <SkeletonList count={3} lines={2} style={{ marginTop: spacing.md, paddingHorizontal: spacing.md }} />
       ) : (
         <KeyboardAwareScrollView contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled">
           <Segmented

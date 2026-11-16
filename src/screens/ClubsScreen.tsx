@@ -12,6 +12,7 @@ import { getClubIcon } from '../data/clubIcons';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ClubGlyph from '../components/ClubGlyph';
 import TapCard from '../components/TapCard';
+import { useTabBarSpace } from "../utils/tabBarSpace";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -33,6 +34,7 @@ function eventWhen(ts: ClubEvent['dateTime']): string {
 }
 
 export default function ClubsScreen() {
+  const tabSpace = useTabBarSpace();
   const navigation = useNavigation<NavProp>();
   const { profile } = useAuth();
 
@@ -198,7 +200,7 @@ export default function ClubsScreen() {
           data={loadingClubs ? [] : shown.length % 2 ? [...shown, { id: '__pad' } as Club] : shown}
           keyExtractor={(club) => club.id}
           numColumns={2}
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={[styles.scroll, { paddingBottom: tabSpace }]}
           columnWrapperStyle={styles.gridRow}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"

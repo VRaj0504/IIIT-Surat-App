@@ -157,13 +157,32 @@ export default function ThaliPassScreen() {
           </>
         ) : (
           <View style={styles.emptyContainer}>
-            <Ionicons name="close-circle-outline" size={48} color={colors.textSecondary} />
-            <Text style={styles.emptyText}>
-              You don't have an active Unlimited Thali subscription this semester.
-            </Text>
-            <Text style={styles.emptySubtext}>
-              If you've already paid, check with the canteen — the list may not be updated yet.
-            </Text>
+            <View style={styles.emptyPass}>
+              <View style={styles.emptyPassTop}>
+                <Text style={styles.emptyPassLabel}>UNLIMITED THALI</Text>
+                <Ionicons name="restaurant-outline" size={20} color={colors.heroMuted} />
+              </View>
+              <View style={styles.emptyQr}>
+                <Ionicons name="qr-code-outline" size={56} color={colors.heroMuted} />
+              </View>
+              <Text style={styles.emptyPassName}>Not active this semester</Text>
+            </View>
+            <Text style={styles.emptyText}>Your pass appears here once you subscribe</Text>
+            <View style={styles.steps}>
+              {[
+                "Pay for the semester's Unlimited Thali through the college payment link.",
+                "The mess office adds you to the subscriber list.",
+                "Show this QR at the canteen door. Staff scan it, and you're in.",
+              ].map((t, i) => (
+                <View key={i} style={styles.step}>
+                  <View style={styles.stepNum}>
+                    <Text style={styles.stepNumText}>{i + 1}</Text>
+                  </View>
+                  <Text style={styles.stepText}>{t}</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={styles.emptySubtext}>Already paid? The list may not be updated yet. Check with the mess office.</Text>
           </View>
         )}
         </ScrollView>
@@ -248,7 +267,17 @@ const styles = StyleSheet.create({
   mealPillLabel: { fontSize: 12, color: colors.textPrimary, fontWeight: "600" },
   mealPillStatus: { fontSize: 11, fontWeight: "700" },
 
-  emptyContainer: { alignItems: "center", gap: spacing.sm, marginTop: spacing.xl * 2, paddingHorizontal: spacing.xl },
-  emptyText: { ...typography.body, color: colors.textPrimary, textAlign: "center", fontWeight: "600" },
+  emptyContainer: { gap: spacing.md, marginTop: spacing.lg, paddingHorizontal: spacing.md },
+  emptyPass: { borderRadius: 24, padding: spacing.lg, backgroundColor: colors.primary, opacity: 0.55, alignItems: "center", gap: spacing.md },
+  emptyPassTop: { alignSelf: "stretch", flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  emptyPassLabel: { fontSize: 11.5, fontWeight: "800", letterSpacing: 1.4, color: colors.heroMuted },
+  emptyQr: { width: 120, height: 120, borderRadius: 18, borderWidth: 2, borderStyle: "dashed", borderColor: colors.heroMuted, alignItems: "center", justifyContent: "center" },
+  emptyPassName: { fontSize: 16, fontWeight: "800", color: colors.onPrimary },
+  emptyText: { ...typography.h3, color: colors.textPrimary, textAlign: "center", marginTop: spacing.sm },
+  steps: { gap: spacing.sm, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
+  step: { flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" },
+  stepNum: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.badge.blue.bg, alignItems: "center", justifyContent: "center" },
+  stepNumText: { fontSize: 12, fontWeight: "800", color: colors.badge.blue.fg },
+  stepText: { flex: 1, fontSize: 14, lineHeight: 20, color: colors.textPrimary },
   emptySubtext: { ...typography.caption, color: colors.textSecondary, textAlign: "center" },
 });

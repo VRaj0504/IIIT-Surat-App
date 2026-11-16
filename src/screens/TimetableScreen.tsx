@@ -32,6 +32,7 @@ import {
 } from "../firebase/classChangesService";
 import DesktopWeek from "../components/web/DesktopWeek";
 import { useWebLayout } from "../utils/useWebLayout";
+import { useTabBarSpace } from "../utils/tabBarSpace";
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
@@ -103,6 +104,7 @@ function buildRows(slots: Slot[], isToday: boolean, nowMin: number): Row[] {
 }
 
 export default function TimetableScreen() {
+  const tabSpace = useTabBarSpace();
   const { profile, previewRole, user } = useAuth();
   const { isDesktop } = useWebLayout();
   const navigation = useNavigation<any>();
@@ -334,7 +336,7 @@ export default function TimetableScreen() {
                 </Text>
               </View>
             ) : (
-              <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+              <ScrollView contentContainerStyle={[styles.list, { paddingBottom: tabSpace }]} showsVerticalScrollIndicator={false}>
                 {isFaculty && <Text style={styles.facultyHint}>Tap a class to cancel it or change its room for this day.</Text>}
                 {rows.map((row, i) => {
                   if (row.kind === "gap") {

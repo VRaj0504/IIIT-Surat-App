@@ -36,6 +36,7 @@ import { ATTENDANCE_TARGET } from '../firebase/attendanceService';
 import { subscribeToLeaveRequestsForFaculty, subscribeToMyTeacherAcks } from '../firebase/leaveService';
 import { subscribeMedicalQueue } from '../firebase/medicalService';
 import { subscribeToClassChanges, findClassChange, isoDate, ClassChange } from '../firebase/classChangesService';
+import { useTabBarSpace } from "../utils/tabBarSpace";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -235,6 +236,7 @@ function usePendingLeaves(email: string | null): number | null {
 }
 
 function MobileHome() {
+  const tabSpace = useTabBarSpace();
   const { isDesktop } = useWebLayout();
   const navigation = useNavigation<NavProp>();
   const { profile, previewRole, setInCabin, user } = useAuth();
@@ -431,7 +433,7 @@ function MobileHome() {
     <View style={styles.page}>
       <SafeAreaView style={styles.container} edges={['top']}>
         <ScrollView
-          contentContainerStyle={[styles.scrollContent, isDesktop && styles.scrollDesktop]}
+          contentContainerStyle={[styles.scrollContent, !isDesktop && { paddingBottom: tabSpace }, isDesktop && styles.scrollDesktop]}
           showsVerticalScrollIndicator={false}
         >
 

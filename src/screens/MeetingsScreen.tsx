@@ -4,7 +4,7 @@ import { colors, spacing } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { localIso, subscribeMyMeetings, type Meeting } from "../firebase/meetingsService";
 import MeetingCard from "../components/MeetingCard";
-import LoadingSpinner from "../components/LoadingSpinner";
+import SkeletonList from "../components/Skeleton";
 import { EmptyState } from "../components/ui";
 
 export default function MeetingsScreen() {
@@ -15,7 +15,12 @@ export default function MeetingsScreen() {
     return subscribeMyMeetings(user.uid, setItems, 14);
   }, [user]);
 
-  if (!user || items === null) return <LoadingSpinner />;
+  if (!user || items === null)
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background, padding: spacing.md }}>
+        <SkeletonList count={3} lines={1} />
+      </View>
+    );
   const today = localIso();
   const upcoming = items.filter((m) => m.date >= today);
   const past = items.filter((m) => m.date < today).reverse();

@@ -1,49 +1,86 @@
-import React, { useState, useEffect, useCallback, memo } from "react";
+import React, { useState, useEffect, useCallback, memo, useMemo } from "react";
 import ComplaintPhotos from "../components/ComplaintPhotos";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Alert, TextInput, ScrollView, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { colors, spacing, radius, typography, clayShadowSoft } from "../theme/theme";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { colors, spacing, radius, typography } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
-import LoadingSpinner from "../components/LoadingSpinner";
 import { subscribeToAllComplaints, resolveComplaint, Complaint } from "../firebase/complaintService";
 import { KeyboardAwareFlatList } from "../components/KeyboardAware";
+import { Segmented, StatusPill, EmptyState } from "../components/ui";
+import SkeletonList from "../components/Skeleton";
 
-const statusColors: Record<Complaint["status"], string> = {
-  pending: colors.warning,
-  resolved: colors.success,
-  rejected: colors.danger,
-};
+type TypeFilter = "all" | "complaint" | "doubt";
+type Tab = "todo" | "done";
+
+function ago(c: Complaint): string {
+  const s = (c.createdAt as any)?.seconds;
+  if (!s) return "";
+  const mins = Math.floor((Date.now() / 1000 - s) / 60);
+  if (mins < 60) return `${Math.max(1, mins)} min ago`;
+  const h = Math.floor(mins / 60);
+  if (h < 24) return `${h} hr ago`;
+  const d = Math.floor(h / 24);
+  return d === 1 ? "Yesterday" : d < 7 ? `${d} days ago` : new Date(s * 1000).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
+const initials = (n: string) =>
+  n
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
 
 const ComplaintRow = memo(function ComplaintRow({
   item,
   onResolve,
 }: {
   item: Complaint;
-  onResolve: (item: Complaint, status: "resolved" | "rejected", remark: string) => void;
+  onResolve: (item: Complaint, status: "resolved" | "rejected", remark: string) => Promise<void>;
 }) {
   const [remark, setRemark] = useState("");
+  const [busy, setBusy] = useState<null | "resolved" | "rejected">(null);
+  const doubt = item.type === "doubt";
+  const tone = doubt ? colors.badge.blue : colors.badge.peach;
+  const act = async (status: "resolved" | "rejected") => {
+    setBusy(status);
+    await onResolve(item, status, remark);
+    setBusy(null);
+  };
   return (
     <View style={styles.card}>
-      <View style={styles.cardHeaderRow}>
-        <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
-          <View style={[styles.typePill, item.type === "doubt" && styles.typePillDoubt]}>
-            <Text style={[styles.typePillText, item.type === "doubt" && styles.typePillTextDoubt]}>
-              {item.type === "complaint" ? "Complaint" : "Doubt"}
-            </Text>
-          </View>
-          <Text style={styles.studentName}>{item.subject}</Text>
+      <View style={styles.headRow}>
+        <View style={[styles.avatar, { backgroundColor: tone.bg }]}>
+          <Text style={[styles.avatarText, { color: tone.fg }]}>{initials(item.studentName || "?")}</Text>
         </View>
-        <View style={[styles.statusPill, { backgroundColor: statusColors[item.status] + "20" }]}>
-          <Text style={[styles.statusPillText, { color: statusColors[item.status] }]}>{item.status}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.name} numberOfLines={1}>
+            {item.studentName}
+          </Text>
+          <Text style={styles.meta} numberOfLines={1}>
+            {[item.studentEnrollmentNumber, ago(item)].filter(Boolean).join(" · ")}
+          </Text>
         </View>
+        <StatusPill status={item.status} label={item.status === "resolved" && doubt ? "Answered" : item.status === "rejected" && doubt ? "Dismissed" : undefined} />
       </View>
-      <Text style={styles.meta}>
-        {item.category} · {item.studentName}
-        {item.studentEnrollmentNumber ? ` (${item.studentEnrollmentNumber})` : ""}
-      </Text>
-      <Text style={styles.addressee}>{item.facultyName ? `To: ${item.facultyName}` : "To: Any faculty / admin"}</Text>
-      <Text style={styles.reason}>{item.description}</Text>
+
+      <View style={styles.tagRow}>
+        <View style={[styles.tag, { backgroundColor: tone.bg }]}>
+          <Text style={[styles.tagText, { color: tone.fg }]}>{doubt ? "Doubt" : "Complaint"}</Text>
+        </View>
+        <View style={[styles.tag, { backgroundColor: colors.surfaceAlt }]}>
+          <Text style={[styles.tagText, { color: colors.textSecondary }]}>{item.category}</Text>
+        </View>
+        <Text style={styles.to} numberOfLines={1}>
+          {item.facultyName ? `To ${item.facultyName}` : "To committee"}
+        </Text>
+      </View>
+
+      <Text style={styles.subject}>{item.subject}</Text>
+      <Text style={styles.body}>{item.description}</Text>
       <ComplaintPhotos paths={item.photoPaths} />
 
       {item.status === "pending" ? (
@@ -52,49 +89,42 @@ const ComplaintRow = memo(function ComplaintRow({
             style={styles.remarkInput}
             value={remark}
             onChangeText={setRemark}
-            placeholder="Optional remark"
+            placeholder={doubt ? "Write your answer (optional)" : "Add a remark (optional)"}
             placeholderTextColor={colors.textSecondary}
+            multiline
           />
           <View style={styles.actionRow}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.approveButton]}
-              onPress={() => onResolve(item, "resolved", remark)}
-            >
-              <Text style={styles.approveButtonText}>
-                {item.type === "doubt" ? "Mark Answered" : "Mark Resolved"}
-              </Text>
+            <TouchableOpacity style={[styles.btn, styles.btnReject]} onPress={() => act("rejected")} disabled={!!busy} accessibilityRole="button">
+              {busy === "rejected" ? <ActivityIndicator color={colors.danger} /> : <Ionicons name="close" size={18} color={colors.danger} />}
+              <Text style={styles.btnRejectText}>{doubt ? "Dismiss" : "Reject"}</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.rejectButton]}
-              onPress={() => onResolve(item, "rejected", remark)}
-            >
-              <Text style={styles.rejectButtonText}>{item.type === "doubt" ? "Dismiss" : "Reject"}</Text>
+            <TouchableOpacity style={[styles.btn, styles.btnApprove]} onPress={() => act("resolved")} disabled={!!busy} accessibilityRole="button">
+              {busy === "resolved" ? <ActivityIndicator color={colors.onPrimary} /> : <Ionicons name="checkmark" size={18} color={colors.onPrimary} />}
+              <Text style={styles.btnApproveText}>{doubt ? "Answered" : "Resolved"}</Text>
             </TouchableOpacity>
           </View>
         </>
-      ) : (
-        item.facultyRemark && <Text style={styles.remarkText}>Remark: {item.facultyRemark}</Text>
-      )}
+      ) : item.facultyRemark ? (
+        <View style={styles.remarkBox}>
+          <Text style={styles.remarkLabel}>{item.resolvedByName ? `${item.resolvedByName} replied` : "Reply"}</Text>
+          <Text style={styles.remarkText}>{item.facultyRemark}</Text>
+        </View>
+      ) : null}
     </View>
   );
 });
 
-type TypeFilter = "all" | "complaint" | "doubt";
-
 export default function ComplaintsScreen() {
   const { profile } = useAuth();
-  const [complaints, setComplaints] = useState<Complaint[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [complaints, setComplaints] = useState<Complaint[] | null>(null);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [tab, setTab] = useState<Tab>("todo");
 
   useEffect(() => {
     if (!profile?.email) return;
     const unsubscribe = subscribeToAllComplaints(
       { email: profile.email, isAdmin: profile.isAdmin === true || (profile.role as string) === "admin" },
-      (data) => {
-        setComplaints(data);
-        setLoading(false);
-      },
+      setComplaints,
     );
     return () => unsubscribe();
   }, [profile?.email, profile?.isAdmin, profile?.role]);
@@ -111,42 +141,58 @@ export default function ComplaintsScreen() {
     [profile?.uid, profile?.name],
   );
 
-  const filtered = typeFilter === "all" ? complaints : complaints.filter((c) => c.type === typeFilter);
-  const pending = filtered.filter((c) => c.status === "pending");
-  const resolved = filtered.filter((c) => c.status !== "pending");
+  const all = complaints ?? [];
+  const inTab = useMemo(() => all.filter((c) => (tab === "todo" ? c.status === "pending" : c.status !== "pending")), [all, tab]);
+  const shown = typeFilter === "all" ? inTab : inTab.filter((c) => c.type === typeFilter);
+  const pendingCount = all.filter((c) => c.status === "pending").length;
+  const count = (t: TypeFilter) => (t === "all" ? inTab.length : inTab.filter((c) => c.type === t).length);
+
+  const header = (
+    <View>
+      <Segmented
+        options={[
+          { value: "todo", label: "To do", badge: pendingCount || undefined },
+          { value: "done", label: "Handled" },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} style={styles.chipsWrap}>
+        {(["all", "complaint", "doubt"] as TypeFilter[]).map((f) => {
+          const on = typeFilter === f;
+          return (
+            <TouchableOpacity key={f} style={[styles.chip, on && styles.chipOn]} onPress={() => setTypeFilter(f)} accessibilityState={{ selected: on }}>
+              <Text style={[styles.chipText, on && styles.chipTextOn]}>
+                {f === "all" ? "All" : f === "complaint" ? "Complaints" : "Doubts"} {count(f)}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
 
   return (
     <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={{ flex: 1 }}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-
-        <View style={styles.filterRow}>
-          {(["all", "complaint", "doubt"] as TypeFilter[]).map((f) => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterChip, typeFilter === f && styles.filterChipActive]}
-              onPress={() => setTypeFilter(f)}
-            >
-              <Text style={[styles.filterChipText, typeFilter === f && styles.filterChipTextActive]}>
-                {f === "all" ? "All" : f === "complaint" ? "Complaints" : "Doubts"}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {loading ? (
-          <LoadingSpinner style={{ marginTop: spacing.xl }} />
-        ) : filtered.length === 0 ? (
-          <Text style={styles.emptyText}>
-            {typeFilter === "all" ? "Nothing submitted yet." : `No ${typeFilter}s submitted yet.`}
-          </Text>
-        ) : (
-          <KeyboardAwareFlatList
-            data={[...pending, ...resolved]}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            renderItem={({ item }) => <ComplaintRow item={item} onResolve={handleResolve} />}
-          />
-        )}
+        <KeyboardAwareFlatList
+          data={complaints === null ? [] : shown}
+          keyExtractor={(item: Complaint) => item.id}
+          contentContainerStyle={styles.listContent}
+          ListHeaderComponent={header}
+          ListEmptyComponent={
+            complaints === null ? (
+              <SkeletonList count={3} lines={2} />
+            ) : (
+              <EmptyState
+                icon={tab === "todo" ? "checkmark-done-outline" : "archive-outline"}
+                title={tab === "todo" ? "You're all caught up" : "Nothing handled yet"}
+                hint={tab === "todo" ? "New complaints and doubts sent to you appear here, and you get a notification." : "Complaints you resolve or reject move here."}
+              />
+            )
+          }
+          renderItem={({ item }: { item: Complaint }) => <ComplaintRow item={item} onResolve={handleResolve} />}
+        />
       </SafeAreaView>
     </LinearGradient>
   );
@@ -154,47 +200,33 @@ export default function ComplaintsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  headerTitle: { ...typography.h2, color: colors.textPrimary, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  filterRow: { flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.lg, marginTop: spacing.sm },
-  filterChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.full,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  filterChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  filterChipText: { fontSize: 12, fontWeight: "600", color: colors.textSecondary },
-  filterChipTextActive: { color: colors.surface },
-  typePill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.full, backgroundColor: colors.badge.peach.bg },
-  typePillDoubt: { backgroundColor: colors.badge.blue.bg },
-  typePillText: { fontSize: 10, fontWeight: "700", color: colors.badge.peach.fg },
-  typePillTextDoubt: { color: colors.badge.blue.fg },
-  emptyText: { ...typography.body, color: colors.textSecondary, textAlign: "center", marginTop: spacing.xl },
-  listContent: { padding: spacing.lg, gap: spacing.md },
-  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.md, ...clayShadowSoft },
-  cardHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  studentName: { ...typography.h3, color: colors.textPrimary, flex: 1 },
-  meta: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  addressee: { fontSize: 11, color: colors.textSecondary, marginTop: 2, fontStyle: "italic" },
-  reason: { ...typography.body, color: colors.textPrimary, marginTop: spacing.xs },
-  remarkInput: {
-    backgroundColor: colors.background,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    marginTop: spacing.sm,
-    ...typography.caption,
-    color: colors.textPrimary,
-  },
-  remarkText: { fontSize: 12, color: colors.textPrimary, marginTop: spacing.sm, fontStyle: "italic" },
+  listContent: { padding: spacing.md, gap: spacing.sm, paddingBottom: spacing.xl * 2 },
+  chipsWrap: { flexGrow: 0, marginTop: spacing.sm, marginBottom: spacing.xs, marginHorizontal: -spacing.md },
+  chips: { gap: spacing.sm, paddingHorizontal: spacing.md },
+  chip: { height: 36, paddingHorizontal: 14, borderRadius: radius.full, justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  chipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },
+  chipTextOn: { color: colors.onPrimary },
+  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
+  headRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  avatar: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  avatarText: { fontSize: 14, fontWeight: "800" },
+  name: { fontSize: 15, fontWeight: "800", color: colors.textPrimary },
+  meta: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
+  tagRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.sm },
+  tag: { height: 24, paddingHorizontal: 9, borderRadius: 8, justifyContent: "center" },
+  tagText: { fontSize: 11.5, fontWeight: "800" },
+  to: { flex: 1, fontSize: 12, color: colors.textSecondary, textAlign: "right" },
+  subject: { ...typography.h3, color: colors.textPrimary, marginTop: spacing.sm },
+  body: { ...typography.body, color: colors.textPrimary, marginTop: 4, lineHeight: 21 },
+  remarkInput: { minHeight: 44, marginTop: spacing.md, paddingHorizontal: spacing.sm, paddingVertical: 10, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, fontSize: 14, color: colors.textPrimary },
   actionRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
-  actionButton: { flex: 1, paddingVertical: spacing.sm, borderRadius: radius.md, alignItems: "center" },
-  approveButton: { backgroundColor: colors.success + "20" },
-  approveButtonText: { color: colors.success, fontWeight: "700" },
-  rejectButton: { backgroundColor: colors.danger + "20" },
-  rejectButtonText: { color: colors.danger, fontWeight: "700" },
-  statusPill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.full },
-  statusPillText: { fontSize: 11, fontWeight: "700", textTransform: "capitalize" },
+  btn: { flex: 1, height: 46, borderRadius: radius.full, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
+  btnReject: { backgroundColor: colors.dangerBg },
+  btnRejectText: { color: colors.danger, fontWeight: "800", fontSize: 14.5 },
+  btnApprove: { backgroundColor: colors.success },
+  btnApproveText: { color: colors.onPrimary, fontWeight: "800", fontSize: 14.5 },
+  remarkBox: { marginTop: spacing.md, padding: spacing.sm, borderRadius: radius.md, backgroundColor: colors.surfaceAlt },
+  remarkLabel: { fontSize: 11.5, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.4 },
+  remarkText: { fontSize: 14, color: colors.textPrimary, marginTop: 2 },
 });

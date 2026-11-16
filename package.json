@@ -58,8 +58,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "build:web": "expo export --platform web --output-dir dist && node scripts/fix-web-assets.js",
-    "deploy:web": "npm run build:web && firebase deploy --only hosting",
-    "cg": "node scripts/cg.js"
+    "deploy:web": "npm run build:web && firebase deploy --only hosting"
   },
   "private": true
 }

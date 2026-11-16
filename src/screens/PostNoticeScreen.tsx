@@ -391,6 +391,21 @@ export default function PostNoticeScreen() {
               </View>
             )}
 
+            {(title.trim() || description.trim()) ? (
+              <View style={styles.preview}>
+                <Text style={styles.previewLabel}>PREVIEW</Text>
+                <View style={styles.previewCard}>
+                  <Text style={styles.previewCat}>{category} · just now</Text>
+                  <Text style={styles.previewTitle}>{title.trim() || "Title"}</Text>
+                  {!!description.trim() && (
+                    <Text style={styles.previewBody} numberOfLines={3}>
+                      {description.trim()}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            ) : null}
+
             <TouchableOpacity
               style={styles.primaryBtn}
               onPress={handlePost}
@@ -426,11 +441,17 @@ export default function PostNoticeScreen() {
 }
 
 const styles = StyleSheet.create({
+  preview: { marginTop: spacing.lg },
+  previewLabel: { fontSize: 11.5, fontWeight: "800", letterSpacing: 0.8, color: colors.textSecondary, marginBottom: 8 },
+  previewCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
+  previewCat: { fontSize: 12, fontWeight: "800", color: colors.primary },
+  previewTitle: { fontSize: 16, fontWeight: "800", color: colors.textPrimary, marginTop: 4 },
+  previewBody: { fontSize: 13.5, lineHeight: 19, color: colors.textSecondary, marginTop: 4 },
   pinRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md, borderWidth: 1, borderColor: colors.border },
   pinTitle: { fontSize: 15, fontWeight: "700", color: colors.textPrimary },
   pinSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
   container: { flex: 1 },
-  scrollContent: { flexGrow: 1, padding: spacing.md },
+  scrollContent: { flexGrow: 1, padding: spacing.md, paddingBottom: spacing.xl * 2 },
   scopePill: { alignSelf: "flex-start", backgroundColor: colors.badge.blue.bg, borderRadius: radius.full, paddingHorizontal: 12, paddingVertical: 6, marginBottom: spacing.sm },
   scopeText: { color: colors.badge.blue.fg, fontWeight: "700", fontSize: 13 },
   error: {
@@ -442,30 +463,32 @@ const styles = StyleSheet.create({
     ...typography.caption,
   },
   label: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontWeight: "600",
-    marginBottom: 6,
-    marginTop: spacing.md,
+    fontSize: 13,
+    color: colors.textPrimary,
+    fontWeight: "800",
+    marginBottom: 8,
+    marginTop: spacing.lg,
   },
   input: {
     backgroundColor: colors.surface,
-    ...clayShadowSoft,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    minHeight: 50,
+    paddingVertical: 12,
     paddingHorizontal: spacing.md,
     color: colors.textPrimary,
     ...typography.body,
   },
-  multiline: { minHeight: 100, textAlignVertical: "top" },
+  multiline: { minHeight: 120, textAlignVertical: "top" },
   categoryRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   categoryChip: {
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.md,
+    minHeight: 40,
+    justifyContent: "center",
+    paddingHorizontal: 16,
     borderRadius: radius.full,
-    ...clayShadowSoft,
+    borderWidth: 1.5,
+    borderColor: colors.border,
     backgroundColor: colors.surface,
   },
   categoryChipActive: {
@@ -473,26 +496,28 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   categoryChipText: {
-    ...typography.caption,
+    fontSize: 14,
     color: colors.textPrimary,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   categoryChipTextActive: { color: colors.onPrimary },
   primaryBtn: {
     backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
+    borderRadius: radius.full,
+    minHeight: 54,
+    justifyContent: "center",
     alignItems: "center",
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
+    ...clayShadowSoft,
   },
   primaryBtnText: { color: colors.onPrimary, fontWeight: "700", fontSize: 16 },
   deleteBtn: {
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
+    borderRadius: radius.full,
+    minHeight: 50,
+    justifyContent: "center",
     alignItems: "center",
     marginTop: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.danger,
+    backgroundColor: colors.dangerBg,
   },
   deleteBtnText: { color: colors.danger, fontWeight: "700", fontSize: 16 },
 });
