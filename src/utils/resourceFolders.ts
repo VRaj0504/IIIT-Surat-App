@@ -232,3 +232,19 @@ export function describeLocation(requested: FolderPath, groups: SubjectGroup[], 
     emptyMessage: null,
   };
 }
+
+export type FileSection = { key: string; label: string; files: Resource[] };
+
+export function subjectSections(items: Resource[], filter: ResourceType | 'all', mode: ViewMode): FileSection[] {
+  if (filter === 'all') {
+    return TYPE_ORDER.map((t) => ({ key: t, label: TYPE_LABEL[t], files: listFiles(items, t, null, mode) })).filter(
+      (s) => s.files.length > 0,
+    );
+  }
+  const folders = listYearFolders(items, filter, mode);
+  if (!folders) {
+    const files = listFiles(items, filter, null, mode);
+    return files.length ? [{ key: filter, label: TYPE_LABEL[filter], files }] : [];
+  }
+  return folders.map((f) => ({ key: f.key, label: f.label, files: listFiles(items, filter, f.key, mode) }));
+}

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, Image, Pressable, StyleSheet, ScrollView, TextInput, Modal, Platform } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { colors, spacing, radius } from "../theme/theme";
+import { colors, spacing, radius, isDark } from "../theme/theme";
 import { useAuth } from "../context/AuthContext";
 import { useWebLayout } from "../utils/useWebLayout";
 import { useWebBadges, markNoticesSeen } from "../utils/webBadges";
@@ -247,7 +247,7 @@ export default function WebShell({ navigationRef, currentRoute, children }: Prop
         <Pressable style={[styles.brand, pointer]} onPress={() => go({ label: "Today", icon: "home-outline", tab: "Home" })}>
           <Image source={require("../../assets/icon.png")} style={styles.logo} />
           <View>
-            <Image source={require("../../assets/wordmark.png")} style={styles.wordmark} resizeMode="contain" accessibilityLabel="CollegeGo" />
+            <Image source={isDark ? require("../../assets/wordmark-dark.png") : require("../../assets/wordmark.png")} style={styles.wordmark} resizeMode="contain" accessibilityLabel="CollegeGo" />
             <Text style={styles.brandSub}>Campus app</Text>
           </View>
         </Pressable>
