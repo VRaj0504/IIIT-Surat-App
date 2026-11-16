@@ -27,15 +27,13 @@ import { SelectField, SheetPicker, FieldLabel } from "../components/ui";
 import { subscribeToFacultyTimetable, FacultyScheduleEntry } from "../firebase/timetableService";
 import { mergeContiguousSlots, toMinutes } from "../utils/timetable";
 import { RollCallCard } from "../components/attendance/RollCall";
-import RollGrid from "../components/attendance/RollGrid";
-import RollNumberPad from "../components/attendance/RollNumberPad";
 import { excusalCovers, getApprovedExcusalsOn, rangeFor } from "../firebase/eventExcusalService";
 import { rosterForYear } from "../firebase/rosterCache";
 
 const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 
-const SEG_LABEL = { grid: "Grid", pad: "Type", roll: "Roll call", list: "List" } as const;
-const SEG_ICON = { grid: "grid-outline", pad: "keypad-outline", roll: "person-outline", list: "list-outline" } as const;
+const SEG_LABEL = { roll: "One by one", list: "Full list" } as const;
+const SEG_ICON = { roll: "person-outline", list: "list-outline" } as const;
 
 type ClassGroup = {
   key: string;
@@ -159,7 +157,7 @@ export default function MarkAttendanceScreen() {
   const [rosterLoading, setRosterLoading] = useState(false);
   const [absentSet, setAbsentSet] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
-  const [mode, setMode] = useState<"grid" | "pad" | "roll" | "list">("grid");
+  const [mode, setMode] = useState<"roll" | "list">("roll");
   const autoStart = useRef(false);
   const autoTried = useRef(false);
   const [copying, setCopying] = useState(false);
@@ -360,7 +358,7 @@ export default function MarkAttendanceScreen() {
           setCursor(0);
           setPhase("mark");
         }
-        setMode((m) => (m === "roll" && existing ? "grid" : m));
+        setMode(existing ? "list" : "roll");
         setRosterStatus("ready");
         if (autoStart.current && list.length) {
           autoStart.current = false;
@@ -441,7 +439,7 @@ export default function MarkAttendanceScreen() {
       setMarks(new Map(roster.map((r) => [r.enrollmentNumber, abs.has(r.enrollmentNumber) ? "A" : "P"] as [string, "P" | "A"])));
       setCursor(roster.length);
       setPhase("review");
-      if (mode === "roll") setMode("grid");
+      setMode("list");
     } catch (err: any) {
       Alert.alert("Couldn't copy", err.message ?? "Please try again.");
     } finally {
@@ -773,7 +771,7 @@ export default function MarkAttendanceScreen() {
 
               {phase !== "done" && (
                 <View style={styles.segment}>
-                  {(["grid", "pad", "roll", "list"] as const).map((m) => (
+                  {(["roll", "list"] as const).map((m) => (
                     <TouchableOpacity
                       key={m}
                       style={[styles.segBtn, mode === m && styles.segBtnOn]}
@@ -806,7 +804,7 @@ export default function MarkAttendanceScreen() {
                   )}
                   <Text style={styles.doneSync}>Students see it now, and it's already in the register on the faculty portal.</Text>
                   <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg, alignSelf: "stretch" }}>
-                    <TouchableOpacity style={[styles.secondaryBtn, { flex: 1 }]} onPress={() => { setPhase("review"); setMode("grid"); }}>
+                    <TouchableOpacity style={[styles.secondaryBtn, { flex: 1 }]} onPress={() => { setPhase("review"); setMode("list"); }}>
                       <Text style={styles.secondaryText}>Edit</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -821,10 +819,6 @@ export default function MarkAttendanceScreen() {
                     </TouchableOpacity>
                   </View>
                 </View>
-              ) : mode === "grid" ? (
-                <RollGrid students={roster} absent={absentSet} onDuty={onDuty} onToggle={toggleAbsent} />
-              ) : mode === "pad" ? (
-                <RollNumberPad students={roster} absent={absentSet} onToggle={toggleAbsent} />
               ) : mode === "roll" && phase === "mark" ? (
                 <RollCallCard students={roster} index={Math.min(cursor, roster.length - 1)} marks={marks} absentCount={absentSet.size} onMark={markOne} onUndo={undo} onRestPresent={restPresent} onDuty={onDuty} />
               ) : mode === "roll" ? (
@@ -890,7 +884,7 @@ export default function MarkAttendanceScreen() {
     </View>
   );
 
-  const canSave = selectedSubject && !dateError && !setupOpen && !rosterLoading && roster.length > 0 && phase !== "done" && (mode !== "roll" || phase === "review");
+  const canSave = selectedSubject && !dateError && !setupOpen && !rosterLoading && roster.length > 0 && phase !== "done" && (mode === "list" || phase === "review");
   const canStart = setupOpen && !!selectedSubject && !dateError && !rosterLoading && roster.length > 0;
 
   return (
@@ -1079,7 +1073,7 @@ const styles = StyleSheet.create({
   copyBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 44, marginTop: spacing.md, borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.surface },
   copyText: { fontSize: 14, fontWeight: "700", color: colors.primary },
   segBtnOn: { backgroundColor: colors.primary },
-  segText: { fontSize: 12.5, fontWeight: "700", color: colors.textSecondary },
+  segText: { fontSize: 14, fontWeight: "700", color: colors.textSecondary },
   segTextOn: { color: colors.onPrimary },
   reviewCard: { marginTop: spacing.md, backgroundColor: colors.surface, borderRadius: 24, padding: spacing.lg, borderWidth: 1.5, borderColor: colors.border },
   reviewTitle: { fontSize: 18, fontWeight: "800", color: colors.textPrimary },
